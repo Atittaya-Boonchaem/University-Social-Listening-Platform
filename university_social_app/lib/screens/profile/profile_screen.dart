@@ -303,6 +303,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/login_screen.dart'; 
 import '../../services/problem_service.dart';
+import '../../super_admin/super_admin_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final int? roleId; 
@@ -320,6 +321,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _resolvedProblems = 0;
   bool _isLoading = true;
   String _userIdentifier = "กำลังโหลดข้อมูล...";
+  String _userEmail = "";
+  int? _roleId;
+  String? _faculty;
+  String? _educationLevel;
+  int? _age;
+  String? _gender;
+  String? _relationship;
 
   @override
   void initState() {
@@ -331,11 +339,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final savedEmail = prefs.getString('email');
+      final savedDisplayName = prefs.getString('display_name');
+      final savedRoleId = prefs.getInt('role_id');
       
-      // 🌟 แก้ไข: จับคู่ ID ให้ตรงกับ Database (1=นิสิต, 2=บุคลากร, 3=ทั่วไป)
-      String defaultId = widget.roleId == 1 
+      final String? savedFaculty = prefs.getString('faculty');
+      final String? savedEducation = prefs.getString('education_level');
+      final int? savedAge = prefs.getInt('age');
+      final String? savedGender = prefs.getString('gender');
+      final String? savedRelationship = prefs.getString('relationship_to_university');
+      
+      int currentRoleId = savedRoleId ?? widget.roleId ?? 1;
+      
+      String defaultId = currentRoleId == 1 
           ? 'รหัสนิสิต: 66000000' 
-          : widget.roleId == 2 
+          : currentRoleId == 2 
               ? 'รหัสบุคลากร: ST0000' 
               : 'เบอร์โทรศัพท์: 0800000000';
 
@@ -344,7 +361,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (mounted) {
         setState(() {
-          _userIdentifier = savedEmail ?? defaultId;
+          _roleId = currentRoleId;
+          _userIdentifier = savedDisplayName ?? 'ผู้ใช้งานทั่วไป';
+          _userEmail = savedEmail ?? defaultId;
+          _faculty = savedFaculty;
+          _educationLevel = savedEducation;
+          _age = savedAge;
+          _gender = savedGender;
+          _relationship = savedRelationship;
           _totalProblems = problemsData.length;
           
           _resolvedProblems = problemsData.where((p) {
@@ -363,7 +387,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // 🌟 แก้ไข: จับคู่ชื่อสถานะให้ตรงกับ Database
   String _getRoleName(int roleId) {
     switch (roleId) {
-      case 1: return 'นิสิตมหาวิทยาลัยพะเยา';
+      case 4: return 'ผู้ดูแลระบบ (Super Admin)';
+      case 1: return 'นิสิต มพ.';
       case 2: return 'บุคลากร / เจ้าหน้าที่';
       case 3: return 'บุคคลทั่วไป / ผู้ปกครอง';
       default: return 'ผู้ใช้งานทั่วไป';
@@ -373,6 +398,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // 🌟 แก้ไข: จับคู่ไอคอนให้ตรงกับ Database
   IconData _getRoleIcon(int roleId) {
     switch (roleId) {
+      case 4: return Icons.admin_panel_settings;
       case 1: return Icons.school;
       case 2: return Icons.badge;
       case 3: return Icons.public;
@@ -415,8 +441,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 🌟 รับค่า roleId ที่ถูกต้อง (ถ้าไม่มีค่าจะให้เป็น 1 คือนิสิต)
-    final int safeRoleId = widget.roleId ?? 1;
+    // 🌟 รับค่า _roleId ที่โหลดมา หรือใช้ widget.roleId เป็น fallback
+    final int safeRoleId = _roleId ?? widget.roleId ?? 1;
 
     return Scaffold(
       extendBodyBehindAppBar: true, 
@@ -474,6 +500,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _userIdentifier, 
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
                   ),
+                  const SizedBox(height: 4),
+                  if (_userEmail.isNotEmpty)
+                    Text(
+                      _userEmail, 
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -484,6 +516,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Text(
                       _getRoleName(safeRoleId),
                       style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: upPurple),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 🌟 ข้อมูลเพิ่มเติมตามสถานะผู้ใช้งาน
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (safeRoleId == 1) ...[
+                          _buildInfoRow(Icons.account_balance, 'คณะ', _faculty),
+                          _buildInfoRow(Icons.school_outlined, 'ระดับการศึกษา', _educationLevel),
+                          _buildInfoRow(Icons.cake_outlined, 'อายุ', _age?.toString()),
+                          _buildInfoRow(Icons.person_outline, 'เพศ', _gender),
+                        ] else if (safeRoleId == 2) ...[
+                          _buildInfoRow(Icons.account_balance, 'คณะ / หน่วยงาน', _faculty),
+                          _buildInfoRow(Icons.cake_outlined, 'อายุ', _age?.toString()),
+                          _buildInfoRow(Icons.person_outline, 'เพศ', _gender),
+                        ] else if (safeRoleId == 3) ...[
+                          _buildInfoRow(Icons.group_outlined, 'กลุ่มผู้ใช้งาน', _relationship),
+                          _buildInfoRow(Icons.cake_outlined, 'อายุ', _age?.toString()),
+                          _buildInfoRow(Icons.person_outline, 'เพศ', _gender),
+                        ] else ...[
+                          _buildInfoRow(Icons.info_outline, 'ข้อมูล', 'ไม่มีข้อมูลเพิ่มเติม'),
+                        ],
+                      ],
                     ),
                   ),
                   const SizedBox(height: 32),
@@ -523,7 +587,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             backgroundColor: Colors.blue.shade50,
                             child: const Icon(Icons.help_outline, color: Colors.blue),
                           ),
-                          title: const Text('คู่มือการใช้งานระบบ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                          title: const Text('ช่วยเหลือ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                           trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
                           onTap: () {},
                         ),
@@ -531,6 +595,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 32),
+
+                  if (['2', '4'].contains(_roleId.toString()))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16.0),
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SuperAdminScreen())),
+                        icon: const Icon(Icons.rocket_launch, color: Colors.white),
+                        label: const Text('🚀 เข้าสู่ระบบ Super Admin Dashboard', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _roleId.toString() == '4' ? Colors.orange.shade700 : const Color(0xFF2B164D),
+                          minimumSize: const Size(double.infinity, 55),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
 
                   SizedBox(
                     width: double.infinity,
@@ -555,6 +634,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String? value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: Colors.grey.shade600),
+          const SizedBox(width: 12),
+          Text('$label:', style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              (value == null || value.isEmpty) ? 'ไม่ได้ระบุ' : value,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black87),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }

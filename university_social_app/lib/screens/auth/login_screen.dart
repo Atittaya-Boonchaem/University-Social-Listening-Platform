@@ -1,288 +1,8 @@
-// import 'package:flutter/material.dart';
-// import '../../navigation/main_navigation_screen.dart'; 
-// import '../../super_admin/super_admin_screen.dart'; 
-// import '../../services/auth_service.dart'; 
-
-// // 🌟 Import ฟอร์มย่อยที่เราแยกไฟล์ไว้
-// import 'student_form.dart';
-// import 'staff_form.dart';
-// import 'public_form.dart';
-
-// class LoginScreen extends StatefulWidget {
-//   const LoginScreen({super.key});
-
-//   @override
-//   State<LoginScreen> createState() => _LoginScreenState();
-// }
-
-// class _LoginScreenState extends State<LoginScreen> {
-//   int _selectedRole = 0; 
-//   final Color upPurple = const Color(0xFF2B164D);
-//   bool _obscurePassword = true;
-//   bool _isPublicRegisterMode = false;
-//   bool _isLoading = false;
-
-//   final TextEditingController _studentIdController = TextEditingController();
-//   final TextEditingController _studentPasswordController = TextEditingController();
-  
-//   final TextEditingController _staffIdController = TextEditingController();
-//   final TextEditingController _staffPasswordController = TextEditingController();
-
-//   final TextEditingController _publicPhoneController = TextEditingController();
-//   final TextEditingController _publicPasswordController = TextEditingController();
-//   final TextEditingController _publicConfirmPasswordController = TextEditingController();
-
-//   @override
-//   void dispose() {
-//     _studentIdController.dispose();
-//     _studentPasswordController.dispose();
-//     _staffIdController.dispose();
-//     _staffPasswordController.dispose();
-//     _publicPhoneController.dispose();
-//     _publicPasswordController.dispose();
-//     _publicConfirmPasswordController.dispose();
-//     super.dispose();
-//   }
-
-//   void _resetPublicForms() {
-//     setState(() {
-//       _isPublicRegisterMode = false;
-//       _publicPhoneController.clear();
-//       _publicPasswordController.clear();
-//       _publicConfirmPasswordController.clear();
-//     });
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     String titleText = 'นิสิต มพ.';
-//     String buttonText = 'เข้าสู่ระบบ';
-
-//     if (_selectedRole == 1) {
-//       titleText = 'บุคลากร มพ.';
-//     } else if (_selectedRole == 2) {
-//       titleText = 'บุคคลทั่วไป';
-//       buttonText = _isPublicRegisterMode ? 'ลงทะเบียน' : 'ถัดไป';
-//     }
-
-//     return Scaffold(
-//       backgroundColor: const Color(0xFFF8FAFC),
-//       body: Center(
-//         child: SingleChildScrollView(
-//           child: Padding(
-//             padding: const EdgeInsets.symmetric(horizontal: 24.0),
-//             child: Card(
-//               elevation: 4,
-//               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-//               child: Container(
-//                 width: 400,
-//                 padding: const EdgeInsets.all(32.0),
-//                 child: Column(
-//                   mainAxisSize: MainAxisSize.min,
-//                   crossAxisAlignment: CrossAxisAlignment.start,
-//                   children: [
-//                     Center(
-//                       child: Column(
-//                         children: [
-//                           Image.asset('assets/images/up_logo.png', height: 65, errorBuilder: (context, error, stackTrace) {
-//                             return const Icon(Icons.school, size: 55, color: Color(0xFF2B164D));
-//                           }),
-//                           const SizedBox(height: 16),
-//                           Text('UP Voice Feed', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: upPurple)),
-//                           const SizedBox(height: 4),
-//                           const Text('กระดานรับฟังเสียงและปัญหา มพ.', style: TextStyle(fontSize: 13, color: Colors.grey)),
-//                         ],
-//                       ),
-//                     ),
-//                     const SizedBox(height: 32),
-
-//                     // 🌟 แถบเลือกสถานะ (นิสิต / บุคลากร / บุคคลทั่วไป)
-//                     if (!_isPublicRegisterMode) ...[
-//                       Row(
-//                         mainAxisAlignment: MainAxisAlignment.center,
-//                         children: [
-//                           ChoiceChip(
-//                             label: const Text('นิสิต', style: TextStyle(fontSize: 12)),
-//                             selected: _selectedRole == 0,
-//                             selectedColor: upPurple.withOpacity(0.15),
-//                             onSelected: (selected) {
-//                               if (selected) setState(() => _selectedRole = 0);
-//                             },
-//                           ),
-//                           const SizedBox(width: 8),
-//                           ChoiceChip(
-//                             label: const Text('บุคลากร', style: TextStyle(fontSize: 12)),
-//                             selected: _selectedRole == 1,
-//                             selectedColor: upPurple.withOpacity(0.15),
-//                             onSelected: (selected) {
-//                               if (selected) setState(() => _selectedRole = 1);
-//                             },
-//                           ),
-//                           const SizedBox(width: 8),
-//                           ChoiceChip(
-//                             label: const Text('บุคคลทั่วไป', style: TextStyle(fontSize: 12)),
-//                             selected: _selectedRole == 2,
-//                             selectedColor: upPurple.withOpacity(0.15),
-//                             onSelected: (selected) {
-//                               if (selected) setState(() => _selectedRole = 2);
-//                             },
-//                           ),
-//                         ],
-//                       ),
-//                       const SizedBox(height: 24),
-//                     ],
-
-//                     Row(
-//                       children: [
-//                         if (_isPublicRegisterMode) 
-//                           IconButton(
-//                             icon: const Icon(Icons.arrow_back),
-//                             onPressed: _resetPublicForms,
-//                           ),
-//                         Text('เข้าสู่ระบบ : $titleText', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-//                       ],
-//                     ),
-//                     const SizedBox(height: 20),
-
-//                     // 🌟 เรียกใช้งานฟอร์มย่อยตามประเภทที่ผู้ใช้เลือก
-//                     if (_selectedRole == 0) ...[
-//                       StudentForm(
-//                         idController: _studentIdController,
-//                         passwordController: _studentPasswordController,
-//                         obscurePassword: _obscurePassword,
-//                         onTogglePassword: () => setState(() => _obscurePassword = !_obscurePassword),
-//                         upPurple: upPurple,
-//                       ),
-//                     ] else if (_selectedRole == 1) ...[
-//                       StaffForm(
-//                         emailController: _staffIdController,
-//                         passwordController: _staffPasswordController,
-//                         obscurePassword: _obscurePassword,
-//                         onTogglePassword: () => setState(() => _obscurePassword = !_obscurePassword),
-//                         upPurple: upPurple,
-//                       ),
-//                     ] else if (_selectedRole == 2) ...[
-//                       PublicForm(
-//                         phoneController: _publicPhoneController,
-//                         isRegisterMode: _isPublicRegisterMode,
-//                         passwordController: _publicPasswordController,
-//                         confirmPasswordController: _publicConfirmPasswordController,
-//                         obscurePassword: _obscurePassword,
-//                         onTogglePassword: () => setState(() => _obscurePassword = !_obscurePassword),
-//                       ),
-//                     ],
-
-//                     const SizedBox(height: 24),
-
-//                     SizedBox(
-//                       width: double.infinity,
-//                       height: 45,
-//                       child: ElevatedButton(
-//                         onPressed: _isLoading ? null : () async {
-//                           setState(() => _isLoading = true);
-
-//                           if (_selectedRole == 0) {
-//                             final result = await AuthService.loginStudent(
-//                               _studentIdController.text, 
-//                               _studentPasswordController.text
-//                             );
-//                             setState(() => _isLoading = false);
-
-//                             if (result['success']) {
-//                               Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => MainNavigationScreen(roleId: 0)));
-//                             } else {
-//                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message']), backgroundColor: Colors.red));
-//                             }
-//                           } 
-//                           else if (_selectedRole == 1) {
-//                             if (_staffIdController.text == 'admin@up.ac.th' && _staffPasswordController.text == 'admin1234') {
-//                               setState(() => _isLoading = false);
-//                               Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SuperAdminScreen()));
-//                               return;
-//                             }
-                            
-//                             final result = await AuthService.loginStaff(
-//                               _staffIdController.text, 
-//                               _staffPasswordController.text
-//                             );
-//                             setState(() => _isLoading = false);
-
-//                             if (result['success']) {
-//                               Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => MainNavigationScreen(roleId: 1)));
-//                             } else {
-//                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message']), backgroundColor: Colors.red));
-//                             }
-//                           } 
-//                           else if (_selectedRole == 2) {
-//                             if (!_isPublicRegisterMode) {
-//                               setState(() => _isLoading = false);
-//                               if (_publicPhoneController.text.isNotEmpty) {
-//                                 setState(() => _isPublicRegisterMode = true); // เปิดโหมดตั้งรหัสผ่าน
-//                               } else {
-//                                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กรุณากรอกเบอร์โทรศัพท์'), backgroundColor: Colors.orange));
-//                               }
-//                             } else {
-//                               if (_publicPasswordController.text != _publicConfirmPasswordController.text) {
-//                                 setState(() => _isLoading = false);
-//                                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('รหัสผ่านไม่ตรงกัน'), backgroundColor: Colors.red));
-//                                 return;
-//                               }
-                              
-//                               final result = await AuthService.registerPublic(
-//                                 _publicPhoneController.text, 
-//                                 _publicPasswordController.text
-//                               );
-//                               setState(() => _isLoading = false);
-
-//                               if (result['success']) {
-//                                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message']), backgroundColor: Colors.green));
-//                                 Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => MainNavigationScreen(roleId: 2)));
-//                               } else {
-//                                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message']), backgroundColor: Colors.red));
-//                               }
-//                             }
-//                           }
-//                         },
-//                         style: ElevatedButton.styleFrom(
-//                           backgroundColor: upPurple,
-//                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-//                           elevation: 0,
-//                         ),
-//                         child: _isLoading 
-//                             ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-//                             : Text(buttonText, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//             ),
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-  
-//   // Helper สำหรับเปลี่ยนสถานะ Register Mode
-//   set _isRegisterMode(bool value) {
-//     setState(() {
-//       _isPublicRegisterMode = value;
-//     });
-//   }
-// }
-
-
-
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../navigation/main_navigation_screen.dart'; 
-import '../../super_admin/super_admin_screen.dart'; 
 import '../../services/auth_service.dart'; 
-
-import 'student_form.dart';
-import 'staff_form.dart';
-import 'public_form.dart';
+import '../../super_admin/super_admin_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -292,34 +12,57 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  int _selectedRole = 0; 
-  final Color upPurple = const Color(0xFF2B164D);
+  int _selectedRole = 0; // 0 = Student, 1 = Staff, 2 = Public
+  bool _isLoginMode = true;
   bool _obscurePassword = true;
-  bool _isPublicRegisterMode = false;
   bool _isLoading = false;
 
-  // Controllers
-  final TextEditingController _studentIdController = TextEditingController();
-  final TextEditingController _studentPasswordController = TextEditingController();
-  final TextEditingController _studentAgeController = TextEditingController();
-  
-  final TextEditingController _staffIdController = TextEditingController();
-  final TextEditingController _staffPasswordController = TextEditingController();
-  final TextEditingController _staffAgeController = TextEditingController();
+  final Color upPurple = const Color(0xFF2B164D);
 
-  final TextEditingController _publicPhoneController = TextEditingController();
-  final TextEditingController _publicPasswordController = TextEditingController();
-  final TextEditingController _publicConfirmPasswordController = TextEditingController();
+  // Controllers
+  final TextEditingController _idController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _ageController = TextEditingController();
+
+  // Registration State
+  String _faculty = 'คณะเกษตรศาสตร์และทรัพยากรธรรมชาติ';
+  String _educationLevel = 'ปริญญาตรี';
+  String _gender = 'ชาย';
+  String _relationship = 'ประชาชนทั่วไป';
+
+  final List<String> faculties = [
+    'คณะเกษตรศาสตร์และทรัพยากรธรรมชาติ',
+    'คณะเทคโนโลยีสารสนเทศ',
+    'คณะวิศวกรรมศาสตร์',
+    'คณะวิทยาศาสตร์',
+    'คณะรัฐศาสตร์และสังคมศาสตร์',
+    'คณะศิลปศาสตร์',
+  ];
+
+  @override
+  void dispose() {
+    _idController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _ageController.dispose();
+    super.dispose();
+  }
+
+  void _resetForm() {
+    _idController.clear();
+    _passwordController.clear();
+    _confirmPasswordController.clear();
+    _ageController.clear();
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
-    String buttonText = 'เข้าสู่ระบบในฐานะนิสิต';
-    if (_selectedRole == 1) buttonText = 'เข้าสู่ระบบในฐานะบุคลากร';
-    if (_selectedRole == 2) buttonText = _isPublicRegisterMode ? 'สร้างบัญชีและล็อกอิน' : 'เข้าสู่ระบบในฐานะบุคคลทั่วไป';
+    String buttonText = _isLoginMode ? 'เข้าสู่ระบบ' : 'ลงทะเบียน';
 
     return Scaffold(
       body: Container(
-        // 🌟 พื้นหลัง Gradient ม่วง-ทองตามรูป
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -335,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 constraints: const BoxConstraints(maxWidth: 450),
                 padding: const EdgeInsets.all(28),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withOpacity(0.95),
                   borderRadius: BorderRadius.circular(35),
                   boxShadow: [
                     BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))
@@ -344,16 +87,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 📣 ส่วนหัว Header
+                    // Header
                     const Text('📣 UP', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Color(0xFF2B164D))),
                     const SizedBox(height: 10),
                     const Text('ระบบรับฟังเสียงและวิเคราะห์ปัญหาของชุมชนมหาวิทยาลัยพะเยา', 
                       textAlign: TextAlign.center, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF555555))),
-                    const Text('เลือกสถานะของคุณเพื่อเริ่มใช้งาน (ระบบปกปิดตัวตนของคุณ)', 
-                      textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    const SizedBox(height: 5),
+                    Text(_isLoginMode ? 'เข้าสู่ระบบเพื่อดำเนินการต่อ' : 'ลงทะเบียนบัญชีใหม่', 
+                      textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: Colors.grey)),
                     const SizedBox(height: 25),
 
-                    // 📑 แถบเลือก Role
+                    // Role Tabs
                     Row(
                       children: [
                         _buildRoleTab('นิสิต มพ.', 0),
@@ -363,42 +107,19 @@ class _LoginScreenState extends State<LoginScreen> {
                         _buildRoleTab('บุคคลทั่วไป', 2),
                       ],
                     ),
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 25),
 
-                    // 📝 แสดงฟอร์มตาม Role
-                    if (_selectedRole == 0) StudentForm(
-                      idController: _studentIdController, 
-                      passwordController: _studentPasswordController,
-                      ageController: _studentAgeController,
-                      obscurePassword: _obscurePassword,
-                      onTogglePassword: () => setState(() => _obscurePassword = !_obscurePassword)
-                    ),
-                    if (_selectedRole == 1) StaffForm(
-                      emailController: _staffIdController, 
-                      passwordController: _staffPasswordController,
-                      ageController: _staffAgeController,
-                      obscurePassword: _obscurePassword,
-                      onTogglePassword: () => setState(() => _obscurePassword = !_obscurePassword)
-                    ),
-                    if (_selectedRole == 2) PublicForm(
-                      phoneController: _publicPhoneController, 
-                      isRegisterMode: _isPublicRegisterMode,
-                      passwordController: _publicPasswordController,
-                      confirmPasswordController: _publicConfirmPasswordController,
-                      obscurePassword: _obscurePassword,
-                      onTogglePassword: () => setState(() => _obscurePassword = !_obscurePassword),
-                      onBack: () => setState(() => _isPublicRegisterMode = false),
-                    ),
+                    // Forms
+                    _buildDynamicForm(),
 
-                    const SizedBox(height: 35),
+                    const SizedBox(height: 25),
 
-                    // 🚀 ปุ่มดำเนินการหลัก
-                    if (!(_selectedRole == 2 && _isPublicRegisterMode == false && false)) // เงื่อนไขซ่อนปุ่มถ้าต้องการ
+                    // Action Button
                     SizedBox(
                       width: double.infinity,
                       height: 55,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleLogin,
+                        onPressed: _isLoading ? null : _handleSubmit,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: upPurple,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -407,6 +128,22 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: _isLoading 
                           ? const CircularProgressIndicator(color: Colors.white)
                           : Text(buttonText, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+                    
+                    // Toggle Mode Button
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _isLoginMode = !_isLoginMode;
+                          _resetForm();
+                        });
+                      },
+                      child: Text(
+                        _isLoginMode ? 'ยังไม่มีบัญชี? สมัครสมาชิก' : 'มีบัญชีอยู่แล้ว? เข้าสู่ระบบ',
+                        style: TextStyle(color: upPurple, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
@@ -423,7 +160,12 @@ class _LoginScreenState extends State<LoginScreen> {
     bool isSelected = _selectedRole == index;
     return Expanded(
       child: InkWell(
-        onTap: () => setState(() { _selectedRole = index; _isPublicRegisterMode = false; }),
+        onTap: () {
+          setState(() {
+            _selectedRole = index;
+            _resetForm();
+          });
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
@@ -432,26 +174,140 @@ class _LoginScreenState extends State<LoginScreen> {
             border: isSelected ? Border(bottom: BorderSide(color: Colors.orange.shade400, width: 4)) : Border.all(color: Colors.grey.shade200),
           ),
           child: Center(
-            child: Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.grey.shade700, fontWeight: FontWeight.bold, fontSize: 13)),
+            child: Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.grey.shade700, fontWeight: FontWeight.bold, fontSize: 12)),
           ),
         ),
       ),
     );
   }
 
-  Future<void> _handleLogin() async {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
+  Widget _buildDynamicForm() {
+    String idHint = 'รหัสนิสิต (เช่น 66xxxx)';
+    String idLabel = 'บัญชีนิสิต';
+    String suffix = '@up.ac.th';
+    bool useSuffix = true;
 
-    // กรณีบุคคลทั่วไป: กดครั้งแรก = เปิดโหมดตั้งรหัสผ่าน
-    if (_selectedRole == 2 && !_isPublicRegisterMode) {
-      if (_publicPhoneController.text.trim().isEmpty) {
-        scaffoldMessenger.showSnackBar(const SnackBar(
-          content: Text('กรุณากรอกเบอร์โทรศัพท์'),
-          backgroundColor: Colors.orange,
-        ));
-        return;
-      }
-      setState(() => _isPublicRegisterMode = true);
+    if (_selectedRole == 1) {
+      idHint = 'บัญชีบุคลากร';
+      idLabel = 'บัญชีบุคลากร';
+    } else if (_selectedRole == 2) {
+      idHint = 'เบอร์โทรศัพท์';
+      idLabel = 'เบอร์โทรศัพท์';
+      useSuffix = false;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel(idLabel),
+        if (useSuffix)
+          Row(
+            children: [
+              Expanded(child: _buildTextField(idHint, controller: _idController, isNumber: _selectedRole == 0)),
+              const SizedBox(width: 10),
+              _buildSuffixBox(suffix),
+            ],
+          )
+        else
+          _buildTextField(idHint, controller: _idController, isNumber: true),
+
+        const SizedBox(height: 16),
+        _buildLabel('รหัสผ่าน'),
+        _buildTextField('รหัสผ่าน', controller: _passwordController, isPassword: true),
+
+        if (!_isLoginMode) ...[
+          if (_selectedRole == 2) ...[
+            const SizedBox(height: 16),
+            _buildLabel('ยืนยันรหัสผ่าน'),
+            _buildTextField('ยืนยันรหัสผ่าน', controller: _confirmPasswordController, isPassword: true),
+            const SizedBox(height: 16),
+            _buildLabel('กลุ่มผู้ใช้งาน'),
+            _buildDropdown(_relationship, ['ผู้ปกครอง', 'ศิษย์เก่า', 'ประชาชนทั่วไป'], (v) => setState(() => _relationship = v!)),
+          ],
+          
+          if (_selectedRole == 0 || _selectedRole == 1) ...[
+            const SizedBox(height: 16),
+            _buildLabel(_selectedRole == 0 ? 'คณะ' : 'หน่วยงาน/คณะที่สังกัด'),
+            _buildDropdown(_faculty, faculties, (v) => setState(() => _faculty = v!)),
+          ],
+
+          if (_selectedRole == 0) ...[
+            const SizedBox(height: 16),
+            _buildLabel('ระดับการศึกษา'),
+            _buildDropdown(_educationLevel, ['ปริญญาตรี', 'ปริญญาโท', 'ปริญญาเอก'], (v) => setState(() => _educationLevel = v!)),
+          ],
+
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(flex: 1, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _buildLabel('อายุ'),
+                _buildTextField('อายุ', controller: _ageController, isNumber: true),
+              ])),
+              const SizedBox(width: 10),
+              Expanded(flex: 1, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _buildLabel('เพศ'),
+                _buildDropdown(_gender, ['ชาย', 'หญิง', 'อื่นๆ'], (v) => setState(() => _gender = v!)),
+              ])),
+            ],
+          ),
+        ]
+      ],
+    );
+  }
+
+  Widget _buildLabel(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 8, left: 4),
+    child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF333333))),
+  );
+
+  Widget _buildTextField(String hint, {TextEditingController? controller, bool isPassword = false, bool isNumber = false}) {
+    return TextField(
+      controller: controller,
+      obscureText: isPassword && _obscurePassword,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      decoration: InputDecoration(
+        hintText: hint,
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
+        suffixIcon: isPassword ? IconButton(icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off, size: 20), onPressed: () => setState(() => _obscurePassword = !_obscurePassword)) : null,
+      ),
+    );
+  }
+
+  Widget _buildSuffixBox(String text) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+    decoration: BoxDecoration(color: const Color(0xFFE9E9FF), borderRadius: BorderRadius.circular(10)),
+    child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2B164D))),
+  );
+
+  Widget _buildDropdown(String value, List<String> items, Function(String?) onChanged) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFE0E0E0))),
+    child: DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: value, isExpanded: true, icon: const Icon(Icons.keyboard_arrow_down),
+        items: items.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 14)))).toList(),
+        onChanged: onChanged,
+      ),
+    ),
+  );
+
+  Future<void> _handleSubmit() async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final idText = _idController.text.trim();
+    final pwdText = _passwordController.text;
+
+    if (idText.isEmpty || pwdText.isEmpty) {
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('กรุณากรอกข้อมูลให้ครบถ้วน'), backgroundColor: Colors.orange));
+      return;
+    }
+
+    if (_selectedRole == 2 && !RegExp(r'^\d{10}$').hasMatch(idText)) {
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('กรุณากรอกเบอร์โทรศัพท์ 10 หลัก'), backgroundColor: Colors.orange));
       return;
     }
 
@@ -460,88 +316,91 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       Map<String, dynamic> result;
 
-      if (_selectedRole == 0) {
-        // 🎓 นิสิต: login ด้วย studentId@up.ac.th
-        if (_studentIdController.text.trim().isEmpty || _studentPasswordController.text.isEmpty) {
-          scaffoldMessenger.showSnackBar(const SnackBar(content: Text('กรุณากรอกรหัสนิสิตและรหัสผ่าน'), backgroundColor: Colors.orange));
-          setState(() => _isLoading = false);
-          return;
+      if (_isLoginMode) {
+        if (_selectedRole == 0) {
+          result = await AuthService.loginStudent(idText, pwdText);
+        } else if (_selectedRole == 1) {
+          result = await AuthService.loginStaff(idText, pwdText);
+        } else {
+          result = await AuthService.login(phoneNumber: idText, password: pwdText);
         }
-        result = await AuthService.loginStudent(
-          _studentIdController.text.trim(),
-          _studentPasswordController.text,
-        );
-      } else if (_selectedRole == 1) {
-        // 💼 บุคลากร: login ด้วย email@up.ac.th
-        if (_staffIdController.text.trim().isEmpty || _staffPasswordController.text.isEmpty) {
-          scaffoldMessenger.showSnackBar(const SnackBar(content: Text('กรุณากรอกบัญชีบุคลากรและรหัสผ่าน'), backgroundColor: Colors.orange));
-          setState(() => _isLoading = false);
-          return;
-        }
-        result = await AuthService.loginStaff(
-          _staffIdController.text.trim(),
-          _staffPasswordController.text,
-        );
       } else {
-        // 🌍 บุคคลทั่วไป: สมัครสมาชิกก่อน แล้ว login
-        if (_publicPasswordController.text.isEmpty) {
-          scaffoldMessenger.showSnackBar(const SnackBar(content: Text('กรุณาตั้งรหัสผ่าน'), backgroundColor: Colors.orange));
+        // Registration Mode
+        int age = int.tryParse(_ageController.text) ?? 0;
+        
+        if (_selectedRole == 2 && pwdText != _confirmPasswordController.text) {
           setState(() => _isLoading = false);
+          scaffoldMessenger.showSnackBar(const SnackBar(content: Text('รหัสผ่านไม่ตรงกัน'), backgroundColor: Colors.red));
           return;
         }
-        // สมัครสมาชิกก่อน (ถ้า error = อาจมีบัญชีอยู่แล้ว ลอง login ต่อ)
-        await AuthService.registerPublic(
-          _publicPhoneController.text.trim(),
-          _publicPasswordController.text,
-        );
-        // Login ด้วยเบอร์โทรศัพท์
-        result = await AuthService.login(
-          phoneNumber: _publicPhoneController.text.trim(),
-          password: _publicPasswordController.text,
-        );
+
+        if (_selectedRole == 0) {
+          result = await AuthService.registerStudent(
+            studentId: idText,
+            password: pwdText,
+            faculty: _faculty,
+            educationLevel: _educationLevel,
+            age: age,
+            gender: _gender,
+          );
+        } else if (_selectedRole == 1) {
+          result = await AuthService.registerStaff(
+            staffAccount: idText,
+            password: pwdText,
+            faculty: _faculty,
+            age: age,
+            gender: _gender,
+          );
+        } else {
+          result = await AuthService.registerPublic(
+            phoneNumber: idText, 
+            password: pwdText, 
+            relationship: _relationship,
+            age: age,
+            gender: _gender,
+          );
+        }
+
+        // Auto login after successful register
+        if (result['success'] == true) {
+          if (_selectedRole == 0) {
+            result = await AuthService.loginStudent(idText, pwdText);
+          } else if (_selectedRole == 1) {
+            result = await AuthService.loginStaff(idText, pwdText);
+          } else {
+            result = await AuthService.login(phoneNumber: idText, password: pwdText);
+          }
+        }
       }
 
       if (!mounted) return;
 
       if (result['success'] == true) {
-        // ✅ บันทึก email ไว้แสดงในหน้า Profile
-        final prefs = await SharedPreferences.getInstance();
-        if (_selectedRole == 0) {
-          String email = _studentIdController.text.trim();
-          if (!email.contains('@')) email += '@up.ac.th';
-          await prefs.setString('email', email);
-        } else if (_selectedRole == 1) {
-          String email = _staffIdController.text.trim();
-          if (!email.contains('@')) email += '@up.ac.th';
-          await prefs.setString('email', email);
+        // Route directly based on role_id
+        final actualRoleId = result['role_id'] ?? _selectedRole;
+        if (actualRoleId.toString() == '4') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const SuperAdminScreen()),
+          );
         } else {
-          await prefs.setString('email', _publicPhoneController.text.trim());
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => MainNavigationScreen(roleId: actualRoleId as int?)),
+          );
         }
-
-        // ✅ อ่าน roleId จริงจาก SharedPreferences (บันทึกโดย AuthService)
-        final roleId = prefs.getInt('role_id') ?? _selectedRole;
-
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => MainNavigationScreen(roleId: roleId)),
-        );
       } else {
+        String errorMessage = result['message'] ?? 'เกิดข้อผิดพลาด';
+        if (errorMessage == 'บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานในบทบาทนี้') {
+          errorMessage = 'ไม่สามารถเข้าสู่ระบบได้ กรุณาตรวจสอบสิทธิ์การใช้งานหรือบัญชีของคุณอีกครั้ง';
+        }
+        scaffoldMessenger.showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: Colors.red));
         setState(() => _isLoading = false);
-        scaffoldMessenger.showSnackBar(SnackBar(
-          content: Text(result['message'] ?? 'เข้าสู่ระบบไม่สำเร็จ'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
       }
     } catch (e) {
       if (!mounted) return;
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
       setState(() => _isLoading = false);
-      scaffoldMessenger.showSnackBar(SnackBar(
-        content: Text('เกิดข้อผิดพลาด: $e'),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-      ));
     }
   }
-}
+}

@@ -2,12 +2,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from contextlib import contextmanager
 import os
 from dotenv import load_dotenv
 import logging
+from fastapi.staticfiles import StaticFiles
 
 # 🌟 เพิ่มการดึง Base และ Role มาจาก models
 from app.models import Base, Role
@@ -93,6 +95,12 @@ app = FastAPI(
 )
 
 # ========================================
+# Mount Static Files for Uploads
+# ========================================
+os.makedirs(config.IMAGE_UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="./uploads"), name="uploads")
+
+# ========================================
 # CORS Middleware
 # ========================================
 app.add_middleware(
@@ -119,7 +127,7 @@ async def health_check():
 # Import Routers
 # ========================================
 # 🌟 นำเข้า auth และ problems เข้ามาพร้อมกัน
-from app.routers import problems, auth 
+from app.routers import problems, auth, users
 
 # 🌟 เปิดการใช้งาน API สำหรับ Problems
 app.include_router(problems.router, prefix="/api/v1/problems", tags=["Problems"])
@@ -127,6 +135,8 @@ app.include_router(problems.router, prefix="/api/v1/problems", tags=["Problems"]
 # 🌟 เปิดการใช้งาน API สำหรับ Authentication (ระบบยืนยันตัวตน)
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 
+# 🌟 เปิดการใช้งาน API สำหรับ User Management
+app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
 
 # ========================================
 # Exception Handlers

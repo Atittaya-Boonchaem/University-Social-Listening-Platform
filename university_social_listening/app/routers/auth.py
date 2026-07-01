@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from jose import jwt
+from jose import jwt, JWTError
+from typing import Optional
 import bcrypt
 from app.main import get_db, config
-from app.models import User, Role
+from app.models import User, Role, GenderEnum
 from app.schemas import (
     StudentUserCreate, StaffUserCreate, PublicUserCreate, 
-    UserLogin, StandardResponse, UserResponse
+    UserLogin, StandardResponse, UserResponse, OnboardingUpdate
 )
 
 router = APIRouter(tags=["Authentication (ระบบยืนยันตัวตน)"])
@@ -40,15 +42,21 @@ def register_student(user_data: StudentUserCreate, db: Session = Depends(get_db)
     if db.query(User).filter(User.student_id == user_data.student_id).first():
         raise HTTPException(status_code=400, detail="รหัสนิสิตนี้ถูกใช้งานแล้ว")
         
+    prefix = user_data.student_id[:2] if len(user_data.student_id) >= 2 else "xx"
+    display_name = f"นิสิต มพ. {prefix}"
+
     new_user = User(
         role_id=1, # Role 1 = Student ตามตาราง roles
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
         student_id=user_data.student_id,
+        student_id_prefix=prefix,
         faculty=user_data.faculty,
         education_level=user_data.education_level,
         age=user_data.age,
         gender=user_data.gender,
+        display_name=display_name,
+        onboarding_complete=True,
         is_verified=True
     )
     db.add(new_user)
@@ -70,8 +78,11 @@ def register_staff(user_data: StaffUserCreate, db: Session = Depends(get_db)):
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
         staff_account=user_data.staff_account,
+        faculty=user_data.faculty,
         age=user_data.age,
         gender=user_data.gender,
+        display_name="บุคลากร มพ.",
+        onboarding_complete=True,
         is_verified=True
     )
     db.add(new_user)
@@ -93,6 +104,8 @@ def register_public(user_data: PublicUserCreate, db: Session = Depends(get_db)):
         relationship_to_university=user_data.relationship_to_university,
         age=user_data.age,
         gender=user_data.gender,
+        display_name="บุคคลทั่วไป",
+        onboarding_complete=True,
         is_verified=True
     )
     db.add(new_user)
@@ -112,8 +125,14 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.phone_number == login_data.phone_number).first()
 
     if not user or not verify_password(login_data.password, user.password_hash):
-        raise HTTPException(status_code=400, detail="ข้อมูลการเข้าสู่ระบบไม่ถูกต้อง")
+        raise HTTPException(status_code=400, detail="ไม่พบบัญชีนี้ หรือ รหัสผ่านไม่ถูกต้อง")
         
+    if login_data.expected_role_id is not None:
+        # EXPLICITLY ALLOW Super Admins (role_id == 4) to log in successfully
+        if int(user.role_id) == 4:
+            pass
+        elif int(user.role_id) != int(login_data.expected_role_id):
+            raise HTTPException(status_code=403, detail="บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานในบทบาทนี้")
     if not user.is_active:
         raise HTTPException(status_code=400, detail="บัญชีนี้ถูกระงับการใช้งาน")
 
@@ -128,5 +147,66 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
             "access_token": access_token,
             "token_type": "bearer",
             "user": user_info.dict()
+        }
+    )
+
+
+# ========================================
+# 🎚️ 5. Onboarding — อัพเดตข้อมูลหลัง Login ครั้งแรก
+# ========================================
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+def get_current_user_from_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    try:
+        payload = jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
+        user_id: Optional[int] = payload.get("user_id")
+        if user_id is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ไม่ถูกต้อง")
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
+        return user
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token หมดอายุ")
+
+@router.patch("/onboarding", response_model=StandardResponse)
+def complete_onboarding(
+    data: OnboardingUpdate,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """🎟️ อัพเดตข้อมูลเพิ่มเติมหลัง login ครั้งแรก"""
+    if data.student_id_prefix:
+        current_user.student_id_prefix = data.student_id_prefix
+    if data.faculty:
+        current_user.faculty = data.faculty
+    if data.age:
+        current_user.age = data.age
+    if data.gender:
+        try:
+            current_user.gender = GenderEnum(data.gender)
+        except ValueError:
+            pass  # เพิกเฉยถ้าค่าไม่ถูก
+
+    if current_user.role_id == 1:
+        prefix = current_user.student_id_prefix or "ทั่วไป"
+        current_user.display_name = f"นิสิต มพ. {prefix}"
+    elif current_user.role_id == 2:
+        current_user.display_name = "บุคลากร มพ."
+    else:
+        current_user.display_name = "บุคคลทั่วไป"
+
+    current_user.onboarding_complete = True
+    current_user.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(current_user)
+    
+    return StandardResponse(
+        success=True,
+        message="อัพเดตข้อมูลสำเร็จ 🎉",
+        data={
+            "display_name": current_user.display_name,
+            "onboarding_complete": True
         }
     )

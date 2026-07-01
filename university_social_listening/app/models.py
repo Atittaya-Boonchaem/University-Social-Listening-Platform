@@ -68,15 +68,18 @@ class User(Base):
     
     # Student fields
     student_id = Column(String(10), unique=True)
+    student_id_prefix = Column(String(4))          # ปีเข้า เช่น "66", "65"
     faculty = Column(String(100))
-    education_level = Column(String(50))
+    education_level = Column(String(100))
     
     # Staff fields
     staff_account = Column(String(100), unique=True)
     
     # Common fields
+    display_name = Column(String(100))              # ชื่อนามแฝง เช่น "นิสิต มพ. 66"
+    onboarding_complete = Column(Boolean, default=False)  # กรอก onboarding แล้วหรือยัง
     age = Column(Integer)
-    gender = Column(SQLEnum(GenderEnum))
+    gender = Column(String(50))
     relationship_to_university = Column(String(100))
     is_toxic_flagged = Column(Boolean, default=False)
     
@@ -89,6 +92,7 @@ class User(Base):
     upvotes = relationship("Upvote", back_populates="user")
     status_updates = relationship("StatusUpdate", back_populates="updated_by_user")
     clusters = relationship("UserCluster", back_populates="user")
+    comments = relationship("Comment", back_populates="author")
 
 class ProblemCategory(Base):
     """หมวดหมู่ปัญหา"""
@@ -147,6 +151,9 @@ class Problem(Base):
     is_anonymous = Column(Boolean, default=False)
     is_staff_only = Column(Boolean, default=False)
     
+    # Media
+    image_url = Column(String(500))                # URL รูปภาพ (optional)
+    
     # Metadata
     upvote_count = Column(Integer, default=0)
     is_ai_generated_spam = Column(Boolean, default=False)
@@ -163,6 +170,7 @@ class Problem(Base):
     upvotes = relationship("Upvote", back_populates="problem")
     status_updates = relationship("StatusUpdate", back_populates="problem")
     nlp_analysis = relationship("NLPAnalysis", back_populates="problem", uselist=False)
+    comments = relationship("Comment", back_populates="problem", cascade="all, delete-orphan")
 
 class Image(Base):
     """ภาพถ่าย (⚠️ ห้ามเก็บ Email/Phone)"""
@@ -280,3 +288,19 @@ class AnalyticsCache(Base):
     __table_args__ = (
         UniqueConstraint('metric_name', 'calculation_date', name='unique_metric_date'),
     )
+
+class Comment(Base):
+    """ความคิดเห็น / การตอบกลับ (รวม Admin Reply)"""
+    __tablename__ = "comments"
+
+    id = Column(Integer, primary_key=True)
+    problem_id = Column(Integer, ForeignKey("problems.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    content = Column(Text, nullable=False)
+    is_admin_reply = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    problem = relationship("Problem", back_populates="comments")
+    author = relationship("User", back_populates="comments")

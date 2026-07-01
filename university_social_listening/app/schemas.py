@@ -40,6 +40,7 @@ class StaffUserCreate(UserBase):
     email: EmailStr
     password: str
     staff_account: str
+    faculty: str
     
     @validator('password')
     def validate_password(cls, v):
@@ -61,6 +62,7 @@ class UserLogin(BaseModel):
     email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
     password: str
+    expected_role_id: Optional[int] = None
 
 class UserResponse(BaseModel):
     """User Response"""
@@ -68,16 +70,61 @@ class UserResponse(BaseModel):
     role_id: int
     email: Optional[str]
     phone_number: Optional[str]
+    display_name: Optional[str] = None
+    onboarding_complete: bool = False
     is_verified: bool
     is_active: bool
     created_at: datetime
+    faculty: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    education_level: Optional[str] = None
+    relationship_to_university: Optional[str] = None
     
+    class Config:
+        from_attributes = True
+
+class OnboardingUpdate(BaseModel):
+    """อัพเดตข้อมูลผู้ใช้หลัง Onboarding"""
+    student_id_prefix: Optional[str] = Field(None, max_length=4)
+    faculty: Optional[str] = None
+    age: Optional[int] = Field(None, ge=1, le=100)
+    gender: Optional[str] = None  # "M", "F", "Other"
+
+# ========================================
+# Comment Schemas
+# ========================================
+class CommentCreate(BaseModel):
+    """สร้างความคิดเห็น / Admin Reply"""
+    content: str = Field(..., min_length=1, max_length=2000)
+
+class CommentResponse(BaseModel):
+    """Comment Response"""
+    id: int
+    problem_id: int
+    user_id: int
+    content: str
+    is_admin_reply: bool
+    created_at: datetime
+
     class Config:
         from_attributes = True
 
 # ========================================
 # Problem Schemas
 # ========================================
+class ProblemCategoryCreate(BaseModel):
+    """Problem Category Create"""
+    name: str
+    description: Optional[str] = None
+    color_code: Optional[str] = None
+
+class ProblemCategoryUpdate(BaseModel):
+    """Problem Category Update"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    color_code: Optional[str] = None
+
 class ProblemCategoryResponse(BaseModel):
     """Problem Category Response"""
     id: int
@@ -87,6 +134,20 @@ class ProblemCategoryResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+class BuildingCreate(BaseModel):
+    """Building Create"""
+    name: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    description: Optional[str] = None
+
+class BuildingUpdate(BaseModel):
+    """Building Update"""
+    name: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    description: Optional[str] = None
 
 class BuildingResponse(BaseModel):
     """Building Response"""
@@ -107,6 +168,7 @@ class ProblemCreate(BaseModel):
     description: str = Field(..., min_length=10)
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    image_url: Optional[str] = Field(None, max_length=500)  # URL รูปภาพ
     
     incident_date: Optional[datetime] = None
     incident_time_range: Optional[str] = None
@@ -137,6 +199,7 @@ class ProblemAuthorResponse(BaseModel):
     """ข้อมูลผู้โพสต์ (ใช้แสดงใน Feed)"""
     id: int
     role_id: int
+    display_name: Optional[str] = None
     email: Optional[str] = None
     phone_number: Optional[str] = None
     student_id: Optional[str] = None
@@ -159,6 +222,7 @@ class ProblemResponse(BaseModel):
     upvote_count: int
     latitude: Optional[float]
     longitude: Optional[float]
+    image_url: Optional[str] = None
     incident_date: Optional[datetime]
     created_at: datetime
     updated_at: datetime
@@ -170,6 +234,14 @@ class ProblemResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+# ========================================
+# Super Admin Schemas
+# ========================================
+class BulkStatusUpdate(BaseModel):
+    """อัพเดตสถานะหลายโพสต์พร้อมกัน"""
+    problem_ids: List[int] = Field(..., min_items=1)
+    new_status: str = Field(..., pattern='^(OPEN|IN_PROGRESS|RESOLVED|CLOSED)$')
 
 class ProblemListResponse(BaseModel):
     """Problem List Response"""

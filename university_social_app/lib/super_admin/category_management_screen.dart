@@ -1,6 +1,7 @@
-
-
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CategoryManagementScreen extends StatefulWidget {
   const CategoryManagementScreen({super.key});
@@ -11,189 +12,349 @@ class CategoryManagementScreen extends StatefulWidget {
 
 class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
   final Color upPurple = const Color(0xFF2B164D);
-  
-  // 📋 ข้อมูลจำลองหมวดหมู่พร้อมสถิติจำลอง
-  List<Map<String, dynamic>> _categories = [
-    {'name': 'อาคารสถานที่', 'icon': Icons.domain, 'resolved': 8, 'pending': 4, 'total': 12, 'color': const Color(0xFF10B981)}, // เขียว
-    {'name': 'ความสะอาด', 'icon': Icons.cleaning_services, 'resolved': 6, 'pending': 2, 'total': 8, 'color': const Color(0xFF3B82F6)}, // ฟ้า
-    {'name': 'ระบบ IT', 'icon': Icons.category, 'resolved': 5, 'pending': 2, 'total': 7, 'color': const Color(0xFFF59E0B)}, // ส้ม
-    {'name': 'รถเมล์ มพ.', 'icon': Icons.directions_bus, 'resolved': 10, 'pending': 2, 'total': 12, 'color': const Color(0xFFEF4444)}, // แดง
-  ];
+  List<dynamic> _categories = [];
+  bool _isLoading = true;
 
-  final TextEditingController _categoryController = TextEditingController();
+  static const String _baseUrl = 'http://127.0.0.1:8000/api/v1/problems/categories';
 
-  void _showAddCategoryDialog() {
-    _categoryController.clear();
-    showDialog(
+  @override
+  void initState() {
+    super.initState();
+    _fetchCategories();
+  }
+
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('access_token');
+  }
+
+  Future<Map<String, String>> _authHeaders() async {
+    final token = await _getToken();
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<void> _fetchCategories() async {
+    setState(() => _isLoading = true);
+    try {
+      final response = await http.get(Uri.parse(_baseUrl));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        setState(() {
+          if (decoded is List) {
+            _categories = decoded;
+          } else if (decoded is Map) {
+            _categories = (decoded['data']?['items'] ?? decoded['items'] ?? decoded['data'] ?? []) as List<dynamic>;
+          } else {
+            _categories = [];
+          }
+          _isLoading = false;
+        });
+      } else {
+        throw Exception('Failed to load categories');
+      }
+    } catch (e) {
+      debugPrint('🚨 Fetch categories error: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // ── Show Add/Edit Dialog ───────────────────────────────────────────────────
+  Future<void> _showCategoryDialog({dynamic category}) async {
+    final isEdit = category != null;
+    final nameController = TextEditingController(text: isEdit ? category['name'] : '');
+    final descController = TextEditingController(text: isEdit ? (category['description'] ?? '') : '');
+    final colorController = TextEditingController(text: isEdit ? (category['color_code'] ?? '') : '');
+
+    await showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('เพิ่มหมวดหมู่ปัญหา', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          content: TextField(
-            controller: _categoryController,
-            decoration: InputDecoration(
-              hintText: 'เช่น โรงอาหาร, หอพัก...',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (_categoryController.text.trim().isNotEmpty) {
-                  setState(() {
-                    _categories.add({
-                      'name': _categoryController.text.trim(),
-                      'icon': Icons.category, 
-                      'resolved': 0, 'pending': 0, 'total': 0,
-                      'color': upPurple
-                    });
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('เพิ่มหมวดหมู่เรียบร้อยแล้ว'), backgroundColor: Colors.green),
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: upPurple, foregroundColor: Colors.white),
-              child: const Text('บันทึก'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _deleteCategory(int index) {
-    setState(() {
-      _categories.removeAt(index);
-    });
-  }
-
-  // 🌟 ฟังก์ชันช่วยสร้างการ์ดหมวดหมู่แบบใหม่
-  Widget _buildCategoryCard(int index) {
-    final category = _categories[index];
-    final color = category['color'] as Color;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade100),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          )
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 👤 Header ของการ์ด (ไอคอนและชื่อ)
-          Row(
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(isEdit ? 'Edit Category' : 'Add New Category', style: const TextStyle(fontWeight: FontWeight.bold)),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: color.withOpacity(0.1), 
-                child: Icon(category['icon'], color: color, size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(category['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B))),
-                    const SizedBox(height: 4),
-                    Text('มีเรื่องร้องเรียน ${category['total']} เรื่อง', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  ],
+              const Text('Category Name *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  hintText: 'e.g., Facility Issue',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 ),
               ),
-              // 🏷️ ไอคอน UP ที่มุมขวาบน
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: upPurple.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(20),
+              const SizedBox(height: 16),
+              const Text('Description', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: descController,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  hintText: 'Description of the category...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 ),
-                child: Text('UP Voice', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: upPurple)),
+              ),
+              const SizedBox(height: 16),
+              const Text('Color Code (Hex)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: colorController,
+                decoration: InputDecoration(
+                  hintText: 'e.g., #FF5733',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
-          const SizedBox(height: 12),
-          
-          // 🔘 ส่วนปุ่ม Action
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    // TODO: ปุ่มแก้ไขหมวดหมู่
-                  },
-                  icon: const Icon(Icons.history, size: 16),
-                  label: const Text('ดูประวัติ'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.blueGrey,
-                    side: BorderSide(color: Colors.grey.shade300),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _deleteCategory(index),
-                  icon: const Icon(Icons.delete_outline, size: 16),
-                  label: const Text('ลบหมวดหมู่'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFEF2F2), 
-                    foregroundColor: const Color(0xFFEF4444), 
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-            ],
-          )
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              Navigator.pop(ctx);
+              if (isEdit) {
+                await _updateCategory(category['id'], name, descController.text.trim(), colorController.text.trim());
+              } else {
+                await _createCategory(name, descController.text.trim(), colorController.text.trim());
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: upPurple, foregroundColor: Colors.white),
+            child: Text(isEdit ? 'Save Changes' : 'Add Category'),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _createCategory(String name, String desc, String color) async {
+    try {
+      final response = await http.post(
+        Uri.parse(_baseUrl),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'name': name,
+          'description': desc.isNotEmpty ? desc : null,
+          'color_code': color.isNotEmpty ? color : null,
+        }),
+      );
+      if (mounted) {
+        if (response.statusCode == 201) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Category created'), backgroundColor: Colors.green));
+          _fetchCategories();
+        } else {
+          final err = jsonDecode(response.body);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ ${err['message'] ?? 'Failed to create'}'), backgroundColor: Colors.red));
+        }
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> _updateCategory(int id, String name, String desc, String color) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$_baseUrl/$id'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'name': name,
+          'description': desc.isNotEmpty ? desc : null,
+          'color_code': color.isNotEmpty ? color : null,
+        }),
+      );
+      if (mounted) {
+        if (response.statusCode == 200) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Category updated'), backgroundColor: Colors.green));
+          _fetchCategories();
+        } else {
+          final err = jsonDecode(response.body);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ ${err['message'] ?? 'Failed to update'}'), backgroundColor: Colors.red));
+        }
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> _deleteCategory(int id, String name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Category', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+        content: Text('Are you sure you want to delete the category "$name"? This action cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/$id'),
+        headers: await _authHeaders(),
+      );
+      if (mounted) {
+        if (response.statusCode == 200) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Category deleted'), backgroundColor: Colors.green));
+          _fetchCategories();
+        } else {
+          final err = jsonDecode(response.body);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ ${err['message'] ?? 'Failed to delete'}'), backgroundColor: Colors.red));
+        }
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('จัดการหมวดหมู่ปัญหา', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 18)),
         backgroundColor: Colors.white,
-        elevation: 1,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black87),
+        title: const Text('Categories Management', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
       ),
-      body: _categories.isEmpty
-          ? const Center(child: Text('ไม่มีหมวดหมู่ในระบบ', style: TextStyle(color: Colors.grey)))
-          : ListView.builder(
-              padding: const EdgeInsets.all(20),
-              itemCount: _categories.length,
-              itemBuilder: (context, index) {
-                return _buildCategoryCard(index); // 🌟 ใช้การ์ดแบบใหม่
-              },
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Actions
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            color: Colors.white,
+            child: Row(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${_categories.length} Categories', style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+                  ],
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _fetchCategories,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade200, foregroundColor: Colors.black87),
+                ),
+                const SizedBox(width: 16),
+                ElevatedButton.icon(
+                  onPressed: () => _showCategoryDialog(),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add New'),
+                  style: ElevatedButton.styleFrom(backgroundColor: upPurple, foregroundColor: Colors.white),
+                ),
+              ],
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddCategoryDialog,
-        backgroundColor: upPurple,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('เพิ่มหมวดหมู่', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+          
+          // Data Table
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator(color: upPurple))
+                : _categories.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.category_outlined, size: 60, color: Colors.grey.shade400),
+                            const SizedBox(height: 12),
+                            const Text('No categories found', style: TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(24),
+                        child: Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade200),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)],
+                          ),
+                          child: Theme(
+                            data: Theme.of(context).copyWith(
+                              dataTableTheme: DataTableThemeData(headingRowColor: MaterialStateProperty.all(Colors.grey.shade50)),
+                            ),
+                            child: DataTable(
+                              columnSpacing: 20,
+                              columns: const [
+                                DataColumn(label: Text('ID', style: TextStyle(fontWeight: FontWeight.bold))),
+                                DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                                DataColumn(label: Text('Description', style: TextStyle(fontWeight: FontWeight.bold))),
+                                DataColumn(label: Text('Color', style: TextStyle(fontWeight: FontWeight.bold))),
+                                DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
+                              ],
+                              rows: _categories.map((cat) {
+                                final colorHex = cat['color_code'] ?? '#CCCCCC';
+                                Color? badgeColor;
+                                try {
+                                  badgeColor = Color(int.parse(colorHex.replaceAll('#', '0xFF')));
+                                } catch (_) {}
+                                
+                                return DataRow(
+                                  cells: [
+                                    DataCell(Text('#${cat['id']}', style: TextStyle(color: Colors.grey.shade500, fontSize: 12))),
+                                    DataCell(Text(cat['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w500))),
+                                    DataCell(Text(cat['description'] ?? '—', style: const TextStyle(fontSize: 13))),
+                                    DataCell(
+                                      Row(
+                                        children: [
+                                          Container(
+                                            width: 16, height: 16,
+                                            decoration: BoxDecoration(color: badgeColor ?? Colors.grey, shape: BoxShape.circle),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(colorHex, style: const TextStyle(fontSize: 12)),
+                                        ],
+                                      ),
+                                    ),
+                                    DataCell(
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.edit, color: Colors.blue),
+                                            tooltip: 'Edit Category',
+                                            onPressed: () => _showCategoryDialog(category: cat),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete, color: Colors.red),
+                                            tooltip: 'Delete Category',
+                                            onPressed: () => _deleteCategory(cat['id'], cat['name']),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ),
+          ),
+        ],
       ),
     );
   }

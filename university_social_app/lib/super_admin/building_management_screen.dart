@@ -1,5 +1,7 @@
-
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class BuildingManagementScreen extends StatefulWidget {
   const BuildingManagementScreen({super.key});
@@ -10,225 +12,374 @@ class BuildingManagementScreen extends StatefulWidget {
 
 class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   final Color upPurple = const Color(0xFF2B164D);
-  
-  // 📋 ข้อมูลจำลองรายชื่ออาคาร (เพิ่มสี ไอคอน และปัญหาล่าสุดให้ดูสมจริงขึ้น)
-  List<Map<String, dynamic>> _buildings = [
-    {
-      'name': 'อาคารเทคโนโลยีสารสนเทศ (IT)', 
-      'total_reports': 45, 
-      'latest_issue': 'แอร์ห้อง 204 ไม่เย็น มีน้ำหยด',
-      'color': const Color(0xFF3B82F6), // สีฟ้า
-      'icon': Icons.computer
-    },
-    {
-      'name': 'อาคารเรียนรวม (CE)', 
-      'total_reports': 12, 
-      'latest_issue': 'โปรเจคเตอร์ห้อง CE1409 เสีย',
-      'color': const Color(0xFF10B981), // สีเขียว
-      'icon': Icons.menu_book
-    },
-    {
-      'name': 'หอพัก UP Dorm', 
-      'total_reports': 28, 
-      'latest_issue': 'น้ำประปาตึก 4 ไหลอ่อนมาก',
-      'color': const Color(0xFFF59E0B), // สีส้ม
-      'icon': Icons.hotel
-    },
-    {
-      'name': 'โรงอาหารกลาง', 
-      'total_reports': 5, 
-      'latest_issue': 'โต๊ะไม่เพียงพอในช่วงเที่ยง',
-      'color': const Color(0xFFEF4444), // สีแดง
-      'icon': Icons.restaurant
-    },
-  ];
+  List<dynamic> _buildings = [];
+  bool _isLoading = true;
 
-  final TextEditingController _buildingController = TextEditingController();
+  static const String _baseUrl = 'http://127.0.0.1:8000/api/v1/problems/buildings';
 
-  // ➕ ฟังก์ชันเปิดป๊อปอัปเพิ่มอาคาร
-  void _showAddBuildingDialog() {
-    _buildingController.clear();
-    showDialog(
+  @override
+  void initState() {
+    super.initState();
+    _fetchBuildings();
+  }
+
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('access_token');
+  }
+
+  Future<Map<String, String>> _authHeaders() async {
+    final token = await _getToken();
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<void> _fetchBuildings() async {
+    setState(() => _isLoading = true);
+    try {
+      final response = await http.get(Uri.parse(_baseUrl));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        setState(() {
+          if (decoded is List) {
+            _buildings = decoded;
+          } else if (decoded is Map) {
+            _buildings = (decoded['data']?['items'] ?? decoded['items'] ?? decoded['data'] ?? []) as List<dynamic>;
+          } else {
+            _buildings = [];
+          }
+          _isLoading = false;
+        });
+      } else {
+        throw Exception('Failed to load buildings');
+      }
+    } catch (e) {
+      debugPrint('🚨 Fetch buildings error: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // ── Show Add/Edit Dialog ───────────────────────────────────────────────────
+  Future<void> _showBuildingDialog({dynamic building}) async {
+    final isEdit = building != null;
+    final nameController = TextEditingController(text: isEdit ? building['name'] : '');
+    final descController = TextEditingController(text: isEdit ? (building['description'] ?? '') : '');
+    final latController = TextEditingController(text: isEdit ? (building['latitude']?.toString() ?? '') : '');
+    final lngController = TextEditingController(text: isEdit ? (building['longitude']?.toString() ?? '') : '');
+
+    await showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('เพิ่มอาคาร/สถานที่', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          content: TextField(
-            controller: _buildingController,
-            decoration: InputDecoration(
-              hintText: 'เช่น อาคาร PKY, สนามกีฬา...',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(isEdit ? 'Edit Building' : 'Add New Building', style: const TextStyle(fontWeight: FontWeight.bold)),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Building Name *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  hintText: 'e.g., Engineering Building 1',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('Description', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: descController,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  hintText: 'Additional details...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Latitude', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: latController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            hintText: 'e.g., 19.0289',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Longitude', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: lngController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            hintText: 'e.g., 99.8976',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (_buildingController.text.trim().isNotEmpty) {
-                  setState(() {
-                    // แอดอาคารใหม่แบบ Default Style
-                    _buildings.add({
-                      'name': _buildingController.text.trim(),
-                      'total_reports': 0,
-                      'latest_issue': 'ยังไม่มีการแจ้งปัญหา',
-                      'color': upPurple,
-                      'icon': Icons.apartment
-                    });
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('เพิ่มอาคารเรียบร้อยแล้ว'), backgroundColor: Colors.green),
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: upPurple, foregroundColor: Colors.white),
-              child: const Text('บันทึก'),
-            ),
-          ],
-        );
-      },
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              
+              final latVal = double.tryParse(latController.text.trim());
+              final lngVal = double.tryParse(lngController.text.trim());
+
+              Navigator.pop(ctx);
+              if (isEdit) {
+                await _updateBuilding(building['id'], name, descController.text.trim(), latVal, lngVal);
+              } else {
+                await _createBuilding(name, descController.text.trim(), latVal, lngVal);
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: upPurple, foregroundColor: Colors.white),
+            child: Text(isEdit ? 'Save Changes' : 'Add Building'),
+          ),
+        ],
+      ),
     );
   }
 
-  // 🗑️ ฟังก์ชันลบอาคาร
-  void _deleteBuilding(int index) {
-    setState(() {
-      _buildings.removeAt(index);
-    });
+  Future<void> _createBuilding(String name, String desc, double? lat, double? lng) async {
+    try {
+      final response = await http.post(
+        Uri.parse(_baseUrl),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'name': name,
+          'description': desc.isNotEmpty ? desc : null,
+          'latitude': lat,
+          'longitude': lng,
+        }),
+      );
+      if (mounted) {
+        if (response.statusCode == 201) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Building created'), backgroundColor: Colors.green));
+          _fetchBuildings();
+        } else {
+          final err = jsonDecode(response.body);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ ${err['message'] ?? 'Failed to create'}'), backgroundColor: Colors.red));
+        }
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> _updateBuilding(int id, String name, String desc, double? lat, double? lng) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$_baseUrl/$id'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'name': name,
+          'description': desc.isNotEmpty ? desc : null,
+          'latitude': lat,
+          'longitude': lng,
+        }),
+      );
+      if (mounted) {
+        if (response.statusCode == 200) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Building updated'), backgroundColor: Colors.green));
+          _fetchBuildings();
+        } else {
+          final err = jsonDecode(response.body);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ ${err['message'] ?? 'Failed to update'}'), backgroundColor: Colors.red));
+        }
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> _deleteBuilding(int id, String name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Building', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+        content: Text('Are you sure you want to delete the building "$name"? This action cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/$id'),
+        headers: await _authHeaders(),
+      );
+      if (mounted) {
+        if (response.statusCode == 200) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Building deleted'), backgroundColor: Colors.green));
+          _fetchBuildings();
+        } else {
+          final err = jsonDecode(response.body);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ ${err['message'] ?? 'Failed to delete'}'), backgroundColor: Colors.red));
+        }
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('จัดการอาคารสถานที่', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 18)),
         backgroundColor: Colors.white,
-        elevation: 1,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black87),
+        title: const Text('Building Management', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
       ),
-      body: _buildings.isEmpty
-          ? const Center(child: Text('ไม่มีข้อมูลอาคารในระบบ', style: TextStyle(color: Colors.grey)))
-          : ListView.builder(
-              padding: const EdgeInsets.all(20),
-              itemCount: _buildings.length,
-              itemBuilder: (context, index) {
-                final building = _buildings[index];
-                final color = building['color'] as Color;
-                
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.grey.shade100),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.02),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      )
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 📌 Header ของการ์ด (รูปไอคอน + ชื่ออาคาร)
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 24,
-                            backgroundColor: color.withOpacity(0.1),
-                            child: Icon(building['icon'], color: color, size: 24),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(building['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B))),
-                                const SizedBox(height: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
-                                    borderRadius: BorderRadius.circular(12)
-                                  ),
-                                  child: Text('สถิติแจ้งปัญหา: ${building['total_reports']} ครั้ง', style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.bold)),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                      const SizedBox(height: 12),
-                      
-                      // 📋 แสดงรายละเอียดปัญหาล่าสุด
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.info_outline, size: 16, color: Colors.grey),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text('ปัญหาล่าสุด: ${building['latest_issue']}', 
-                              style: const TextStyle(fontSize: 13, color: Colors.grey), 
-                              maxLines: 1, 
-                              overflow: TextOverflow.ellipsis
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      // 🔘 ส่วนปุ่ม Action สำหรับแอดมิน
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {},
-                              icon: const Icon(Icons.edit, size: 16),
-                              label: const Text('แก้ไข'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.blueGrey,
-                                side: BorderSide(color: Colors.grey.shade300),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () => _deleteBuilding(index),
-                              icon: const Icon(Icons.delete_outline, size: 16),
-                              label: const Text('ลบอาคาร'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFFEF2F2), 
-                                foregroundColor: const Color(0xFFEF4444), 
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    ],
-                  ),
-                );
-              },
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Actions
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            color: Colors.white,
+            child: Row(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${_buildings.length} Buildings', style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+                  ],
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _fetchBuildings,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade200, foregroundColor: Colors.black87),
+                ),
+                const SizedBox(width: 16),
+                ElevatedButton.icon(
+                  onPressed: () => _showBuildingDialog(),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add New'),
+                  style: ElevatedButton.styleFrom(backgroundColor: upPurple, foregroundColor: Colors.white),
+                ),
+              ],
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddBuildingDialog,
-        backgroundColor: upPurple,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('เพิ่มอาคาร', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+          
+          // Data Table
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator(color: upPurple))
+                : _buildings.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.apartment_outlined, size: 60, color: Colors.grey.shade400),
+                            const SizedBox(height: 12),
+                            const Text('No buildings found', style: TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(24),
+                        child: Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade200),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)],
+                          ),
+                          child: Theme(
+                            data: Theme.of(context).copyWith(
+                              dataTableTheme: DataTableThemeData(headingRowColor: MaterialStateProperty.all(Colors.grey.shade50)),
+                            ),
+                            child: DataTable(
+                              columnSpacing: 20,
+                              columns: const [
+                                DataColumn(label: Text('ID', style: TextStyle(fontWeight: FontWeight.bold))),
+                                DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                                DataColumn(label: Text('Description', style: TextStyle(fontWeight: FontWeight.bold))),
+                                DataColumn(label: Text('Location (Lat, Lng)', style: TextStyle(fontWeight: FontWeight.bold))),
+                                DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
+                              ],
+                              rows: _buildings.map((bld) {
+                                final lat = bld['latitude']?.toString() ?? '—';
+                                final lng = bld['longitude']?.toString() ?? '—';
+                                final location = (lat == '—' && lng == '—') ? '—' : '$lat, $lng';
+                                
+                                return DataRow(
+                                  cells: [
+                                    DataCell(Text('#${bld['id']}', style: TextStyle(color: Colors.grey.shade500, fontSize: 12))),
+                                    DataCell(Text(bld['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w500))),
+                                    DataCell(Text(bld['description'] ?? '—', style: const TextStyle(fontSize: 13))),
+                                    DataCell(Text(location, style: const TextStyle(fontSize: 13, color: Colors.blueGrey))),
+                                    DataCell(
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.edit, color: Colors.blue),
+                                            tooltip: 'Edit Building',
+                                            onPressed: () => _showBuildingDialog(building: bld),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete, color: Colors.red),
+                                            tooltip: 'Delete Building',
+                                            onPressed: () => _deleteBuilding(bld['id'], bld['name']),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ),
+          ),
+        ],
       ),
     );
   }

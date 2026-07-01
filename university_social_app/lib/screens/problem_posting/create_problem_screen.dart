@@ -1,9 +1,13 @@
-
-
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart';
+import '../../services/problem_service.dart';
+import '../auth/login_screen.dart';
 
 class CreateProblemScreen extends StatefulWidget {
   final int roleId; 
@@ -23,6 +27,12 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
   String? _selectedBuilding; 
   String _selectedTime = '06:00 - 08:00 น.';
   bool _isStaffOnly = false; 
+  int? _roleId;
+
+  Uint8List? _imageBytes;
+  String? _imageName;
+  LatLng? _selectedLocation;
+  final ImagePicker _picker = ImagePicker();
 
   List<dynamic> _categories = [];
   List<dynamic> _buildings = [];
@@ -30,12 +40,21 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
   @override
   void initState() {
     super.initState();
+    _roleId = widget.roleId;
     _fetchDropdownData();
   }
 
   Future<void> _fetchDropdownData() async {
     try {
       setState(() => _isLoading = true);
+      
+      final prefs = await SharedPreferences.getInstance();
+      final savedRoleId = prefs.getInt('role_id');
+      if (savedRoleId != null && mounted) {
+        setState(() {
+          _roleId = savedRoleId;
+        });
+      }
       final catResponse = await http.get(Uri.parse('http://127.0.0.1:8000/api/v1/problems/categories'));
       final bldResponse = await http.get(Uri.parse('http://127.0.0.1:8000/api/v1/problems/buildings'));
 
@@ -66,7 +85,7 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
         });
       }
     } catch (e) {
-      print("🚨 ดึงข้อมูลดรอปดาวน์ไม่ได้: $e");
+      debugPrint("🚨 ดึงข้อมูลดรอปดาวน์ไม่ได้: $e");
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -74,10 +93,27 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
     }
   }
 
+  Future<void> _pickImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _imageBytes = bytes;
+          _imageName = image.name;
+        });
+      }
+    } catch (e) {
+      debugPrint("🚨 เลือกรูปภาพไม่ได้: $e");
+    }
+  }
+
   Future<void> _submitProblem() async {
     // --- Sync validation (safe to use context here — no async gap yet) ---
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
     if (_descController.text.length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      scaffoldMessenger.showSnackBar(
         const SnackBar(
           content: Text('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'),
           backgroundColor: Colors.orange,
@@ -88,7 +124,7 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
     }
 
     if (_selectedCategory == null || _selectedBuilding == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      scaffoldMessenger.showSnackBar(
         const SnackBar(
           content: Text('กำลังโหลดข้อมูลหมวดหมู่หรือสถานที่ กรุณารอสักครู่...'),
           backgroundColor: Colors.orange,
@@ -98,57 +134,34 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
       return;
     }
 
-    // --- Capture ScaffoldMessenger BEFORE any async gap ---
-    // After the first `await`, `context` may no longer be safe to use.
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-
-    // Start loading — still synchronous at this point, so setState is safe.
     setState(() => _isLoading = true);
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token');
-
-      // 🔍 DEBUG: ตรวจสอบ token (ลบออกหลัง debug เสร็จ)
-      print('🔑 Token in SharedPrefs: ${token != null ? "FOUND (${token.length} chars)" : "NULL - not logged in!"}');
-
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/api/v1/problems/create'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          "category_id": int.parse(_selectedCategory!),
-          "building_id": int.parse(_selectedBuilding!),
-          "title": "แจ้งปัญหาจากแอปพลิเคชัน",
-          "description": _descController.text,
-          "incident_date": DateTime.now().toIso8601String(),
-          "incident_time_range": _selectedTime,
-          "is_anonymous": false,
-          "is_staff_only": widget.roleId == 1 ? _isStaffOnly : false,
-        }),
+      final result = await ProblemService.createProblem(
+        categoryId: int.parse(_selectedCategory!),
+        buildingId: int.parse(_selectedBuilding!),
+        description: _descController.text,
+        incidentTimeRange: _selectedTime,
+        isStaffOnly: _roleId == 2 ? _isStaffOnly : false,
+        imageBytes: _imageBytes,
+        imageName: _imageName,
+        latitude: _selectedLocation?.latitude,
+        longitude: _selectedLocation?.longitude,
       );
 
-      // Guard: widget may have been unmounted while awaiting the HTTP response.
       if (!mounted) return;
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        // ✅ สำเร็จ: ล้างฟอร์มและ reset state อยู่ใน tab เดิม
-        // ไม่ใช้ navigator.pop() เพราะหน้านี้เป็น tab ไม่ใช่ route แยก
+      if (result['success'] == true) {
         _descController.clear();
         setState(() {
           _isLoading = false;
           _isStaffOnly = false;
           _selectedTime = '06:00 - 08:00 น.';
-          // reset dropdown กลับไปค่าแรก (ถ้ามีข้อมูล)
-          if (_categories.isNotEmpty) {
-            _selectedCategory = _categories[0]['id'].toString();
-          }
-          if (_buildings.isNotEmpty) {
-            _selectedBuilding = _buildings[0]['id'].toString();
-          }
+          _imageBytes = null;
+          _imageName = null;
+          _selectedLocation = null;
+          if (_categories.isNotEmpty) _selectedCategory = _categories[0]['id'].toString();
+          if (_buildings.isNotEmpty) _selectedBuilding = _buildings[0]['id'].toString();
         });
         scaffoldMessenger.showSnackBar(
           const SnackBar(
@@ -158,11 +171,9 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
           ),
         );
       } else {
-        // ❌ ล้มเหลว: reset loading ให้ผู้ใช้ลองใหม่
-        final data = jsonDecode(utf8.decode(response.bodyBytes));
         scaffoldMessenger.showSnackBar(
           SnackBar(
-            content: Text(data['message'] ?? 'เกิดข้อผิดพลาดในการส่งข้อมูล'),
+            content: Text(result['message'] ?? 'เกิดข้อผิดพลาดในการส่งข้อมูล'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
           ),
@@ -170,8 +181,27 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      // Guard again: the widget could have unmounted during an error throw.
       if (!mounted) return;
+      if (e.toString().contains('unauthorized')) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('หมดอายุการเชื่อมต่อ กรุณาเข้าสู่ระบบใหม่เพื่อทำรายการ'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (route) => false,
+          );
+        }
+        return;
+      }
+
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้: $e'),
@@ -181,12 +211,22 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
       );
       setState(() => _isLoading = false);
     }
-    // ✅ ไม่มี finally block — ป้องกันการ setState บน widget ที่ถูก dispose แล้ว
-    // has disposed the widget, which is exactly what caused the original crash.
   }
 
   @override
   Widget build(BuildContext context) {
+    int currentRoleId = _roleId ?? widget.roleId;
+    
+    String roleText = 'บุคคลทั่วไป';
+    IconData roleIcon = Icons.person;
+    if (currentRoleId == 1) {
+      roleText = 'นิสิต มพ.';
+      roleIcon = Icons.school;
+    } else if (currentRoleId == 2) {
+      roleText = 'บุคลากร มพ.';
+      roleIcon = Icons.badge;
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       appBar: AppBar(
@@ -240,10 +280,10 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(widget.roleId == 1 ? Icons.badge : Icons.school, size: 16, color: upPurple),
+                                  Icon(roleIcon, size: 16, color: upPurple),
                                   const SizedBox(width: 6),
                                   Text(
-                                    widget.roleId == 1 ? 'บุคลากร มพ.' : 'นิสิต มพ.', 
+                                    roleText, 
                                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: upPurple)
                                   ),
                                 ],
@@ -380,7 +420,113 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                         ),
                         const SizedBox(height: 18),
                         
-                        if (widget.roleId == 1) ...[
+                        // 📸 Image Picker UI
+                        const Text('รูปภาพประกอบ (ไม่บังคับ)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: _isLoading ? null : _pickImage,
+                          child: Container(
+                            width: double.infinity,
+                            height: _imageBytes == null ? 120 : null,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8F9FA),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE2E8F0), style: BorderStyle.solid),
+                            ),
+                            child: _imageBytes == null
+                                ? Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.cloud_upload_outlined, size: 40, color: Colors.grey.shade400),
+                                      const SizedBox(height: 8),
+                                      Text('คลิกเพื่ออัพโหลดรูปภาพ', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                                    ],
+                                  )
+                                : Stack(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.memory(_imageBytes!, width: double.infinity, fit: BoxFit.cover),
+                                      ),
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: GestureDetector(
+                                          onTap: () => setState(() => _imageBytes = null),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(4),
+                                            decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                                            child: const Icon(Icons.close, color: Colors.white, size: 18),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+
+                        // 🗺️ Map Picker UI
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('พิกัดสถานที่ (ไม่บังคับ)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            if (_selectedLocation != null)
+                              TextButton(
+                                onPressed: () => setState(() => _selectedLocation = null),
+                                child: const Text('ล้างพิกัด', style: TextStyle(fontSize: 12, color: Colors.red)),
+                              )
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          height: 200,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: FlutterMap(
+                              options: MapOptions(
+                                initialCenter: const LatLng(19.0289, 99.8973), // มหาวิทยาลัยพะเยา
+                                initialZoom: 14,
+                                onTap: (tapPosition, point) {
+                                  setState(() {
+                                    _selectedLocation = point;
+                                  });
+                                },
+                              ),
+                              children: [
+                                TileLayer(
+                                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                  userAgentPackageName: 'com.university_social_app',
+                                ),
+                                if (_selectedLocation != null)
+                                  MarkerLayer(
+                                    markers: [
+                                      Marker(
+                                        point: _selectedLocation!,
+                                        width: 40,
+                                        height: 40,
+                                        child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _selectedLocation != null 
+                            ? 'พิกัดที่เลือก: ${_selectedLocation!.latitude.toStringAsFixed(4)}, ${_selectedLocation!.longitude.toStringAsFixed(4)}'
+                            : '📍 แตะบนแผนที่เพื่อระบุตำแหน่ง',
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                        ),
+                        const SizedBox(height: 18),
+                        
+                        if (currentRoleId == 2) ...[
                           const Text('สิทธิ์การมองเห็นโพสต์:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                           const SizedBox(height: 4),
                           Container(
@@ -425,7 +571,11 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                               elevation: 2,
                             ),
                             child: _isLoading 
-                              ? const CircularProgressIndicator(color: Colors.white)
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+                                )
                               : const Text('ส่งโพสต์แจ้งปัญหา', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
                           ),
                         )

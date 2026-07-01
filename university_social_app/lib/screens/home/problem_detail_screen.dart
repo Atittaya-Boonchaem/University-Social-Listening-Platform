@@ -87,7 +87,14 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
                                 children: [
                                   Icon(isStaffPost ? Icons.badge : Icons.school, size: 14, color: upPurple),
                                   const SizedBox(width: 4),
-                                  Text(isStaffPost ? 'บุคลากร มพ.' : 'นิสิต มพ.', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: upPurple)),
+                                  Builder(builder: (_) {
+                                    final user = widget.problem['user'];
+                                    String displayName = 'ผู้ใช้งานทั่วไป';
+                                    if (user != null) {
+                                      displayName = user['display_name'] ?? 'ผู้ใช้งานทั่วไป';
+                                    }
+                                    return Text(displayName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: upPurple));
+                                  }),
                                 ],
                               ),
                             ),
@@ -105,6 +112,26 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
                         
                         Text(widget.problem['description'] ?? 'ไม่มีรายละเอียด', style: const TextStyle(fontSize: 16, color: Color(0xFF1E293B), height: 1.6)),
                         const SizedBox(height: 16),
+                        
+                        if (widget.problem['image_url'] != null && widget.problem['image_url'].isNotEmpty) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              widget.problem['image_url'].startsWith('http') 
+                                ? widget.problem['image_url'] 
+                                : 'http://127.0.0.1:8000/${widget.problem['image_url'].replaceFirst(RegExp(r'^/+'), '').replaceFirst('uploads/', 'uploads/images/').replaceAll('images/images/', 'images/')}',
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                height: 200,
+                                width: double.infinity,
+                                color: Colors.grey.shade200,
+                                child: const Icon(Icons.broken_image, size: 50, color: Colors.grey),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         
                         if (building != null) ...[
                           Row(

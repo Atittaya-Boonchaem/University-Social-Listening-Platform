@@ -1,21 +1,25 @@
-
-
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:typed_data';
 
 class ProblemService {
   // URL หลักของระบบปัญหา (ตรงกับที่ระบุใน FastAPI)
   static const String baseUrl = 'http://127.0.0.1:8000/api/v1/problems';
 
   // 1. ดึงรายการปัญหา (เรียกไปที่ /list ตามไฟล์ problems.py)
-  static Future<List<dynamic>> getProblems() async {
+  static Future<List<dynamic>> getProblems({String? feedType}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('access_token');
 
+      String url = '$baseUrl/list';
+      if (feedType != null) {
+        url += '?feed_type=$feedType';
+      }
+
       final response = await http.get(
-        Uri.parse('$baseUrl/list'), 
+        Uri.parse(url), 
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
@@ -83,38 +87,69 @@ class ProblemService {
     required String description,
     required String incidentTimeRange,
     bool isStaffOnly = false,
+    Uint8List? imageBytes,
+    String? imageName,
+    double? latitude,
+    double? longitude,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('access_token');
+      
+      final uri = Uri.parse('$baseUrl/create');
+      final request = http.MultipartRequest('POST', uri);
+      
+      if (token != null) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+      
+      request.fields['category_id'] = categoryId.toString();
+      // Ensure building_id is added
+      request.fields['building_id'] = buildingId.toString();
+      request.fields['title'] = "แจ้งปัญหาจากแอปพลิเคชัน";
+      request.fields['description'] = description;
+      request.fields['incident_date'] = DateTime.now().toIso8601String();
+      request.fields['incident_time_range'] = incidentTimeRange;
+      request.fields['is_anonymous'] = "false";
+      request.fields['is_staff_only'] = isStaffOnly.toString();
+      
+      if (latitude != null) {
+        request.fields['latitude'] = latitude.toString();
+      }
+      if (longitude != null) {
+        request.fields['longitude'] = longitude.toString();
+      }
+      
+      if (imageBytes != null) {
+        request.files.add(http.MultipartFile.fromBytes(
+          'image',
+          imageBytes,
+          filename: imageName ?? 'upload.jpg',
+        ));
+      }
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/create'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          "category_id": categoryId,
-          "building_id": buildingId,
-          "title": "แจ้งปัญหาจากแอปพลิเคชัน",
-          "description": description,
-          "incident_date": DateTime.now().toIso8601String(),
-          "incident_time_range": incidentTimeRange,
-          "is_anonymous": false,
-          "is_staff_only": isStaffOnly
-        }),
-      );
-
-      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      final response = await request.send();
+      
+      if (response.statusCode == 401) {
+        throw Exception('unauthorized');
+      }
+      
+      final respStr = await response.stream.bytesToString();
+      final data = jsonDecode(respStr);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        return {'success': true, 'message': 'แจ้งปัญหาสำเร็จ'};
+        if (data['success'] == true) {
+          return {'success': true, 'message': 'แจ้งปัญหาสำเร็จ'};
+        } else {
+           return {'success': false, 'message': data['message'] ?? 'เกิดข้อผิดพลาด'};
+        }
       } else {
-        return {'success': false, 'message': data['message'] ?? 'ไม่สามารถแจ้งปัญหาได้'};
+        return {'success': false, 'message': data['message'] ?? 'ไม่สามารถแจ้งปัญหาได้ (Error ${response.statusCode})'};
       }
     } catch (e) {
+      if (e.toString().contains('unauthorized')) {
+        rethrow;
+      }
       return {'success': false, 'message': 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้: $e'};
     }
   }
