@@ -20,41 +20,15 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _formKey = GlobalKey<FormState>();
   
-  // Controllers & Form Data
-  final _prefixController = TextEditingController();
-  final _ageController = TextEditingController();
-  
-  String? _selectedFaculty;
-  String? _selectedGender;
+  final _displayNameController = TextEditingController();
   
   bool _isLoading = false;
 
   final Color upPurple = const Color(0xFF2B164D);
   
-  final List<String> _faculties = [
-    'คณะเกษตรศาสตร์และทรัพยากรธรรมชาติ',
-    'คณะเทคโนโลยีสารสนเทศและการสื่อสาร',
-    'คณะนิติศาสตร์',
-    'คณะพยาบาลศาสตร์',
-    'คณะแพทยศาสตร์',
-    'คณะเภสัชศาสตร์',
-    'คณะรัฐศาสตร์และสังคมศาสตร์',
-    'คณะวิทยาศาสตร์',
-    'คณะวิทยาศาสตร์การแพทย์',
-    'คณะวิศวกรรมศาสตร์',
-    'คณะศิลปศาสตร์',
-    'คณะสถาปัตยกรรมศาสตร์และศิลปกรรมศาสตร์',
-    'คณะสาธารณสุขศาสตร์',
-    'วิทยาลัยการจัดการ',
-    'วิทยาลัยการศึกษา',
-    'วิทยาลัยพลังงานและสิ่งแวดล้อม',
-    'อื่นๆ',
-  ];
-
   @override
   void dispose() {
-    _prefixController.dispose();
-    _ageController.dispose();
+    _displayNameController.dispose();
     super.dispose();
   }
 
@@ -65,10 +39,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     final result = await AuthService.completeOnboarding(
       token: widget.token,
-      studentIdPrefix: _prefixController.text.trim(),
-      faculty: _selectedFaculty,
-      age: _ageController.text.isNotEmpty ? int.tryParse(_ageController.text) : null,
-      gender: _selectedGender,
+      displayName: _displayNameController.text.trim(),
     );
 
     if (!mounted) return;
@@ -135,85 +106,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'กรุณากรอกข้อมูลเบื้องต้นเพื่อใช้ในการสร้างนามแฝงของคุณ ข้อมูลเหล่านี้จะไม่เปิดเผยชื่อจริงของคุณ',
+                    'กรุณาตั้งชื่อที่ใช้แสดงผลของคุณในระบบ ชื่อนี้จะแสดงต่อสาธารณะเมื่อคุณสร้างโพสต์',
                     style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
                   const SizedBox(height: 32),
                   
-                  // Role 1 = Student needs Prefix
-                  if (widget.roleId == 1) ...[
-                    const Text('รหัสนิสิต (2 ตัวแรก)', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _prefixController,
-                      keyboardType: TextInputType.number,
-                      maxLength: 2,
-                      decoration: InputDecoration(
-                        hintText: 'เช่น 66, 65',
-                        counterText: '',
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) return 'กรุณากรอกรหัสนิสิต 2 ตัวแรก';
-                        if (value.length != 2) return 'ต้องมี 2 หลัก';
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-
-                  // Faculty Dropdown (Students and Staff)
-                  if (widget.roleId == 1 || widget.roleId == 2) ...[
-                    const Text('คณะ / หน่วยงาน', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      value: _selectedFaculty,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      ),
-                      hint: const Text('เลือกคณะของคุณ'),
-                      items: _faculties.map((f) => DropdownMenuItem(value: f, child: Text(f))).toList(),
-                      onChanged: (val) => setState(() => _selectedFaculty = val),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-
-                  // Age
-                  const Text('อายุ', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text('ชื่อที่แสดง (Display Name)', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   TextFormField(
-                    controller: _ageController,
-                    keyboardType: TextInputType.number,
+                    controller: _displayNameController,
                     decoration: InputDecoration(
-                      hintText: 'กรอกอายุของคุณ',
+                      hintText: 'ตั้งชื่อของคุณ',
                       filled: true,
                       fillColor: Colors.grey.shade50,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Gender
-                  const Text('เพศ', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: _selectedGender,
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: Colors.grey.shade50,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                    ),
-                    hint: const Text('ระบุเพศ'),
-                    items: const [
-                      DropdownMenuItem(value: 'M', child: Text('ชาย (Male)')),
-                      DropdownMenuItem(value: 'F', child: Text('หญิง (Female)')),
-                      DropdownMenuItem(value: 'Other', child: Text('อื่นๆ (Other)')),
-                    ],
-                    onChanged: (val) => setState(() => _selectedGender = val),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return 'กรุณากรอกชื่อที่แสดง';
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 40),
 

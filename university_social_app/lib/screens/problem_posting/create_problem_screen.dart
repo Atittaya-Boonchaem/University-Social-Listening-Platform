@@ -18,6 +18,7 @@ class CreateProblemScreen extends StatefulWidget {
 }
 
 class _CreateProblemScreenState extends State<CreateProblemScreen> {
+  final _titleController = TextEditingController();
   final _descController = TextEditingController();
   bool _isLoading = false;
   
@@ -25,8 +26,7 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
   
   String? _selectedCategory; 
   String? _selectedBuilding; 
-  String _selectedTime = '06:00 - 08:00 น.';
-  bool _isStaffOnly = false; 
+  String _visibility = 'public';
   int? _roleId;
 
   Uint8List? _imageBytes;
@@ -36,6 +36,7 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
 
   List<dynamic> _categories = [];
   List<dynamic> _buildings = [];
+  final MapController _mapController = MapController();
 
   @override
   void initState() {
@@ -112,6 +113,17 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
     // --- Sync validation (safe to use context here — no async gap yet) ---
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     
+    if (_titleController.text.length < 5) {
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('กรุณาระบุหัวข้อปัญหาอย่างน้อย 5 ตัวอักษร'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    
     if (_descController.text.length < 10) {
       scaffoldMessenger.showSnackBar(
         const SnackBar(
@@ -140,23 +152,22 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
       final result = await ProblemService.createProblem(
         categoryId: int.parse(_selectedCategory!),
         buildingId: int.parse(_selectedBuilding!),
+        title: _titleController.text,
         description: _descController.text,
-        incidentTimeRange: _selectedTime,
-        isStaffOnly: _roleId == 2 ? _isStaffOnly : false,
         imageBytes: _imageBytes,
         imageName: _imageName,
         latitude: _selectedLocation?.latitude,
         longitude: _selectedLocation?.longitude,
+        visibility: _visibility,
       );
 
       if (!mounted) return;
 
       if (result['success'] == true) {
+        _titleController.clear();
         _descController.clear();
         setState(() {
           _isLoading = false;
-          _isStaffOnly = false;
-          _selectedTime = '06:00 - 08:00 น.';
           _imageBytes = null;
           _imageName = null;
           _selectedLocation = null;
@@ -295,6 +306,74 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                         const Divider(color: Color(0xFFE2E8F0)),
                         const SizedBox(height: 10),
                         
+                        const SizedBox(height: 20),
+                        
+                        if (currentRoleId == 2 || currentRoleId == 4) ...[
+                          const Text('ระดับการมองเห็น', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8F9FA),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                isExpanded: true,
+                                value: _visibility,
+                                items: const [
+                                  DropdownMenuItem(value: 'public', child: Text('ฟีดสาธารณะ', style: TextStyle(fontSize: 14))),
+                                  DropdownMenuItem(value: 'internal', child: Text('ข่าวสารภายใน', style: TextStyle(fontSize: 14))),
+                                ],
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    setState(() => _visibility = value);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                        ],
+                        
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('หัวข้อปัญหา', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                  const SizedBox(height: 8),
+                                  TextField(
+                                    controller: _titleController,
+                                    decoration: InputDecoration(
+                                      hintText: 'ระบุหัวข้อปัญหาที่ต้องการแจ้ง',
+                                      hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+                                      filled: true, 
+                                      fillColor: const Color(0xFFF8F9FA),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12), 
+                                        borderSide: const BorderSide(color: Color(0xFFE2E8F0))
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12), 
+                                        borderSide: const BorderSide(color: Color(0xFFE2E8F0))
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12), 
+                                        borderSide: BorderSide(color: upPurple, width: 1.5)
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        
                         Row(
                           children: [
                             Expanded(
@@ -326,45 +405,6 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('ช่วงเวลาที่พบ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF8F9FA),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: const Color(0xFFE2E8F0))
-                                    ),
-                                    child: DropdownButtonHideUnderline(
-                                      child: DropdownButton<String>(
-                                        value: _selectedTime, 
-                                        isExpanded: true,
-                                        icon: const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
-                                        items: <String>[
-                                          '06:00 - 08:00 น.', 
-                                          '08:00 - 10:00 น.', 
-                                          '10:00 - 12:00 น.', 
-                                          '12:00 - 14:00 น.', 
-                                          '14:00 - 16:00 น.', 
-                                          '16:00 - 18:00 น.',
-                                          '18:00 - 20:00 น.',
-                                          '20:00 - 22:00 น.',
-                                        ].map((e) => DropdownMenuItem<String>(
-                                          value: e, 
-                                          child: Text(e, style: const TextStyle(fontSize: 13))
-                                        )).toList(),
-                                        onChanged: (val) => setState(() => _selectedTime = val!), 
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 18),
@@ -387,7 +427,19 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                                 value: e['id'].toString(), 
                                 child: Text(e['name'] ?? '', style: const TextStyle(fontSize: 13))
                               )).toList(),
-                              onChanged: (val) => setState(() => _selectedBuilding = val!),
+                              onChanged: (val) {
+                                setState(() => _selectedBuilding = val!);
+                                final b = _buildings.firstWhere((e) => e['id'].toString() == val, orElse: () => null);
+                                if (b != null && b['latitude'] != null && b['longitude'] != null) {
+                                  final lat = double.tryParse(b['latitude'].toString());
+                                  final lng = double.tryParse(b['longitude'].toString());
+                                  if (lat != null && lng != null) {
+                                    final point = LatLng(lat, lng);
+                                    setState(() => _selectedLocation = point);
+                                    _mapController.move(point, 16.0);
+                                  }
+                                }
+                              },
                             ),
                           ),
                         ),
@@ -488,6 +540,7 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: FlutterMap(
+                              mapController: _mapController,
                               options: MapOptions(
                                 initialCenter: const LatLng(19.0289, 99.8973), // มหาวิทยาลัยพะเยา
                                 initialZoom: 14,
@@ -526,39 +579,7 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                         ),
                         const SizedBox(height: 18),
                         
-                        if (currentRoleId == 2) ...[
-                          const Text('สิทธิ์การมองเห็นโพสต์:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          const SizedBox(height: 4),
-                          Container(
-                            decoration: BoxDecoration(
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                              borderRadius: BorderRadius.circular(12),
-                              color: const Color(0xFFF8F9FA)
-                            ),
-                            child: Column(
-                              children: [
-                                RadioListTile<bool>(
-                                  title: const Text('โพสต์สาธารณะ (ทุกคนเห็นได้)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                                  value: false,
-                                  groupValue: _isStaffOnly,
-                                  activeColor: upPurple,
-                                  dense: true,
-                                  onChanged: (val) => setState(() => _isStaffOnly = val!),
-                                ),
-                                const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                                RadioListTile<bool>(
-                                  title: const Text('เฉพาะบุคลากร (เห็นเฉพาะภายใน)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                                  value: true,
-                                  groupValue: _isStaffOnly,
-                                  activeColor: upPurple,
-                                  dense: true,
-                                  onChanged: (val) => setState(() => _isStaffOnly = val!),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
+
                         
                         SizedBox(
                           width: double.infinity,

@@ -1,0 +1,356 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import Select from 'react-select';
+import api from '../services/api';
+import { Trash2, RefreshCw, Filter } from 'lucide-react';
+
+// Role options are static — matches the roles table in the DB
+const ROLE_OPTIONS = [
+  { value: 1, label: 'นิสิต มพ. (Student)' },
+  { value: 2, label: 'บุคลากร (Staff)' },
+  { value: 3, label: 'บุคคลทั่วไป (Public)' },
+  { value: 4, label: 'ผู้ดูแลระบบ (Admin)' },
+];
+
+const STATUS_OPTIONS = [
+  { value: 'OPEN',        label: '🟠 OPEN' },
+  { value: 'IN_PROGRESS', label: '🔵 IN PROGRESS' },
+  { value: 'CLOSED',      label: '🟢 CLOSED' },
+];
+
+// Shared react-select styles to match our Tailwind theme
+const selectStyles = {
+  control: (base, state) => ({
+    ...base,
+    borderRadius: '0.5rem',
+    borderColor: state.isFocused ? '#6366F1' : '#E5E7EB',
+    boxShadow: state.isFocused ? '0 0 0 2px rgba(99,102,241,0.2)' : 'none',
+    '&:hover': { borderColor: '#6366F1' },
+    minHeight: '40px',
+    fontSize: '0.875rem',
+  }),
+  multiValue: (base) => ({
+    ...base,
+    backgroundColor: '#EEF2FF',
+    borderRadius: '0.375rem',
+  }),
+  multiValueLabel: (base) => ({
+    ...base,
+    color: '#4338CA',
+    fontWeight: 600,
+    fontSize: '0.75rem',
+  }),
+  multiValueRemove: (base) => ({
+    ...base,
+    color: '#6366F1',
+    '&:hover': { backgroundColor: '#C7D2FE', color: '#3730A3' },
+  }),
+  placeholder: (base) => ({ ...base, color: '#9CA3AF' }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isSelected ? '#6366F1' : state.isFocused ? '#EEF2FF' : 'white',
+    color: state.isSelected ? 'white' : '#111827',
+    fontSize: '0.875rem',
+  }),
+};
+
+const ManageProblems = () => {
+  const [problems, setProblems]           = useState([]);
+  const [allProblems, setAllProblems]     = useState([]); // unfiltered master list
+  const [loading, setLoading]             = useState(true);
+  const [categoryOptions, setCategoryOptions] = useState([]);
+
+  // Filter state
+  const [selectedRoles,      setSelectedRoles]      = useState([]);
+  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [selectedStatuses,   setSelectedStatuses]   = useState([]);
+
+  // ── Fetch categories for the filter dropdown ──────────────────────────────
+  useEffect(() => {
+    api.get('/problems/categories')
+      .then(res => {
+        const cats = res.data?.data?.items || [];
+        setCategoryOptions(cats.map(c => ({ value: c.id, label: c.name })));
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── Paginated fetch helper ────────────────────────────────────────────────
+  const fetchAllPages = async (visibility) => {
+    let page = 1;
+    let allItems = [];
+    while (true) {
+      const res = await api.get('/problems/list', {
+        params: { page, page_size: 100, visibility }
+      }).catch(() => null);
+
+      const items = res?.data?.data?.items || [];
+      allItems = [...allItems, ...items];
+
+      const total = res?.data?.data?.total || 0;
+      if (allItems.length >= total || items.length === 0) break;
+      page++;
+    }
+    return allItems;
+  };
+
+  // ── Initial data fetch ────────────────────────────────────────────────────
+  const fetchProblems = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [publicItems, internalItems] = await Promise.all([
+        fetchAllPages('public'),
+        fetchAllPages('internal'),
+      ]);
+
+      const merged = [...publicItems, ...internalItems];
+      const unique = Array.from(new Map(merged.map(p => [p.id, p])).values())
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      setAllProblems(unique);
+      setProblems(unique);
+    } catch (error) {
+      console.error("Failed to fetch problems", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchProblems(); }, [fetchProblems]);
+
+  // ── Client-side filter whenever selections change ─────────────────────────
+  useEffect(() => {
+    let filtered = [...allProblems];
+
+    if (selectedRoles.length > 0) {
+      const roleIds = selectedRoles.map(r => r.value);
+      filtered = filtered.filter(p => roleIds.includes(p.author?.role_id));
+    }
+
+    if (selectedCategories.length > 0) {
+      const catIds = selectedCategories.map(c => c.value);
+      filtered = filtered.filter(p => catIds.includes(p.category?.id));
+    }
+
+    if (selectedStatuses.length > 0) {
+      const statuses = selectedStatuses.map(s => s.value);
+      filtered = filtered.filter(p => statuses.includes(p.status));
+    }
+
+    setProblems(filtered);
+  }, [selectedRoles, selectedCategories, selectedStatuses, allProblems]);
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+  const handleStatusChange = async (problemId, newStatus) => {
+    try {
+      await api.patch(`/problems/${problemId}/status?new_status=${newStatus}`);
+      const update = p => p.id === problemId ? { ...p, status: newStatus } : p;
+      setAllProblems(prev => prev.map(update));
+      setProblems(prev => prev.map(update));
+    } catch (error) {
+      console.error("Failed to update status", error);
+      alert("Failed to update status.");
+    }
+  };
+
+  const handleDelete = async (problemId) => {
+    if (!window.confirm("Are you sure you want to delete this problem? This cannot be undone.")) return;
+    try {
+      await api.delete(`/problems/${problemId}`);
+      setAllProblems(prev => prev.filter(p => p.id !== problemId));
+      setProblems(prev => prev.filter(p => p.id !== problemId));
+    } catch (error) {
+      console.error("Failed to delete problem", error);
+      alert("Failed to delete problem.");
+    }
+  };
+
+  const clearFilters = () => {
+    setSelectedRoles([]);
+    setSelectedCategories([]);
+    setSelectedStatuses([]);
+  };
+
+  const isFiltered = selectedRoles.length > 0 || selectedCategories.length > 0 || selectedStatuses.length > 0;
+
+  const getStatusBadgeClass = (status) => {
+    switch (status) {
+      case 'OPEN':        return 'bg-orange-100 text-orange-800';
+      case 'IN_PROGRESS': return 'bg-blue-100   text-blue-800';
+      case 'RESOLVED':
+      case 'CLOSED':      return 'bg-green-100  text-green-800';
+      default:            return 'bg-gray-100   text-gray-800';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[400px]">
+        <div className="text-xl font-semibold text-indigo-600 animate-pulse">Loading problems...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* ── Header ── */}
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Manage Problems</h2>
+          <p className="text-gray-500 mt-1">
+            Showing <span className="font-semibold text-indigo-600">{problems.length}</span> of{' '}
+            <span className="font-semibold">{allProblems.length}</span> total problems
+          </p>
+        </div>
+        <button
+          onClick={fetchProblems}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 border rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      </div>
+
+      {/* ── Filter Panel ── */}
+      <div className="bg-white border rounded-xl shadow-sm p-5 mb-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Filter size={16} className="text-indigo-600" />
+          <h3 className="font-semibold text-gray-700 text-sm">Filter Problems</h3>
+          {isFiltered && (
+            <button
+              onClick={clearFilters}
+              className="ml-auto text-xs text-red-500 hover:text-red-700 font-medium"
+            >
+              Clear all filters
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wider">
+              User Roles
+            </label>
+            <Select
+              isMulti
+              options={ROLE_OPTIONS}
+              value={selectedRoles}
+              onChange={setSelectedRoles}
+              styles={selectStyles}
+              placeholder="All roles..."
+              closeMenuOnSelect={false}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wider">
+              Problem Categories
+            </label>
+            <Select
+              isMulti
+              options={categoryOptions}
+              value={selectedCategories}
+              onChange={setSelectedCategories}
+              styles={selectStyles}
+              placeholder="All categories..."
+              closeMenuOnSelect={false}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wider">
+              Status
+            </label>
+            <Select
+              isMulti
+              options={STATUS_OPTIONS}
+              value={selectedStatuses}
+              onChange={setSelectedStatuses}
+              styles={selectStyles}
+              placeholder="All statuses..."
+              closeMenuOnSelect={false}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Table ── */}
+      <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th className="p-4 w-16">ID</th>
+                <th className="p-4">Title</th>
+                <th className="p-4">Category</th>
+                <th className="p-4">Author</th>
+                <th className="p-4">Role</th>
+                <th className="p-4">Date</th>
+                <th className="p-4 w-40">Status</th>
+                <th className="p-4 w-20 text-center">Delete</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-sm">
+              {problems.map((problem) => (
+                <tr key={problem.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="p-4 font-medium text-gray-400 text-xs">#{problem.id}</td>
+                  <td className="p-4">
+                    <p className="text-gray-900 font-medium truncate max-w-xs" title={problem.title}>
+                      {problem.title}
+                    </p>
+                    <p className="text-gray-400 text-xs truncate max-w-xs mt-0.5" title={problem.description}>
+                      {problem.description}
+                    </p>
+                  </td>
+                  <td className="p-4">
+                    <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs rounded-md font-medium">
+                      {problem.category?.name || 'N/A'}
+                    </span>
+                  </td>
+                  <td className="p-4 text-gray-700 font-medium">{problem.author?.display_name || 'Unknown'}</td>
+                  <td className="p-4">
+                    <span className="text-xs text-gray-500">
+                      {ROLE_OPTIONS.find(r => r.value === problem.author?.role_id)?.label.split(' ')[0] || 'N/A'}
+                    </span>
+                  </td>
+                  <td className="p-4 text-gray-500 text-xs">{new Date(problem.created_at).toLocaleDateString()}</td>
+                  <td className="p-4">
+                    <select
+                      value={problem.status}
+                      onChange={(e) => handleStatusChange(problem.id, e.target.value)}
+                      className={`text-xs font-semibold px-2 py-1.5 rounded outline-none cursor-pointer border hover:border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all ${getStatusBadgeClass(problem.status)}`}
+                    >
+                      <option value="OPEN"        className="bg-white text-gray-900">OPEN</option>
+                      <option value="IN_PROGRESS" className="bg-white text-gray-900">IN PROGRESS</option>
+                      <option value="CLOSED"      className="bg-white text-gray-900">CLOSED</option>
+                    </select>
+                  </td>
+                  <td className="p-4 text-center">
+                    <button
+                      onClick={() => handleDelete(problem.id)}
+                      className="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete Problem"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {problems.length === 0 && (
+                <tr>
+                  <td colSpan="8" className="p-12 text-center text-gray-400">
+                    {isFiltered
+                      ? 'No problems match the selected filters.'
+                      : 'No problems found.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ManageProblems;

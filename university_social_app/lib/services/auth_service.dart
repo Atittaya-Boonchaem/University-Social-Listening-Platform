@@ -45,34 +45,43 @@ class AuthService {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('access_token', data['data']['access_token']);
         
-        // 🌟 Fix: Extract the REAL role_id from the backend JSON response dynamically
         int actualRoleId = int.tryParse(data['data']['user']['role_id'].toString()) ?? 1;
         await prefs.setInt('role_id', actualRoleId);
         
         if (data['data']['user']['email'] != null) {
           await prefs.setString('email', data['data']['user']['email']);
-        } else if (data['data']['user']['phone_number'] != null) {
-          await prefs.setString('email', data['data']['user']['phone_number']);
         }
         
         if (data['data']['user']['display_name'] != null) {
           await prefs.setString('display_name', data['data']['user']['display_name']);
         }
 
+        if (data['data']['user']['student_id'] != null) {
+          await prefs.setString('student_id', data['data']['user']['student_id']);
+        }
+
         if (data['data']['user']['faculty'] != null) {
           await prefs.setString('faculty', data['data']['user']['faculty']);
         }
-        if (data['data']['user']['age'] != null) {
-          await prefs.setInt('age', data['data']['user']['age']);
-        }
-        if (data['data']['user']['gender'] != null) {
-          await prefs.setString('gender', data['data']['user']['gender']);
-        }
+
         if (data['data']['user']['education_level'] != null) {
           await prefs.setString('education_level', data['data']['user']['education_level']);
         }
-        if (data['data']['user']['relationship_to_university'] != null) {
-          await prefs.setString('relationship_to_university', data['data']['user']['relationship_to_university']);
+
+        if (data['data']['user']['age'] != null) {
+          await prefs.setInt('age', data['data']['user']['age']);
+        }
+
+        if (data['data']['user']['gender'] != null) {
+          await prefs.setString('gender', data['data']['user']['gender']);
+        }
+
+        if (data['data']['user']['phone_number'] != null) {
+          await prefs.setString('phone_number', data['data']['user']['phone_number']);
+        }
+
+        if (data['data']['user']['relationship'] != null) {
+          await prefs.setString('relationship', data['data']['user']['relationship']);
         }
         
         return {'success': true, 'message': 'เข้าสู่ระบบสำเร็จ', 'role_id': actualRoleId};
@@ -84,9 +93,6 @@ class AuthService {
     }
   }
 
-  // ==========================================
-  // 2. เมธอดสำหรับเข้าสู่ระบบของนิสิต (เติม @up.ac.th ให้อัตโนมัติ)
-  // ==========================================
   static Future<Map<String, dynamic>> loginStudent(String studentId, String password) async {
     String email = studentId.trim();
     if (!email.contains('@')) {
@@ -95,9 +101,6 @@ class AuthService {
     return login(email: email, password: password, expectedRoleId: 1);
   }
 
-  // ==========================================
-  // 3. เมธอดสำหรับเข้าสู่ระบบของบุคลากร
-  // ==========================================
   static Future<Map<String, dynamic>> loginStaff(String staffAccount, String password) async {
     String email = staffAccount.trim();
     if (!email.contains('@')) {
@@ -112,10 +115,11 @@ class AuthService {
   static Future<Map<String, dynamic>> registerStudent({
     required String studentId,
     required String password,
-    required String faculty,
-    required String educationLevel,
-    required int age,
-    required String gender,
+    String? displayName,
+    String? faculty,
+    String? educationLevel,
+    int? age,
+    String? gender,
   }) async {
     try {
       final email = studentId.contains('@') ? studentId : '$studentId@up.ac.th';
@@ -126,10 +130,11 @@ class AuthService {
           'email': email,
           'password': password,
           'student_id': studentId,
-          'faculty': faculty,
-          'education_level': educationLevel,
-          'age': age,
-          'gender': gender,
+          if (displayName != null) 'display_name': displayName,
+          if (faculty != null) 'faculty': faculty,
+          if (educationLevel != null) 'education_level': educationLevel,
+          if (age != null) 'age': age,
+          if (gender != null) 'gender': gender,
         }),
       );
       final data = jsonDecode(response.body);
@@ -147,24 +152,23 @@ class AuthService {
   // 5. เมธอดสำหรับสมัครสมาชิกบุคลากร
   // ==========================================
   static Future<Map<String, dynamic>> registerStaff({
-    required String staffAccount,
+    required String email,
     required String password,
-    required String faculty,
-    required int age,
-    required String gender,
+    String? displayName,
+    int? age,
   }) async {
     try {
-      final email = staffAccount.contains('@') ? staffAccount : '$staffAccount@up.ac.th';
+      if (!email.contains('@')) {
+        email += '@up.ac.th';
+      }
       final response = await http.post(
         Uri.parse('$baseUrl/register/staff'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': email,
           'password': password,
-          'staff_account': staffAccount,
-          'faculty': faculty,
-          'age': age,
-          'gender': gender,
+          if (displayName != null) 'display_name': displayName,
+          if (age != null) 'age': age,
         }),
       );
       final data = jsonDecode(response.body);
@@ -184,9 +188,8 @@ class AuthService {
   static Future<Map<String, dynamic>> registerPublic({
     required String phoneNumber,
     required String password,
-    required String relationship,
-    required int age,
-    required String gender,
+    String? displayName,
+    String? relationship,
   }) async {
     try {
       final response = await http.post(
@@ -195,9 +198,8 @@ class AuthService {
         body: jsonEncode({
           'phone_number': phoneNumber,
           'password': password,
-          'relationship_to_university': relationship,
-          'age': age,
-          'gender': gender,
+          if (displayName != null) 'display_name': displayName,
+          if (relationship != null) 'relationship': relationship,
         }),
       );
 
@@ -218,10 +220,7 @@ class AuthService {
   // ==========================================
   static Future<Map<String, dynamic>> completeOnboarding({
     required String token,
-    String? studentIdPrefix,
-    String? faculty,
-    int? age,
-    String? gender,
+    String? displayName,
   }) async {
     try {
       final response = await http.patch(
@@ -231,10 +230,7 @@ class AuthService {
           'Authorization': 'Bearer $token',
         },
         body: jsonEncode({
-          if (studentIdPrefix != null && studentIdPrefix.isNotEmpty) 'student_id_prefix': studentIdPrefix,
-          if (faculty != null && faculty.isNotEmpty) 'faculty': faculty,
-          if (age != null) 'age': age,
-          if (gender != null && gender.isNotEmpty) 'gender': gender,
+          if (displayName != null && displayName.isNotEmpty) 'display_name': displayName,
         }),
       );
 

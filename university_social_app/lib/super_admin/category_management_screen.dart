@@ -65,8 +65,6 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
   Future<void> _showCategoryDialog({dynamic category}) async {
     final isEdit = category != null;
     final nameController = TextEditingController(text: isEdit ? category['name'] : '');
-    final descController = TextEditingController(text: isEdit ? (category['description'] ?? '') : '');
-    final colorController = TextEditingController(text: isEdit ? (category['color_code'] ?? '') : '');
 
     await showDialog(
       context: context,
@@ -89,29 +87,6 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 ),
               ),
-              const SizedBox(height: 16),
-              const Text('Description', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              const SizedBox(height: 8),
-              TextField(
-                controller: descController,
-                maxLines: 2,
-                decoration: InputDecoration(
-                  hintText: 'Description of the category...',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('Color Code (Hex)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              const SizedBox(height: 8),
-              TextField(
-                controller: colorController,
-                decoration: InputDecoration(
-                  hintText: 'e.g., #FF5733',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                ),
-              ),
             ],
           ),
         ),
@@ -123,9 +98,9 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
               if (name.isEmpty) return;
               Navigator.pop(ctx);
               if (isEdit) {
-                await _updateCategory(category['id'], name, descController.text.trim(), colorController.text.trim());
+                await _updateCategory(category['id'], name);
               } else {
-                await _createCategory(name, descController.text.trim(), colorController.text.trim());
+                await _createCategory(name);
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: upPurple, foregroundColor: Colors.white),
@@ -136,15 +111,13 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
     );
   }
 
-  Future<void> _createCategory(String name, String desc, String color) async {
+  Future<void> _createCategory(String name) async {
     try {
       final response = await http.post(
         Uri.parse(_baseUrl),
         headers: await _authHeaders(),
         body: jsonEncode({
           'name': name,
-          'description': desc.isNotEmpty ? desc : null,
-          'color_code': color.isNotEmpty ? color : null,
         }),
       );
       if (mounted) {
@@ -161,15 +134,13 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
     }
   }
 
-  Future<void> _updateCategory(int id, String name, String desc, String color) async {
+  Future<void> _updateCategory(int id, String name) async {
     try {
       final response = await http.put(
         Uri.parse('$_baseUrl/$id'),
         headers: await _authHeaders(),
         body: jsonEncode({
           'name': name,
-          'description': desc.isNotEmpty ? desc : null,
-          'color_code': color.isNotEmpty ? color : null,
         }),
       );
       if (mounted) {
@@ -301,34 +272,13 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
                               columns: const [
                                 DataColumn(label: Text('ID', style: TextStyle(fontWeight: FontWeight.bold))),
                                 DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                                DataColumn(label: Text('Description', style: TextStyle(fontWeight: FontWeight.bold))),
-                                DataColumn(label: Text('Color', style: TextStyle(fontWeight: FontWeight.bold))),
                                 DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
                               ],
                               rows: _categories.map((cat) {
-                                final colorHex = cat['color_code'] ?? '#CCCCCC';
-                                Color? badgeColor;
-                                try {
-                                  badgeColor = Color(int.parse(colorHex.replaceAll('#', '0xFF')));
-                                } catch (_) {}
-                                
                                 return DataRow(
                                   cells: [
                                     DataCell(Text('#${cat['id']}', style: TextStyle(color: Colors.grey.shade500, fontSize: 12))),
                                     DataCell(Text(cat['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w500))),
-                                    DataCell(Text(cat['description'] ?? '—', style: const TextStyle(fontSize: 13))),
-                                    DataCell(
-                                      Row(
-                                        children: [
-                                          Container(
-                                            width: 16, height: 16,
-                                            decoration: BoxDecoration(color: badgeColor ?? Colors.grey, shape: BoxShape.circle),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(colorHex, style: const TextStyle(fontSize: 12)),
-                                        ],
-                                      ),
-                                    ),
                                     DataCell(
                                       Row(
                                         mainAxisSize: MainAxisSize.min,

@@ -65,9 +65,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   Future<void> _showBuildingDialog({dynamic building}) async {
     final isEdit = building != null;
     final nameController = TextEditingController(text: isEdit ? building['name'] : '');
-    final descController = TextEditingController(text: isEdit ? (building['description'] ?? '') : '');
-    final latController = TextEditingController(text: isEdit ? (building['latitude']?.toString() ?? '') : '');
-    final lngController = TextEditingController(text: isEdit ? (building['longitude']?.toString() ?? '') : '');
 
     await showDialog(
       context: context,
@@ -90,60 +87,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 ),
               ),
-              const SizedBox(height: 16),
-              const Text('Description', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              const SizedBox(height: 8),
-              TextField(
-                controller: descController,
-                maxLines: 2,
-                decoration: InputDecoration(
-                  hintText: 'Additional details...',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Latitude', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: latController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: InputDecoration(
-                            hintText: 'e.g., 19.0289',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Longitude', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: lngController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: InputDecoration(
-                            hintText: 'e.g., 99.8976',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
             ],
           ),
         ),
@@ -154,14 +97,11 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
               
-              final latVal = double.tryParse(latController.text.trim());
-              final lngVal = double.tryParse(lngController.text.trim());
-
               Navigator.pop(ctx);
               if (isEdit) {
-                await _updateBuilding(building['id'], name, descController.text.trim(), latVal, lngVal);
+                await _updateBuilding(building['id'], name);
               } else {
-                await _createBuilding(name, descController.text.trim(), latVal, lngVal);
+                await _createBuilding(name);
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: upPurple, foregroundColor: Colors.white),
@@ -172,16 +112,13 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
     );
   }
 
-  Future<void> _createBuilding(String name, String desc, double? lat, double? lng) async {
+  Future<void> _createBuilding(String name) async {
     try {
       final response = await http.post(
         Uri.parse(_baseUrl),
         headers: await _authHeaders(),
         body: jsonEncode({
           'name': name,
-          'description': desc.isNotEmpty ? desc : null,
-          'latitude': lat,
-          'longitude': lng,
         }),
       );
       if (mounted) {
@@ -198,16 +135,13 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
     }
   }
 
-  Future<void> _updateBuilding(int id, String name, String desc, double? lat, double? lng) async {
+  Future<void> _updateBuilding(int id, String name) async {
     try {
       final response = await http.put(
         Uri.parse('$_baseUrl/$id'),
         headers: await _authHeaders(),
         body: jsonEncode({
           'name': name,
-          'description': desc.isNotEmpty ? desc : null,
-          'latitude': lat,
-          'longitude': lng,
         }),
       );
       if (mounted) {
@@ -339,21 +273,13 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                               columns: const [
                                 DataColumn(label: Text('ID', style: TextStyle(fontWeight: FontWeight.bold))),
                                 DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                                DataColumn(label: Text('Description', style: TextStyle(fontWeight: FontWeight.bold))),
-                                DataColumn(label: Text('Location (Lat, Lng)', style: TextStyle(fontWeight: FontWeight.bold))),
                                 DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
                               ],
                               rows: _buildings.map((bld) {
-                                final lat = bld['latitude']?.toString() ?? '—';
-                                final lng = bld['longitude']?.toString() ?? '—';
-                                final location = (lat == '—' && lng == '—') ? '—' : '$lat, $lng';
-                                
                                 return DataRow(
                                   cells: [
                                     DataCell(Text('#${bld['id']}', style: TextStyle(color: Colors.grey.shade500, fontSize: 12))),
                                     DataCell(Text(bld['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w500))),
-                                    DataCell(Text(bld['description'] ?? '—', style: const TextStyle(fontSize: 13))),
-                                    DataCell(Text(location, style: const TextStyle(fontSize: 13, color: Colors.blueGrey))),
                                     DataCell(
                                       Row(
                                         mainAxisSize: MainAxisSize.min,

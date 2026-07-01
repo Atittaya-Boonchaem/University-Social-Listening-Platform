@@ -15,7 +15,7 @@ class ProblemService {
 
       String url = '$baseUrl/list';
       if (feedType != null) {
-        url += '?feed_type=$feedType';
+        url += '?visibility=$feedType';
       }
 
       final response = await http.get(
@@ -84,13 +84,13 @@ class ProblemService {
   static Future<Map<String, dynamic>> createProblem({
     required int categoryId,
     required int buildingId,
+    required String title,
     required String description,
-    required String incidentTimeRange,
-    bool isStaffOnly = false,
     Uint8List? imageBytes,
     String? imageName,
     double? latitude,
     double? longitude,
+    String visibility = 'public',
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -104,14 +104,10 @@ class ProblemService {
       }
       
       request.fields['category_id'] = categoryId.toString();
-      // Ensure building_id is added
       request.fields['building_id'] = buildingId.toString();
-      request.fields['title'] = "แจ้งปัญหาจากแอปพลิเคชัน";
+      request.fields['title'] = title;
       request.fields['description'] = description;
-      request.fields['incident_date'] = DateTime.now().toIso8601String();
-      request.fields['incident_time_range'] = incidentTimeRange;
-      request.fields['is_anonymous'] = "false";
-      request.fields['is_staff_only'] = isStaffOnly.toString();
+      request.fields['visibility'] = visibility;
       
       if (latitude != null) {
         request.fields['latitude'] = latitude.toString();
@@ -150,6 +146,39 @@ class ProblemService {
       if (e.toString().contains('unauthorized')) {
         rethrow;
       }
+      return {'success': false, 'message': 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้: $e'};
+    }
+  }
+
+  // 4. Toggle Upvote (เรียกไปที่ /{problem_id}/upvote ตามไฟล์ problems.py)
+  static Future<Map<String, dynamic>> toggleUpvote(int problemId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+      if (token == null) {
+        return {'success': false, 'message': 'กรุณาเข้าสู่ระบบก่อน'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/$problemId/upvote'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decodedBody = jsonDecode(utf8.decode(response.bodyBytes));
+        if (decodedBody is Map && decodedBody['success'] == true) {
+          return {
+            'success': true,
+            'is_upvoted_by_me': decodedBody['data']['is_upvoted_by_me'],
+            'upvote_count': decodedBody['data']['upvote_count'],
+          };
+        }
+      }
+      return {'success': false, 'message': 'เกิดข้อผิดพลาดในการโหวต'};
+    } catch (e) {
       return {'success': false, 'message': 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้: $e'};
     }
   }

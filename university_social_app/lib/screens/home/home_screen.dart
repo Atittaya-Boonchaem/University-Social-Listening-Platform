@@ -424,8 +424,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 🌟 ดึงสิทธิ์ผู้ใช้ปัจจุบันมาใช้งาน (รองรับเฉพาะ roleId == 2 สำหรับบุคลากร)
-    final bool isStaff = _userRole == 2;
+    // 🌟 ดึงสิทธิ์ผู้ใช้ปัจจุบันมาใช้งาน (รองรับเฉพาะ roleId == 2 หรือ 4 สำหรับบุคลากรและแอดมิน)
+    final bool isStaff = _userRole == 2 || _userRole == 4;
 
     // 🌟 ระบบคัดกรองโพสต์ (สิทธิ์การมองเห็น + หมวดหมู่)
     List<dynamic> displayProblems = _problems.where((p) {
@@ -437,6 +437,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
       return passCategory;
     }).toList();
+
+    // 🌟 นับจำนวนโพสต์แต่ละหมวดหมู่และกรองหมวดหมู่ที่ไม่มีโพสต์
+    int getCategoryCount(int categoryId) {
+      if (categoryId == 0) return _problems.length;
+      return _problems.where((p) {
+        return (p['category_id'] == categoryId) || 
+               (p['category'] != null && p['category']['id'] == categoryId);
+      }).length;
+    }
+
+    final List<Map<String, dynamic>> visibleCategories = _categories.where((cat) {
+      if (cat['id'] == 0) return true;
+      return getCategoryCount(cat['id']) > 0;
+    }).toList();
+
+    // 🌟 รีเซ็ต _selectedCategoryId กลับเป็นทั้งหมด หากหมวดหมู่ที่เลือกไว้ไม่มีโพสต์แล้ว
+    if (_selectedCategoryId != 0 && !visibleCategories.any((c) => c['id'] == _selectedCategoryId)) {
+      // ใช้ Future.microtask เพื่อหลีกเลี่ยงการเรียก setState ในช่วง build
+      Future.microtask(() {
+        if (mounted) setState(() => _selectedCategoryId = 0);
+      });
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
@@ -531,15 +553,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       height: 40, 
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
-                        itemCount: _categories.length,
+                        itemCount: visibleCategories.length,
                         itemBuilder: (context, catIndex) {
-                          final category = _categories[catIndex];
+                          final category = visibleCategories[catIndex];
                           final isSelected = _selectedCategoryId == category['id'];
+                          final count = getCategoryCount(category['id']);
 
                           return Padding(
                             padding: const EdgeInsets.only(right: 10),
                             child: ChoiceChip(
-                              label: Text('${category['icon']} ${category['name']}'),
+                              label: Text('${category['icon']} ${category['name']} ($count)'),
                               selected: isSelected,
                               onSelected: (selected) {
                                 setState(() {
@@ -625,21 +648,38 @@ class _HomeScreenState extends State<HomeScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(color: const Color(0xFFF3E8FF), borderRadius: BorderRadius.circular(20)),
-                              child: Row(
-                                children: [
-                                  Icon(isStaffPost ? Icons.badge : Icons.school, size: 14, color: upPurple),
-                                  const SizedBox(width: 4),
-                                  // ✅ แสดงชื่อผู้โพสต์จริงจาก API
-                                  Builder(builder: (_) {
-                                    final user = problem['user'];
-                                    String displayName = 'ผู้ใช้งานทั่วไป';
-                                    if (user != null) {
-                                      displayName = user['display_name'] ?? 'ผู้ใช้งานทั่วไป';
+                              child: Builder(builder: (_) {
+                                final author = problem['author'];
+                                String roleName = 'ผู้ใช้งานทั่วไป';
+                                IconData roleIcon = Icons.person;
+                                
+                                if (author != null) {
+                                  final roleId = author['role_id'];
+                                  if (roleId == 1) {
+                                    String studentPrefix = '';
+                                    final studentId = author['student_id'];
+                                    if (studentId != null && studentId.toString().length >= 2) {
+                                      studentPrefix = ' ${studentId.toString().substring(0, 2)}';
                                     }
-                                    return Text(displayName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: upPurple));
-                                  }),
-                                ],
-                              ),
+                                    roleName = 'นิสิต มพ.$studentPrefix';
+                                    roleIcon = Icons.school;
+                                  } else if (roleId == 2) {
+                                    roleName = 'บุคลากร มพ.';
+                                    roleIcon = Icons.work;
+                                  } else if (roleId == 4) {
+                                    roleName = 'ผู้ดูแลระบบ (Admin)';
+                                    roleIcon = Icons.admin_panel_settings;
+                                  }
+                                }
+                                
+                                return Row(
+                                  children: [
+                                    Icon(roleIcon, size: 14, color: upPurple),
+                                    const SizedBox(width: 4),
+                                    Text(roleName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: upPurple)),
+                                  ],
+                                );
+                              }),
                             ),
                             if (isStaffPost) 
                               Container(
@@ -713,16 +753,52 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 16),
                         const Divider(height: 1, color: Color(0xFFF1F5F9)),
                         const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE2E8F0)), borderRadius: BorderRadius.circular(20)),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.arrow_drop_up, size: 20, color: Color(0xFFE11D48)),
-                              const SizedBox(width: 4),
-                              Text('เห็นด้วย (${problem['upvote_count'] ?? 0})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-                            ],
+                        GestureDetector(
+                          onTap: () async {
+                            final problemId = problem['id'];
+                            setState(() {
+                              bool isUpvoted = problem['is_upvoted_by_me'] == true;
+                              problem['is_upvoted_by_me'] = !isUpvoted;
+                              problem['upvote_count'] = (problem['upvote_count'] ?? 0) + (isUpvoted ? -1 : 1);
+                            });
+                            final result = await ProblemService.toggleUpvote(problemId);
+                            if (result['success'] == true) {
+                              setState(() {
+                                problem['is_upvoted_by_me'] = result['is_upvoted_by_me'];
+                                problem['upvote_count'] = result['upvote_count'];
+                              });
+                            } else {
+                              setState(() {
+                                bool isUpvoted = problem['is_upvoted_by_me'] == true;
+                                problem['is_upvoted_by_me'] = !isUpvoted;
+                                problem['upvote_count'] = (problem['upvote_count'] ?? 0) + (isUpvoted ? -1 : 1);
+                              });
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'โหวตไม่สำเร็จ'), backgroundColor: Colors.red));
+                              }
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: problem['is_upvoted_by_me'] == true ? upPurple.withOpacity(0.1) : Colors.transparent,
+                              border: Border.all(color: problem['is_upvoted_by_me'] == true ? upPurple : const Color(0xFFE2E8F0)), 
+                              borderRadius: BorderRadius.circular(20)
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  problem['is_upvoted_by_me'] == true ? Icons.keyboard_arrow_up : Icons.arrow_drop_up, 
+                                  size: 20, 
+                                  color: problem['is_upvoted_by_me'] == true ? upPurple : const Color(0xFFE11D48)
+                                ),
+                                const SizedBox(width: 4),
+                                Text('เห็นด้วย (${problem['upvote_count'] ?? 0})', 
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: problem['is_upvoted_by_me'] == true ? upPurple : const Color(0xFF64748B))
+                                ),
+                              ],
+                            ),
                           ),
                         )
                       ],

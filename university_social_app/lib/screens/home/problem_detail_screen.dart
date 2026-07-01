@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:university_social_app/services/problem_service.dart';
 
 class ProblemDetailScreen extends StatefulWidget {
   final dynamic problem; // รับข้อมูลปัญหามาจากการ์ดที่กด
@@ -83,20 +84,33 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(color: const Color(0xFFF3E8FF), borderRadius: BorderRadius.circular(20)),
-                              child: Row(
-                                children: [
-                                  Icon(isStaffPost ? Icons.badge : Icons.school, size: 14, color: upPurple),
-                                  const SizedBox(width: 4),
-                                  Builder(builder: (_) {
-                                    final user = widget.problem['user'];
-                                    String displayName = 'ผู้ใช้งานทั่วไป';
-                                    if (user != null) {
-                                      displayName = user['display_name'] ?? 'ผู้ใช้งานทั่วไป';
-                                    }
-                                    return Text(displayName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: upPurple));
-                                  }),
-                                ],
-                              ),
+                              child: Builder(builder: (_) {
+                                final author = widget.problem['author'];
+                                String roleName = 'ผู้ใช้งานทั่วไป';
+                                IconData roleIcon = Icons.person;
+                                
+                                if (author != null) {
+                                  final roleId = author['role_id'];
+                                  if (roleId == 1) {
+                                    roleName = 'นิสิต มพ.';
+                                    roleIcon = Icons.school;
+                                  } else if (roleId == 2) {
+                                    roleName = 'บุคลากร มพ.';
+                                    roleIcon = Icons.work;
+                                  } else if (roleId == 4) {
+                                    roleName = 'ผู้ดูแลระบบ (Admin)';
+                                    roleIcon = Icons.admin_panel_settings;
+                                  }
+                                }
+                                
+                                return Row(
+                                  children: [
+                                    Icon(roleIcon, size: 14, color: upPurple),
+                                    const SizedBox(width: 4),
+                                    Text(roleName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: upPurple)),
+                                  ],
+                                );
+                              }),
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -156,12 +170,58 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
                         const SizedBox(height: 8),
                         
                         // ปุ่มเห็นด้วย
-                        Row(
-                          children: [
-                            Icon(Icons.thumb_up_alt_outlined, size: 18, color: upPurple),
-                            const SizedBox(width: 8),
-                            Text('มีคนพบปัญหานี้เหมือนกัน ${widget.problem['upvote_count'] ?? 0} คน', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: upPurple)),
-                          ],
+                        GestureDetector(
+                          onTap: () async {
+                            final problemId = widget.problem['id'];
+                            setState(() {
+                              bool isUpvoted = widget.problem['is_upvoted_by_me'] == true;
+                              widget.problem['is_upvoted_by_me'] = !isUpvoted;
+                              widget.problem['upvote_count'] = (widget.problem['upvote_count'] ?? 0) + (isUpvoted ? -1 : 1);
+                            });
+                            final result = await ProblemService.toggleUpvote(problemId);
+                            if (result['success'] == true) {
+                              setState(() {
+                                widget.problem['is_upvoted_by_me'] = result['is_upvoted_by_me'];
+                                widget.problem['upvote_count'] = result['upvote_count'];
+                              });
+                            } else {
+                              setState(() {
+                                bool isUpvoted = widget.problem['is_upvoted_by_me'] == true;
+                                widget.problem['is_upvoted_by_me'] = !isUpvoted;
+                                widget.problem['upvote_count'] = (widget.problem['upvote_count'] ?? 0) + (isUpvoted ? -1 : 1);
+                              });
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'โหวตไม่สำเร็จ'), backgroundColor: Colors.red));
+                              }
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: widget.problem['is_upvoted_by_me'] == true ? upPurple.withOpacity(0.1) : Colors.transparent,
+                              border: Border.all(color: widget.problem['is_upvoted_by_me'] == true ? upPurple : const Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  widget.problem['is_upvoted_by_me'] == true ? Icons.thumb_up : Icons.thumb_up_alt_outlined, 
+                                  size: 18, 
+                                  color: widget.problem['is_upvoted_by_me'] == true ? upPurple : Colors.grey
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'มีคนพบปัญหานี้เหมือนกัน ${widget.problem['upvote_count'] ?? 0} คน', 
+                                  style: TextStyle(
+                                    fontSize: 13, 
+                                    fontWeight: FontWeight.bold, 
+                                    color: widget.problem['is_upvoted_by_me'] == true ? upPurple : Colors.grey
+                                  )
+                                ),
+                              ],
+                            ),
+                          ),
                         )
                       ],
                     ),
