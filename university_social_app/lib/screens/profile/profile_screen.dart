@@ -303,20 +303,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 32),
 
-                  if (['2', '4'].contains(_roleId.toString()))
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: ElevatedButton.icon(
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SuperAdminScreen())),
-                        icon: const Icon(Icons.rocket_launch, color: Colors.white),
-                        label: const Text('🚀 เข้าสู่ระบบ Super Admin Dashboard', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _roleId.toString() == '4' ? Colors.orange.shade700 : const Color(0xFF2B164D),
-                          minimumSize: const Size(double.infinity, 55),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
+                  // if (['2', '4'].contains(_roleId.toString()))
+                  //   Padding(
+                  //     padding: const EdgeInsets.only(bottom: 16.0),
+                  //     child: ElevatedButton.icon(
+                  //       onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SuperAdminScreen())),
+                  //       icon: const Icon(Icons.rocket_launch, color: Colors.white),
+                  //       label: const Text('🚀 เข้าสู่ระบบ Super Admin Dashboard', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  //       style: ElevatedButton.styleFrom(
+                  //         backgroundColor: _roleId.toString() == '4' ? Colors.orange.shade700 : const Color(0xFF2B164D),
+                  //         minimumSize: const Size(double.infinity, 55),
+                  //         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  //       ),
+                  //     ),
+                  //   ),
 
                   SizedBox(
                     width: double.infinity,
