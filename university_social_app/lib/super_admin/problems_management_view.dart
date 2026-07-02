@@ -18,7 +18,7 @@ class _ProblemsManagementViewState extends State<ProblemsManagementView> {
   final Set<int> _selectedIds = {};
   String _selectedStatusToUpdate = 'IN_PROGRESS';
 
-  static const String _baseUrl = 'http://127.0.0.1:8000/api/v1/problems';
+  static const String _baseUrl = 'https://university-social-listening-platform.onrender.com/api/v1/problems';
 
   @override
   void initState() {

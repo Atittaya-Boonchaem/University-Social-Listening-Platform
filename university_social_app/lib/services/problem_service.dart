@@ -5,7 +5,7 @@ import 'dart:typed_data';
 
 class ProblemService {
   // URL หลักของระบบปัญหา (ตรงกับที่ระบุใน FastAPI)
-  static const String baseUrl = 'http://127.0.0.1:8000/api/v1/problems';
+  static const String baseUrl = 'https://university-social-listening-platform.onrender.com/api/v1/problems';
 
   // 1. ดึงรายการปัญหา (เรียกไปที่ /list ตามไฟล์ problems.py)
   static Future<List<dynamic>> getProblems({String? feedType}) async {

@@ -56,8 +56,8 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
           _roleId = savedRoleId;
         });
       }
-      final catResponse = await http.get(Uri.parse('http://127.0.0.1:8000/api/v1/problems/categories'));
-      final bldResponse = await http.get(Uri.parse('http://127.0.0.1:8000/api/v1/problems/buildings'));
+      final catResponse = await http.get(Uri.parse('https://university-social-listening-platform.onrender.com/api/v1/problems/categories'));
+      final bldResponse = await http.get(Uri.parse('https://university-social-listening-platform.onrender.com/api/v1/problems/buildings'));
 
       if (catResponse.statusCode == 200) {
         final decoded = jsonDecode(utf8.decode(catResponse.bodyBytes));

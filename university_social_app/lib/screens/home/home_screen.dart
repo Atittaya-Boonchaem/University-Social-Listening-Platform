@@ -378,7 +378,7 @@ String _formatDateTime(String? rawDate) {
                             child: Image.network(
                               problem['image_url'].startsWith('http') 
                                 ? problem['image_url'] 
-                                : 'http://127.0.0.1:8000/${problem['image_url'].replaceFirst(RegExp(r'^/+'), '').replaceFirst('uploads/', 'uploads/images/').replaceAll('images/images/', 'images/')}',
+                                : 'https://university-social-listening-platform.onrender.com/${problem['image_url'].replaceFirst(RegExp(r'^/+'), '').replaceFirst('uploads/', 'uploads/images/').replaceAll('images/images/', 'images/')}',
                               width: double.infinity,
                               height: 180,
                               fit: BoxFit.cover,

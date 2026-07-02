@@ -133,7 +133,7 @@ class _ProblemDetailScreenState extends State<ProblemDetailScreen> {
                             child: Image.network(
                               widget.problem['image_url'].startsWith('http') 
                                 ? widget.problem['image_url'] 
-                                : 'http://127.0.0.1:8000/${widget.problem['image_url'].replaceFirst(RegExp(r'^/+'), '').replaceFirst('uploads/', 'uploads/images/').replaceAll('images/images/', 'images/')}',
+                                : 'https://university-social-listening-platform.onrender.com/${widget.problem['image_url'].replaceFirst(RegExp(r'^/+'), '').replaceFirst('uploads/', 'uploads/images/').replaceAll('images/images/', 'images/')}',
                               width: double.infinity,
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stackTrace) => Container(

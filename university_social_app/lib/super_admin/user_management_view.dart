@@ -15,7 +15,7 @@ class _UserManagementViewState extends State<UserManagementView> {
   List<dynamic> _users = [];
   bool _isLoading = true;
 
-  static const String _baseUrl = 'http://127.0.0.1:8000/api/v1/users';
+  static const String _baseUrl = 'https://university-social-listening-platform.onrender.com/api/v1/users';
 
   // Role labels for display
   static const Map<int, String> _roleLabels = {
