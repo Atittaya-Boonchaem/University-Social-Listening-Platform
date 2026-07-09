@@ -17,6 +17,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _problems = [];
   bool _isLoading = true;
   int _userRole = 0;
+  int? _userId;
   final Color upPurple = const Color(0xFF2B164D);
   
   int _activeTab = 0; // 0 = สาธารณะ, 1 = ภายใน
@@ -39,6 +40,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadRoleAndFetchProblems() async {
     final prefs = await SharedPreferences.getInstance();
     final dynamic roleObj = prefs.get('role_id');
+    final dynamic userIdObj = prefs.get('user_id');
+    
     int roleId = widget.roleId;
     if (roleObj != null) {
       if (roleObj is int) {
@@ -49,6 +52,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() {
       _userRole = roleId;
+      if (userIdObj is int) {
+        _userId = userIdObj;
+      } else if (userIdObj is String) {
+        _userId = int.tryParse(userIdObj);
+      }
     });
     _fetchProblems();
   }
@@ -311,34 +319,14 @@ String _formatDateTime(String? rawDate) {
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(color: const Color(0xFFF3E8FF), borderRadius: BorderRadius.circular(20)),
                               child: Builder(builder: (_) {
-                                final author = problem['author'];
-                                String roleName = 'ผู้ใช้งานทั่วไป';
-                                IconData roleIcon = Icons.person;
+                                const String roleName = 'ไม่ระบุตัวตน';
+                                const IconData roleIcon = Icons.visibility_off;
                                 
-                                if (author != null) {
-                                  final roleId = author['role_id'];
-                                  if (roleId == 1) {
-                                    String studentPrefix = '';
-                                    final studentId = author['student_id'];
-                                    if (studentId != null && studentId.toString().length >= 2) {
-                                      studentPrefix = ' ${studentId.toString().substring(0, 2)}';
-                                    }
-                                    roleName = 'นิสิต มพ.$studentPrefix';
-                                    roleIcon = Icons.school;
-                                  } else if (roleId == 2) {
-                                    roleName = 'บุคลากร มพ.';
-                                    roleIcon = Icons.work;
-                                  } else if (roleId == 4) {
-                                    roleName = 'ผู้ดูแลระบบ (Admin)';
-                                    roleIcon = Icons.admin_panel_settings;
-                                  }
-                                }
-                                
-                                return Row(
+                                return const Row(
                                   children: [
-                                    Icon(roleIcon, size: 14, color: upPurple),
-                                    const SizedBox(width: 4),
-                                    Text(roleName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: upPurple)),
+                                    Icon(roleIcon, size: 14, color: Color(0xFF2B164D)),
+                                    SizedBox(width: 4),
+                                    Text(roleName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2B164D))),
                                   ],
                                 );
                               }),
@@ -378,7 +366,7 @@ String _formatDateTime(String? rawDate) {
                             child: Image.network(
                               problem['image_url'].startsWith('http') 
                                 ? problem['image_url'] 
-                                : 'https://university-social-listening-platform.onrender.com/${problem['image_url'].replaceFirst(RegExp(r'^/+'), '').replaceFirst('uploads/', 'uploads/images/').replaceAll('images/images/', 'images/')}',
+                                : 'http://127.0.0.1:8000/${problem['image_url'].replaceFirst(RegExp(r'^/+'), '').replaceFirst('uploads/', 'uploads/images/').replaceAll('images/images/', 'images/')}',
                               width: double.infinity,
                               height: 180,
                               fit: BoxFit.cover,
@@ -415,53 +403,78 @@ String _formatDateTime(String? rawDate) {
                         const SizedBox(height: 16),
                         const Divider(height: 1, color: Color(0xFFF1F5F9)),
                         const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () async {
-                            final problemId = problem['id'];
-                            setState(() {
-                              bool isUpvoted = problem['is_upvoted_by_me'] == true;
-                              problem['is_upvoted_by_me'] = !isUpvoted;
-                              problem['upvote_count'] = (problem['upvote_count'] ?? 0) + (isUpvoted ? -1 : 1);
-                            });
-                            final result = await ProblemService.toggleUpvote(problemId);
-                            if (result['success'] == true) {
-                              setState(() {
-                                problem['is_upvoted_by_me'] = result['is_upvoted_by_me'];
-                                problem['upvote_count'] = result['upvote_count'];
-                              });
-                            } else {
-                              setState(() {
-                                bool isUpvoted = problem['is_upvoted_by_me'] == true;
-                                problem['is_upvoted_by_me'] = !isUpvoted;
-                                problem['upvote_count'] = (problem['upvote_count'] ?? 0) + (isUpvoted ? -1 : 1);
-                              });
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'โหวตไม่สำเร็จ'), backgroundColor: Colors.red));
-                              }
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: problem['is_upvoted_by_me'] == true ? upPurple.withOpacity(0.1) : Colors.transparent,
-                              border: Border.all(color: problem['is_upvoted_by_me'] == true ? upPurple : const Color(0xFFE2E8F0)), 
-                              borderRadius: BorderRadius.circular(20)
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
                               children: [
-                                Icon(
-                                  problem['is_upvoted_by_me'] == true ? Icons.keyboard_arrow_up : Icons.arrow_drop_up, 
-                                  size: 20, 
-                                  color: problem['is_upvoted_by_me'] == true ? upPurple : const Color(0xFFE11D48)
+                                IconButton(
+                                  icon: Icon(
+                                    problem['is_upvoted_by_me'] == true ? Icons.favorite : Icons.favorite_border,
+                                    color: problem['is_upvoted_by_me'] == true ? const Color(0xFFE11D48) : Colors.grey.shade600,
+                                    size: 24,
+                                  ),
+                                  onPressed: () async {
+                                    final problemId = problem['id'];
+                                    setState(() {
+                                      bool isUpvoted = problem['is_upvoted_by_me'] == true;
+                                      problem['is_upvoted_by_me'] = !isUpvoted;
+                                      problem['upvote_count'] = (problem['upvote_count'] ?? 0) + (isUpvoted ? -1 : 1);
+                                    });
+                                    final result = await ProblemService.toggleUpvote(problemId);
+                                    if (result['success'] == true) {
+                                      setState(() {
+                                        problem['is_upvoted_by_me'] = result['is_upvoted_by_me'];
+                                        problem['upvote_count'] = result['upvote_count'];
+                                      });
+                                    } else {
+                                      setState(() {
+                                        bool isUpvoted = problem['is_upvoted_by_me'] == true;
+                                        problem['is_upvoted_by_me'] = !isUpvoted;
+                                        problem['upvote_count'] = (problem['upvote_count'] ?? 0) + (isUpvoted ? -1 : 1);
+                                      });
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'โหวตไม่สำเร็จ'), backgroundColor: Colors.red));
+                                      }
+                                    }
+                                  },
                                 ),
-                                const SizedBox(width: 4),
-                                Text('เห็นด้วย (${problem['upvote_count'] ?? 0})', 
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: problem['is_upvoted_by_me'] == true ? upPurple : const Color(0xFF64748B))
-                                ),
+                                Text('${problem['upvote_count'] ?? 0}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF475569))),
                               ],
                             ),
-                          ),
+                            
+                            if (problem['author_id'] != null && _userId != null && problem['author_id'] == _userId)
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, color: Colors.grey),
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('ยืนยันการลบโพสต์'),
+                                      content: const Text('คุณแน่ใจหรือไม่ว่าต้องการลบโพสต์นี้?'),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey))),
+                                        TextButton(
+                                          onPressed: () async {
+                                            Navigator.pop(context);
+                                            setState(() => _isLoading = true);
+                                            final result = await ProblemService.deleteProblem(problem['id']);
+                                            if (result['success'] == true) {
+                                              _fetchProblems();
+                                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ลบโพสต์สำเร็จ'), backgroundColor: Colors.green));
+                                            } else {
+                                              setState(() => _isLoading = false);
+                                              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'เกิดข้อผิดพลาด'), backgroundColor: Colors.red));
+                                            }
+                                          }, 
+                                          child: const Text('ลบ', style: TextStyle(color: Colors.red))
+                                        ),
+                                      ],
+                                    )
+                                  );
+                                },
+                              )
+                          ],
                         )
                       ],
                     ),

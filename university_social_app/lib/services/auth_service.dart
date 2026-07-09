@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
-  static const String baseUrl = 'https://university-social-listening-platform.onrender.com/api/v1/auth';
+  static const String baseUrl = 'http://127.0.0.1:8000/api/v1/auth';
 
   static String _parseErrorMessage(Map<String, dynamic> data) {
     if (data['message'] != null) return data['message'];
@@ -47,6 +47,10 @@ class AuthService {
         
         int actualRoleId = int.tryParse(data['data']['user']['role_id'].toString()) ?? 1;
         await prefs.setInt('role_id', actualRoleId);
+        
+        if (data['data']['user']['id'] != null) {
+          await prefs.setInt('user_id', data['data']['user']['id']);
+        }
         
         if (data['data']['user']['email'] != null) {
           await prefs.setString('email', data['data']['user']['email']);

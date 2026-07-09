@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Select from 'react-select';
 import api from '../services/api';
-import { Trash2, RefreshCw, Filter } from 'lucide-react';
+import { Trash2, RefreshCw, Filter, Eye, X } from 'lucide-react';
 
 // Role options are static — matches the roles table in the DB
 const ROLE_OPTIONS = [
@@ -54,10 +54,18 @@ const selectStyles = {
 };
 
 const ManageProblems = () => {
+  const getImageUrl = (url) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    const baseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1').replace(/\/api\/v1\/?$/, '');
+    return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+  };
+
   const [problems, setProblems]           = useState([]);
   const [allProblems, setAllProblems]     = useState([]); // unfiltered master list
   const [loading, setLoading]             = useState(true);
   const [categoryOptions, setCategoryOptions] = useState([]);
+  const [selectedProblem, setSelectedProblem] = useState(null);
 
   // Filter state
   const [selectedRoles,      setSelectedRoles]      = useState([]);
@@ -128,7 +136,7 @@ const ManageProblems = () => {
 
     if (selectedCategories.length > 0) {
       const catIds = selectedCategories.map(c => c.value);
-      filtered = filtered.filter(p => catIds.includes(p.category?.id));
+      filtered = filtered.filter(p => catIds.includes(p.category_id));
     }
 
     if (selectedStatuses.length > 0) {
@@ -142,7 +150,7 @@ const ManageProblems = () => {
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleStatusChange = async (problemId, newStatus) => {
     try {
-      await api.patch(`/problems/${problemId}/status?new_status=${newStatus}`);
+      await api.patch(`/problems/${problemId}/status?new_status_name=${newStatus}`);
       const update = p => p.id === problemId ? { ...p, status: newStatus } : p;
       setAllProblems(prev => prev.map(update));
       setProblems(prev => prev.map(update));
@@ -284,8 +292,10 @@ const ManageProblems = () => {
                 <th className="p-4">Category</th>
                 <th className="p-4">Author</th>
                 <th className="p-4">Role</th>
+                <th className="p-4">LOCATION (สถานที่)</th>
                 <th className="p-4">Date</th>
                 <th className="p-4 w-40">Status</th>
+                <th className="p-4 w-20 text-center">Action</th>
                 <th className="p-4 w-20 text-center">Delete</th>
               </tr>
             </thead>
@@ -303,7 +313,7 @@ const ManageProblems = () => {
                   </td>
                   <td className="p-4">
                     <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs rounded-md font-medium">
-                      {problem.category?.name || 'N/A'}
+                      {problem.category_name || 'N/A'}
                     </span>
                   </td>
                   <td className="p-4 text-gray-700 font-medium">{problem.author?.display_name || 'Unknown'}</td>
@@ -312,6 +322,7 @@ const ManageProblems = () => {
                       {ROLE_OPTIONS.find(r => r.value === problem.author?.role_id)?.label.split(' ')[0] || 'N/A'}
                     </span>
                   </td>
+                  <td className="p-4 text-gray-700 text-xs">{problem.building_name || 'ไม่ระบุสถานที่'}</td>
                   <td className="p-4 text-gray-500 text-xs">{new Date(problem.created_at).toLocaleDateString()}</td>
                   <td className="p-4">
                     <select
@@ -326,6 +337,15 @@ const ManageProblems = () => {
                   </td>
                   <td className="p-4 text-center">
                     <button
+                      onClick={() => setSelectedProblem(problem)}
+                      className="p-2 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded-lg transition-colors"
+                      title="View Details"
+                    >
+                      <Eye size={16} />
+                    </button>
+                  </td>
+                  <td className="p-4 text-center">
+                    <button
                       onClick={() => handleDelete(problem.id)}
                       className="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                       title="Delete Problem"
@@ -337,8 +357,8 @@ const ManageProblems = () => {
               ))}
 
               {problems.length === 0 && (
-                <tr>
-                  <td colSpan="8" className="p-12 text-center text-gray-400">
+                <tr key="empty">
+                  <td colSpan="9" className="p-12 text-center text-gray-400">
                     {isFiltered
                       ? 'No problems match the selected filters.'
                       : 'No problems found.'}
@@ -349,6 +369,87 @@ const ManageProblems = () => {
           </table>
         </div>
       </div>
+      {/* ── Problem Details Modal ── */}
+      {selectedProblem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h3 className="text-xl font-bold text-gray-900">Problem Details</h3>
+              <button 
+                onClick={() => setSelectedProblem(null)}
+                className="p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Title</h4>
+                <p className="text-gray-900 font-medium text-lg">{selectedProblem.title}</p>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Description</h4>
+                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{selectedProblem.description}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Category</h4>
+                  <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm rounded-md font-medium inline-block">
+                    {selectedProblem.category_name || 'N/A'}
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Location</h4>
+                  <p className="text-gray-700">{selectedProblem.building_name || 'ไม่ระบุสถานที่'}</p>
+                  {(selectedProblem.latitude && selectedProblem.longitude) && (
+                    <a 
+                      href={`https://www.google.com/maps?q=${selectedProblem.latitude},${selectedProblem.longitude}`}
+                      target="_blank" rel="noreferrer"
+                      className="text-xs text-indigo-600 hover:underline mt-1 inline-block"
+                    >
+                      View on Map ({selectedProblem.latitude}, {selectedProblem.longitude})
+                    </a>
+                  )}
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Reporter</h4>
+                  <p className="text-gray-700 font-medium">{selectedProblem.author?.display_name || 'Unknown'}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Date Submitted</h4>
+                  <p className="text-gray-700">{new Date(selectedProblem.created_at).toLocaleString()}</p>
+                </div>
+              </div>
+
+              {selectedProblem.attachments && selectedProblem.attachments.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Attached Image</h4>
+                  <div className="rounded-lg overflow-hidden border bg-gray-50 max-h-80 flex items-center justify-center">
+                    <img 
+                      src={getImageUrl(selectedProblem.attachments[0].file_url)} 
+                      alt="Problem Attachment" 
+                      className="max-w-full max-h-80 object-contain"
+                      onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/600x400?text=Image+Not+Found'; }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-6 border-t bg-gray-50 flex justify-end">
+              <button 
+                onClick={() => setSelectedProblem(null)}
+                className="px-6 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

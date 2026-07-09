@@ -1,0 +1,30 @@
+/* Google Fonts – Sarabun (Thai-friendly) + Inter */
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+:root {
+  --up-purple: #2B164D;
+  --up-purple-light: #F3E8FF;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Sarabun', 'Inter', sans-serif;
+  background: #F9FAFB;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Fix Leaflet default marker icons in Vite */
+.leaflet-default-icon-path {
+  background-image: url('https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png');
+}
+

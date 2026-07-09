@@ -15,7 +15,7 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
   List<dynamic> _categories = [];
   bool _isLoading = true;
 
-  static const String _baseUrl = 'https://university-social-listening-platform.onrender.com/api/v1/problems/categories';
+  static const String _baseUrl = 'http://127.0.0.1:8000/api/v1/problems/categories';
 
   @override
   void initState() {

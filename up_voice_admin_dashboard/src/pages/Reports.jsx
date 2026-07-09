@@ -244,7 +244,7 @@ const Reports = () => {
             {/* By Role — Pie chart */}
             <div className="bg-white border rounded-xl shadow-sm p-6">
               <h3 className="text-base font-semibold text-gray-800 mb-4">Problems by Role</h3>
-              {report.by_role.length > 0 ? (
+              {report.by_role?.length > 0 ? (
                 <div className="h-64 flex items-center">
                   <ResponsiveContainer width="55%" height="100%">
                     <PieChart>
@@ -326,7 +326,7 @@ const Reports = () => {
                         <td className="px-5 py-3 text-gray-400">#{row.id}</td>
                         <td className="px-5 py-3 font-medium text-gray-800 max-w-xs truncate">{row.title}</td>
                         <td className="px-5 py-3 text-gray-600">{row.category || '-'}</td>
-                        <td className="px-5 py-3 text-gray-600">{row.author || '-'}</td>
+                        <td className="px-5 py-3 text-gray-600">{row.author?.display_name || '-'}</td>
                         <td className="px-5 py-3">
                           <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
                             row.role === 'Student' ? 'bg-blue-50   text-blue-700'   :

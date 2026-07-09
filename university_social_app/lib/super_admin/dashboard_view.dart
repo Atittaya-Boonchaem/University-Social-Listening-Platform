@@ -28,7 +28,7 @@ class _DashboardViewState extends State<DashboardView> {
   Future<void> _fetchProblemStats() async {
     setState(() { _isLoading = true; });
     try {
-      final response = await http.get(Uri.parse('https://university-social-listening-platform.onrender.com/api/v1/problems/analytics'));
+      final response = await http.get(Uri.parse('http://127.0.0.1:8000/api/v1/problems/analytics'));
       if (response.statusCode == 200) {
         final decodedData = jsonDecode(utf8.decode(response.bodyBytes));
         if (decodedData['success'] == true) {

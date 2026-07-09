@@ -8,12 +8,25 @@ const Sidebar = () => {
     window.location.href = '/login';
   };
 
+  let roleId = null;
+  let role = null;
+  try {
+    const token = localStorage.getItem('token');
+    if (token) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      roleId = payload.role_id;
+      role = payload.role;
+    }
+  } catch (e) {}
+
+  const canViewUsers = [1, 3, 4].includes(roleId) || ['super_admin', 'category_admin'].includes(role);
+
   const navItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/problems', icon: FileText, label: 'Manage Problems' },
-    { to: '/users', icon: Users, label: 'Users' },
+    canViewUsers ? { to: '/users', icon: Users, label: 'Users' } : null,
     { to: '/reports', icon: FileBarChart, label: 'Reports' },
-  ];
+  ].filter(Boolean);
 
   return (
     <div className="w-64 bg-white border-r h-screen flex flex-col fixed left-0 top-0">

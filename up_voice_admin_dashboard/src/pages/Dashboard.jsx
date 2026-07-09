@@ -3,7 +3,7 @@ import StatCard from '../components/StatCard';
 import { Users, FileText, CheckCircle, Clock } from 'lucide-react';
 import api from '../services/api';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
@@ -18,7 +18,7 @@ const reputationStyle = {
   New:     'bg-gray-100    text-gray-600',
 };
 
-const ROLE_LABELS = { 1: 'Student', 2: 'Staff', 3: 'Public', 4: 'Admin' };
+const ROLE_LABELS = { 1: 'Student', 2: 'Staff', 3: 'Public', 4: 'Admin', 5: 'ไม่ระบุตัวตน' };
 
 // ── Paginated fetch helper (backend max page_size = 100) ─────────────────────
 const fetchAllPages = async (visibility) => {
@@ -40,6 +40,7 @@ const fetchAllPages = async (visibility) => {
 const Dashboard = () => {
   const [stats,        setStats]        = useState({ totalUsers: 0, totalProblems: 0, resolvedProblems: 0, pendingProblems: 0 });
   const [categoryData, setCategoryData] = useState([]);
+  const [buildingData, setBuildingData] = useState([]);
   const [timeSeries,   setTimeSeries]   = useState({ series: [], categories: [] });
   const [reputation,   setReputation]   = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -62,20 +63,33 @@ const Dashboard = () => {
       setStats({
         totalUsers:       usersRes?.data?.data?.items?.length || 0,
         totalProblems:    uniqueProblems.length,
-        resolvedProblems: uniqueProblems.filter(p => p.status === 'CLOSED').length,
-        pendingProblems:  uniqueProblems.filter(p => p.status === 'OPEN').length,
+        resolvedProblems: uniqueProblems.filter(p => p.status_name === 'CLOSED').length,
+        pendingProblems:  uniqueProblems.filter(p => p.status_name === 'OPEN').length,
       });
 
       // ── Bar chart category data ────────────────────────────────────────────
       const catMap = {};
       uniqueProblems.forEach(p => {
-        const name = p.category?.name || 'Uncategorized';
+        const name = p.category_name || 'Uncategorized';
         catMap[name] = (catMap[name] || 0) + 1;
       });
       setCategoryData(
         Object.entries(catMap)
           .map(([name, count]) => ({ name, count }))
           .sort((a, b) => b.count - a.count)
+      );
+
+      // ── Bar chart location data ────────────────────────────────────────────
+      const bldgMap = {};
+      uniqueProblems.forEach(p => {
+        const loc = p.building_name || 'Unknown Location';
+        bldgMap[loc] = (bldgMap[loc] || 0) + 1;
+      });
+      setBuildingData(
+        Object.entries(bldgMap)
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10)
       );
 
       // ── Time-series ────────────────────────────────────────────────────────
@@ -85,10 +99,13 @@ const Dashboard = () => {
       }
 
       // ── User reputation ────────────────────────────────────────────────────
-      setReputation(repRes?.data?.data?.items || []);
+      const repData = repRes?.data?.data?.items;
+      if (repData) {
+        setReputation(repData.slice(0, 10)); // Top 10
+      }
 
-    } catch (err) {
-      console.error('Dashboard fetch error:', err);
+    } catch (error) {
+      console.error('Dashboard fetch error:', error);
     } finally {
       setLoading(false);
     }
@@ -121,51 +138,37 @@ const Dashboard = () => {
         <StatCard title="Resolved"       value={stats.resolvedProblems} icon={CheckCircle} colorClass="bg-green-50  text-green-600" />
       </div>
 
-      {/* ── Time-series + Insights row (2/3 + 1/3) ────────────────────────── */}
+      {/* ── Location Chart + Insights row (2/3 + 1/3) ────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-        {/* Time-series LineChart — 2/3 width */}
+        {/* Location BarChart — 2/3 width */}
         <div className="lg:col-span-2 bg-white border rounded-xl shadow-sm p-6">
           <div className="mb-5">
-            <h3 className="text-lg font-semibold text-gray-800">Problems Over Time</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Last 30 days — broken down by top categories</p>
+            <h3 className="text-lg font-semibold text-gray-800">Problems by Location</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Top 10 locations with highest problem reports</p>
           </div>
-          {timeSeries.series.length > 0 ? (
+          {buildingData.length > 0 ? (
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={timeSeries.series} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                <BarChart data={buildingData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
                   <XAxis
-                    dataKey="date"
+                    dataKey="name"
                     axisLine={false} tickLine={false}
                     tick={{ fill: '#9CA3AF', fontSize: 11 }} dy={8}
-                    tickFormatter={v => v.slice(5)} // show MM-DD only
+                    tickFormatter={v => v.length > 15 ? v.slice(0, 15) + '...' : v}
                   />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} dx={-5} allowDecimals={false} />
                   <Tooltip
                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', fontSize: '12px' }}
                   />
-                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
-                  {/* Total line */}
-                  <Line
-                    type="monotone" dataKey="total" name="Total"
-                    stroke="#D1D5DB" strokeWidth={2} strokeDasharray="5 3"
-                    dot={false} activeDot={{ r: 4 }}
-                  />
-                  {/* Per-category lines */}
-                  {timeSeries.categories.map((cat, idx) => (
-                    <Line
-                      key={cat} type="monotone" dataKey={cat} name={cat}
-                      stroke={CAT_COLORS[idx % CAT_COLORS.length]}
-                      strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}
-                    />
-                  ))}
-                </LineChart>
+                  <Bar dataKey="count" fill="#6366F1" radius={[4, 4, 0, 0]} barSize={40} name="Total Problems" />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           ) : (
             <div className="h-72 flex items-center justify-center text-gray-400 text-sm">
-              No time-series data available for the last 30 days.
+              No location data available.
             </div>
           )}
         </div>
@@ -255,14 +258,14 @@ const Dashboard = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-gray-500 text-xs">
-                    {ROLE_LABELS[user.role_id] || 'Unknown'}
+                    {ROLE_LABELS[user.role] || 'Unknown'}
                   </td>
                   <td className="px-6 py-4 text-center font-semibold text-gray-700">{user.total_posts}</td>
                   <td className="px-6 py-4 text-center font-semibold text-indigo-600">{user.total_upvotes}</td>
-                  <td className="px-6 py-4 text-center text-gray-500">{user.upvote_ratio.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-center text-gray-500">{Number(user.ratio || 0).toFixed(2)}</td>
                   <td className="px-6 py-4 text-center">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${reputationStyle[user.reputation] || reputationStyle.New}`}>
-                      {user.reputation}
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${reputationStyle[user.reputation_status] || reputationStyle.New}`}>
+                      {user.reputation_status}
                     </span>
                   </td>
                 </tr>

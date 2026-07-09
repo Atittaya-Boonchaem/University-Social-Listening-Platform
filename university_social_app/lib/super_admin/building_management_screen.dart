@@ -15,7 +15,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   List<dynamic> _buildings = [];
   bool _isLoading = true;
 
-  static const String _baseUrl = 'https://university-social-listening-platform.onrender.com/api/v1/problems/buildings';
+  static const String _baseUrl = 'http://127.0.0.1:8000/api/v1/problems/buildings';
 
   @override
   void initState() {

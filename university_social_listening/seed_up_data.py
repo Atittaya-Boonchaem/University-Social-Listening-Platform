@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.models import Category, Building
-from app.main import SessionLocal
+from app.database import SessionLocal
 
 def seed_data():
     db = SessionLocal()
@@ -28,7 +28,7 @@ def seed_data():
         ]
         
         for name in categories:
-            cat = Category(name=name)
+            cat = Category(category_name=name)
             db.add(cat)
             
         print("Inserting Buildings...")

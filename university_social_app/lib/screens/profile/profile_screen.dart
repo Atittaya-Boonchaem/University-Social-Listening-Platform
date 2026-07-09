@@ -61,7 +61,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : 'เบอร์โทรศัพท์: 0800000000';
 
       // ดึงเฉพาะปัญหาของผู้ใช้ปัจจุบัน (กรองตาม JWT)
-      final problemsData = await ProblemService.getMyProblems();
+      List<dynamic> problemsData = [];
+      if (currentRoleId != 5 && currentRoleId != 4) {
+        problemsData = await ProblemService.getMyProblems();
+      }
 
       if (mounted) {
         setState(() {
@@ -96,6 +99,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _getRoleName(int roleId) {
     switch (roleId) {
       case 4: return 'ผู้ดูแลระบบ (Super Admin)';
+      case 5: return 'ผู้เยี่ยมชม (Guest)';
       case 1:
         String studentPrefix = '';
         if (_studentId != null && _studentId!.length >= 2) {
@@ -265,9 +269,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: Colors.grey.shade200),
                     ),
-                    child: Column(
-                      children: [
-                        ListTile(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Column(
+                        children: [
+                          ListTile(
                           leading: CircleAvatar(
                             backgroundColor: Colors.amber.shade50,
                             child: const Icon(Icons.assignment, color: Colors.amber),
@@ -295,12 +301,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             child: const Icon(Icons.help_outline, color: Colors.blue),
                           ),
                           title: const Text('ช่วยเหลือ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                          trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+                          trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
                           onTap: () {},
                         ),
                       ],
                     ),
                   ),
+                ),
                   const SizedBox(height: 32),
 
                   // if (['2', '4'].contains(_roleId.toString()))

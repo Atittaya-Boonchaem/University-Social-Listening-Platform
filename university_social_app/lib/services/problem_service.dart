@@ -5,7 +5,7 @@ import 'dart:typed_data';
 
 class ProblemService {
   // URL หลักของระบบปัญหา (ตรงกับที่ระบุใน FastAPI)
-  static const String baseUrl = 'https://university-social-listening-platform.onrender.com/api/v1/problems';
+  static const String baseUrl = 'http://127.0.0.1:8000/api/v1/problems';
 
   // 1. ดึงรายการปัญหา (เรียกไปที่ /list ตามไฟล์ problems.py)
   static Future<List<dynamic>> getProblems({String? feedType}) async {
@@ -180,6 +180,31 @@ class ProblemService {
       return {'success': false, 'message': 'เกิดข้อผิดพลาดในการโหวต'};
     } catch (e) {
       return {'success': false, 'message': 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้: $e'};
+    }
+  }
+
+  // 5. ลบปัญหา (Soft Delete)
+  static Future<Map<String, dynamic>> deleteProblem(int problemId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+      
+      final response = await http.delete(
+        Uri.parse('$baseUrl/$problemId'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+      
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {'success': true, 'message': 'ลบโพสต์สำเร็จ'};
+      } else {
+        return {'success': false, 'message': data['message'] ?? 'เกิดข้อผิดพลาดในการลบ'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'};
     }
   }
 }

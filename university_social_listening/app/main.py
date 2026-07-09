@@ -1,212 +1,44 @@
-# # app/main.py
-# from fastapi import FastAPI, HTTPException
-# from fastapi.middleware.cors import CORSMiddleware
-# from fastapi.responses import JSONResponse
-# from fastapi.staticfiles import StaticFiles
-# from sqlalchemy import create_engine
-# from sqlalchemy.orm import sessionmaker, Session
-# from contextlib import contextmanager
-# import os
-# from dotenv import load_dotenv
-# import logging
-
-# from app.models import Base
-
-# load_dotenv()
-
-# class Config:
-#     DB_HOST = os.getenv("DB_HOST", "localhost")
-#     DB_PORT = os.getenv("DB_PORT", "3306")
-#     DB_USER = os.getenv("DB_USER", "root")
-#     DB_PASSWORD = os.getenv("DB_PASSWORD", "123456") 
-#     DB_NAME = os.getenv("DB_NAME", "university_social_listening")
-    
-#     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
-#     ALGORITHM = os.getenv("ALGORITHM", "HS256")
-#     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-    
-#     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-#     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "neural-chat")
-    
-#     MAX_IMAGE_SIZE_MB = int(os.getenv("MAX_IMAGE_SIZE_MB", "200"))
-#     IMAGE_UPLOAD_DIR = os.getenv("IMAGE_UPLOAD_DIR", "./uploads/images")
-    
-#     DEBUG = os.getenv("DEBUG", "False") == "True"
-    
-#     @property
-#     def DATABASE_URL(self):
-#         return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-
-# config = Config()
-
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-# )
-# logger = logging.getLogger(__name__)
-
-# engine = create_engine(
-#     config.DATABASE_URL,
-#     echo=config.DEBUG,
-#     pool_pre_ping=True,
-#     pool_recycle=3600,
-# )
-
-# SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# def get_db() -> Session:
-#     db = SessionLocal()
-#     try:
-#         yield db
-#     finally:
-#         db.close()
-
-# app = FastAPI(
-#     title="University Social Listening Platform API",
-#     description="AI-powered platform for university problem reporting and analysis",
-#     version="1.0.0",
-#     docs_url="/docs",
-#     redoc_url="/redoc"
-# )
-
-# os.makedirs(config.IMAGE_UPLOAD_DIR, exist_ok=True)
-# app.mount("/uploads", StaticFiles(directory="./uploads"), name="uploads")
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=[
-#         "http://localhost:5173",
-#         "http://127.0.0.1:5173",
-#         "http://localhost",
-#         "http://127.0.0.1",
-#     ],
-#     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
-# @app.get("/health", tags=["Health"])
-# async def health_check():
-#     return {
-#         "status": "healthy",
-#         "version": "1.0.0",
-#         "database": "connected"
-#     }
-
-# from app.routers import problems, auth, users
-
-# app.include_router(problems.router, prefix="/api/v1/problems", tags=["Problems"])
-# app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
-# app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
-
-# @app.exception_handler(HTTPException)
-# async def http_exception_handler(request, exc):
-#     return JSONResponse(
-#         status_code=exc.status_code,
-#         content={
-#             "error": True,
-#             "message": exc.detail,
-#             "status_code": exc.status_code
-#         }
-#     )
-
-# @app.on_event("startup")
-# async def startup_event():
-#     logger.info("🚀 FastAPI Application Starting...")
-#     Base.metadata.create_all(bind=engine)
-
-# @app.on_event("shutdown")
-# async def shutdown_event():
-#     logger.info("⛔ FastAPI Application Shutting Down...")
-
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(
-#         "main:app",
-#         host="0.0.0.0",
-#         port=8000,
-#         reload=config.DEBUG
-#     )
-
-
-
-
-
 # app/main.py
+"""
+FastAPI application entry point — v2 (26-table schema).
+Configuration, engine, and Base are now in app/database.py.
+"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
-from contextlib import contextmanager
-import os
-from dotenv import load_dotenv
 import logging
+import os
 
-from app.models import Base
-
-load_dotenv()
-
-class Config:
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_PORT = os.getenv("DB_PORT", "3306")
-    DB_USER = os.getenv("DB_USER", "root")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "123456") 
-    DB_NAME = os.getenv("DB_NAME", "university_social_listening")
-    
-    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
-    ALGORITHM = os.getenv("ALGORITHM", "HS256")
-    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-    
-    OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "neural-chat")
-    
-    MAX_IMAGE_SIZE_MB = int(os.getenv("MAX_IMAGE_SIZE_MB", "200"))
-    IMAGE_UPLOAD_DIR = os.getenv("IMAGE_UPLOAD_DIR", "./uploads/images")
-    
-    DEBUG = os.getenv("DEBUG", "False") == "True"
-    
-    @property
-    def DATABASE_URL(self):
-        return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-
-config = Config()
+from app.database import engine, config, Base
+import app.models  # noqa: F401 — registers all 26 models with Base metadata
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-engine = create_engine(
-    config.DATABASE_URL,
-    echo=config.DEBUG,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-def get_db() -> Session:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
+# ──────────────────────────────────────────────
+# FastAPI app
+# ──────────────────────────────────────────────
 app = FastAPI(
     title="University Social Listening Platform API",
-    description="AI-powered platform for university problem reporting and analysis",
-    version="1.0.0",
+    description="AI-powered platform for university problem reporting and analysis — v2",
+    version="2.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
+# ──────────────────────────────────────────────
+# Static file serving (uploaded images)
+# ──────────────────────────────────────────────
 os.makedirs(config.IMAGE_UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="./uploads"), name="uploads")
 
+# ──────────────────────────────────────────────
+# CORS
+# ──────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -214,7 +46,7 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost",
         "http://127.0.0.1",
-        "https://up-social-listening.netlify.app" # 👈 เพิ่มลิงก์หน้าเว็บ Netlify เรียบร้อยครับ!
+        "https://up-social-listening.netlify.app",
     ],
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
@@ -222,20 +54,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ──────────────────────────────────────────────
+# Routers
+# ──────────────────────────────────────────────
+from app.routers import problems, auth, users, settings, audit, buildings  # noqa: E402
+
+app.include_router(auth.router,      prefix="/api/v1/auth",      tags=["Authentication"])
+app.include_router(problems.router,  prefix="/api/v1/problems",  tags=["Problems"])
+app.include_router(users.router,     prefix="/api/v1/users",     tags=["Users"])
+app.include_router(settings.router,  prefix="/api/v1/settings",  tags=["Settings"])
+app.include_router(audit.router,     prefix="/api/v1/audit",     tags=["Audit"])
+app.include_router(buildings.router, prefix="/api/v1/buildings", tags=["Buildings"])
+
+# ──────────────────────────────────────────────
+# Health check
+# ──────────────────────────────────────────────
 @app.get("/health", tags=["Health"])
 async def health_check():
-    return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "database": "connected"
-    }
+    return {"status": "healthy", "version": "2.0.0", "schema": "26-table"}
 
-from app.routers import problems, auth, users
 
-app.include_router(problems.router, prefix="/api/v1/problems", tags=["Problems"])
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
-app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
-
+# ──────────────────────────────────────────────
+# Exception handlers
+# ──────────────────────────────────────────────
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     return JSONResponse(
@@ -243,24 +84,25 @@ async def http_exception_handler(request, exc):
         content={
             "error": True,
             "message": exc.detail,
-            "status_code": exc.status_code
-        }
+            "status_code": exc.status_code,
+        },
     )
 
+# ──────────────────────────────────────────────
+# Lifecycle events
+# ──────────────────────────────────────────────
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🚀 FastAPI Application Starting...")
+    logger.info("🚀 FastAPI v2 — 26-table schema starting...")
     Base.metadata.create_all(bind=engine)
+    logger.info("✅ All tables verified/created.")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    logger.info("⛔ FastAPI Application Shutting Down...")
+    logger.info("⛔ FastAPI Application Shutting Down.")
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=config.DEBUG
-    )
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=config.DEBUG)

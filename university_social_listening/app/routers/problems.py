@@ -1,277 +1,440 @@
 # app/routers/problems.py
-from fastapi import APIRouter, Depends, HTTPException, Query, status, File, UploadFile, Form
+"""
+Problems router — updated for the 26-table schema.
+
+Key changes from v1:
+  - problem_id  (was: id)
+  - status_id   (was: status string)  — looked up via Status table
+  - visibility_id (was: visibility string) — looked up via VisibilityType table
+  - building_name  (was: building_id FK)  — plain string field
+  - ProblemLike  (was: Upvote)
+  - ProblemComment.comment_text (was: Comment.content)
+  - ProblemAttachment  (was: single image_url on Problem)
+  - Category.category_id / category_name  (was: id / name)
+"""
+from fastapi import (
+    APIRouter, Depends, HTTPException, Query,
+    status as http_status, File, UploadFile, Form, Request
+)
 from fastapi.responses import JSONResponse
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, contains_eager
+from sqlalchemy import func, cast, Date
 from typing import List, Optional
 from datetime import datetime, timedelta
-import logging
-import os
-import uuid
-import shutil
-from jose import jwt, JWTError
+import logging, os, uuid, shutil
 
-from app.main import get_db, config
-from app.models import Problem, Category, Building, User, Comment, Upvote
+from app.database import get_db, config
+from app.models import (
+    User, Student, Staff, PublicUser,
+    Problem, ProblemLike, ProblemComment, ProblemAttachment,
+    ProblemStatusHistory, Category, Status, VisibilityType,
+    SuperAdmin, CategoryAdmin, Building,
+)
 from app.schemas import (
-    ProblemCreate, ProblemResponse, ProblemListResponse,
-    ProblemUpdate, StandardResponse, CategoryResponse,
-    BuildingResponse, ProblemAuthorResponse, BulkStatusUpdate,
-    CommentCreate, CommentResponse,
-    CategoryCreate, CategoryUpdate,
-    BuildingCreate, BuildingUpdate
+    ProblemCreate, ProblemUpdate, ProblemResponse,
+    BulkStatusUpdate, StandardResponse,
+    CategoryCreate, CategoryUpdate, CategoryResponse,
+    StatusResponse, VisibilityTypeResponse,
+    ProblemCommentCreate, ProblemCommentResponse,
+    StatusHistoryResponse,
+)
+from app.routers.auth import (
+    get_current_user,
+    get_current_user_optional,
+    get_user_role,
+    get_display_name,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Problems"])
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
-oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
-def get_current_user(token: str = Depends(oauth2_scheme)) -> int:
-    try:
-        payload = jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
-        user_id: Optional[int] = payload.get("user_id")
-        if user_id is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-        return int(user_id)
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+# ──────────────────────────────────────────────
+# Lookup helpers
+# ──────────────────────────────────────────────
+def get_status_by_name(db: Session, name: str) -> Status:
+    s = db.query(Status).filter(Status.status_name == name).first()
+    if not s:
+        raise HTTPException(400, f"Unknown status '{name}'. Run reset_db.py to seed defaults.")
+    return s
 
-def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme_optional)) -> Optional[int]:
-    if not token:
+
+def get_visibility_by_name(db: Session, name: str) -> VisibilityType:
+    v = db.query(VisibilityType).filter(VisibilityType.visibility_name == name).first()
+    if not v:
+        raise HTTPException(400, f"Unknown visibility '{name}'. Run reset_db.py to seed defaults.")
+    return v
+
+
+def get_author_info(user_id: int, db: Session) -> Optional[dict]:
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
         return None
-    try:
-        payload = jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
-        user_id = payload.get("user_id")
-        return int(user_id) if user_id else None
-    except JWTError:
-        return None
+    student = db.query(Student).filter(Student.user_id == user_id).first()
+    if student:
+        return {"user_id": user_id, "display_name": student.student_name, "role": "student"}
+    stf = db.query(Staff).filter(Staff.user_id == user_id).first()
+    if stf:
+        return {"user_id": user_id, "display_name": stf.staff_name, "role": "staff"}
+    pub = db.query(PublicUser).filter(PublicUser.user_id == user_id).first()
+    if pub:
+        return {"user_id": user_id, "display_name": f"{pub.first_name} {pub.last_name}", "role": "public"}
+    from app.models import AnonymousUser
+    anon = db.query(AnonymousUser).filter(AnonymousUser.user_id == user_id).first()
+    if anon:
+        ip = anon.raw_ip or anon.hashed_ip
+        if ip and ip != "anonymous_guest":
+            parts = ip.split(".")
+            if len(parts) == 4:
+                display = f"ไม่ระบุตัวตน (IP: *.*.{parts[2]}.{parts[3]})"
+            else:
+                display = f"ไม่ระบุตัวตน (IP: {ip[:8]}...)"
+        else:
+            display = "ไม่ระบุตัวตน (IP: *.*.0.0)"
+        return {"user_id": user_id, "display_name": display, "role": "anonymous"}
+    return {"user_id": user_id, "display_name": user.email or "Unknown", "role": "unknown"}
 
-def check_category_exists(db: Session, category_id: int) -> Category:
-    category = db.query(Category).filter(Category.id == category_id).first()
-    if not category:
-        raise HTTPException(status_code=404, detail=f"Category {category_id} not found")
-    return category
 
-def check_building_exists(db: Session, building_id: int) -> Optional[Building]:
-    if not building_id:
-        return None
-    building = db.query(Building).filter(Building.id == building_id).first()
-    if not building:
-        raise HTTPException(status_code=404, detail="Building not found")
-    return building
+def require_admin_or_staff(user: User, db: Session) -> None:
+    """Raise 403 if the user is neither staff, category_admin, nor super_admin."""
+    is_staff = db.query(Staff).filter(Staff.user_id == user.user_id).first()
+    is_cat_admin = db.query(CategoryAdmin).filter(
+        CategoryAdmin.user_id == user.user_id, CategoryAdmin.is_active == True
+    ).first()
+    is_super = db.query(SuperAdmin).filter(
+        SuperAdmin.user_id == user.user_id, SuperAdmin.is_active == True
+    ).first()
+    if not (is_staff or is_cat_admin or is_super):
+        raise HTTPException(403, "Only staff or admin users can perform this action")
 
-def serialize_problem(p: Problem, current_user_id: Optional[int] = None) -> dict:
-    base = ProblemResponse.model_validate(p).model_dump()
-    u = p.author
-    if u:
-        base["author"] = ProblemAuthorResponse.model_validate(u).model_dump()
-    else:
-        base["author"] = None
-        
-    upvotes = p.upvotes if p.upvotes else []
-    base["upvote_count"] = len(upvotes)
-    if current_user_id:
-        base["is_upvoted_by_me"] = any(uv.user_id == current_user_id for uv in upvotes)
-    else:
-        base["is_upvoted_by_me"] = False
-        
-    return base
 
-# Categories
+def serialize_problem(p: Problem, db: Session, current_user: Optional[User] = None) -> dict:
+    """Convert a Problem ORM object into a serialisable dict."""
+    # Status & visibility (use ORM relationships if loaded, else query)
+    status_name = p.status.status_name if p.status else "UNKNOWN"
+    status_color = p.status.color_code if p.status else None
+    visibility_name = p.visibility.visibility_name if p.visibility else "public"
+    category_name = p.category.category_name if p.category else ""
+
+    # Likes
+    like_count = db.query(func.count(ProblemLike.like_id)).filter(
+        ProblemLike.problem_id == p.problem_id
+    ).scalar() or 0
+
+    is_liked = False
+    if current_user:
+        is_liked = (
+            db.query(ProblemLike)
+            .filter(
+                ProblemLike.problem_id == p.problem_id,
+                ProblemLike.user_id == current_user.user_id,
+            )
+            .first() is not None
+        )
+
+    # Attachments
+    attachments = [
+        {"attachment_id": a.attachment_id, "file_url": a.file_url,
+         "file_type": a.file_type, "file_size": a.file_size}
+        for a in (p.attachments or [])
+    ]
+
+    author_data = get_author_info(p.user_id, db)
+    return {
+        "id": p.problem_id,
+        "problem_id": p.problem_id,
+        "user_id": p.user_id,
+        "category_id": p.category_id,
+        "category_name": category_name,
+        "visibility_id": p.visibility_id,
+        "visibility_name": visibility_name,
+        "status_id": p.status_id,
+        "status_name": status_name,
+        "status_color": status_color,
+        "title": p.title,
+        "description": p.description,
+        "latitude": float(p.latitude) if p.latitude is not None else None,
+        "longitude": float(p.longitude) if p.longitude is not None else None,
+        "building_name": p.building_name,
+        "is_deleted": p.is_deleted,
+        "is_flagged": p.is_flagged,
+        "flagged_reason": p.flagged_reason,
+        "llm_analysis": p.llm_analysis,
+        "created_at": p.created_at,
+        "like_count": like_count,
+        "is_liked_by_me": is_liked,
+        "author": author_data,
+        "author_name": author_data.get("display_name", "Unknown") if author_data else "Unknown",
+        "attachments": attachments,
+    }
+
+
+# ──────────────────────────────────────────────
+# Category endpoints
+# ──────────────────────────────────────────────
 @router.get("/categories", response_model=StandardResponse)
-def get_categories(db: Session = Depends(get_db)):
-    categories = db.query(Category).all()
-    categories_resp = [CategoryResponse.model_validate(c).model_dump() for c in categories]
-    return StandardResponse(success=True, message="Success", data={"items": categories_resp})
+def list_categories(db: Session = Depends(get_db)):
+    cats = db.query(Category).filter(Category.is_active == True).all()
+    return StandardResponse(
+        success=True, message="Success",
+        data={"items": [CategoryResponse.model_validate(c).model_dump() for c in cats]},
+    )
+
 
 @router.post("/categories", response_model=StandardResponse, status_code=201)
-async def create_category(
-    category: CategoryCreate,
+def create_category(
+    cat: CategoryCreate,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    new_cat = Category(name=category.name)
+    require_admin_or_staff(current_user, db)
+    if db.query(Category).filter(Category.category_name == cat.category_name).first():
+        raise HTTPException(400, "Category name already exists")
+    new_cat = Category(**cat.model_dump())
     db.add(new_cat)
     db.commit()
     db.refresh(new_cat)
-    return StandardResponse(success=True, message="Category created", data={"item": CategoryResponse.model_validate(new_cat).model_dump()})
+    return StandardResponse(
+        success=True, message="Category created",
+        data={"item": CategoryResponse.model_validate(new_cat).model_dump()},
+    )
+
 
 @router.put("/categories/{category_id}", response_model=StandardResponse)
-async def update_category(
+def update_category(
     category_id: int,
-    category: CategoryUpdate,
+    cat: CategoryUpdate,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    db_cat = db.query(Category).filter(Category.id == category_id).first()
+    require_admin_or_staff(current_user, db)
+    db_cat = db.query(Category).filter(Category.category_id == category_id).first()
     if not db_cat:
-        raise HTTPException(status_code=404, detail="Category not found")
-    if category.name:
-        db_cat.name = category.name
+        raise HTTPException(404, "Category not found")
+    for field, value in cat.model_dump(exclude_none=True).items():
+        setattr(db_cat, field, value)
     db.commit()
     db.refresh(db_cat)
-    return StandardResponse(success=True, message="Category updated", data={"item": CategoryResponse.model_validate(db_cat).model_dump()})
+    return StandardResponse(
+        success=True, message="Category updated",
+        data={"item": CategoryResponse.model_validate(db_cat).model_dump()},
+    )
+
 
 @router.delete("/categories/{category_id}", response_model=StandardResponse)
-async def delete_category(
+def delete_category(
     category_id: int,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    db_cat = db.query(Category).filter(Category.id == category_id).first()
+    require_admin_or_staff(current_user, db)
+    db_cat = db.query(Category).filter(Category.category_id == category_id).first()
     if not db_cat:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(404, "Category not found")
     db.delete(db_cat)
     db.commit()
     return StandardResponse(success=True, message="Category deleted")
 
-# Buildings
-@router.get("/buildings", response_model=StandardResponse)
-def get_buildings(db: Session = Depends(get_db)):
-    buildings = db.query(Building).all()
-    buildings_resp = [BuildingResponse.model_validate(b).model_dump() for b in buildings]
-    return StandardResponse(success=True, message="Success", data={"items": buildings_resp})
 
-@router.post("/buildings", response_model=StandardResponse, status_code=201)
-async def create_building(
-    building: BuildingCreate,
-    db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
-):
-    new_bld = Building(name=building.name, latitude=building.latitude, longitude=building.longitude)
-    db.add(new_bld)
-    db.commit()
-    db.refresh(new_bld)
-    return StandardResponse(success=True, message="Building created", data={"item": BuildingResponse.model_validate(new_bld).model_dump()})
+# ──────────────────────────────────────────────
+# Status & Visibility reference endpoints
+# ──────────────────────────────────────────────
+@router.get("/statuses", response_model=StandardResponse)
+def list_statuses(db: Session = Depends(get_db)):
+    statuses = db.query(Status).all()
+    return StandardResponse(
+        success=True, message="Success",
+        data={"items": [StatusResponse.model_validate(s).model_dump() for s in statuses]},
+    )
 
-@router.put("/buildings/{building_id}", response_model=StandardResponse)
-async def update_building(
-    building_id: int,
-    building: BuildingUpdate,
-    db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
-):
-    db_bld = db.query(Building).filter(Building.id == building_id).first()
-    if not db_bld:
-        raise HTTPException(status_code=404, detail="Building not found")
-    if building.name:
-        db_bld.name = building.name
-    if building.latitude is not None:
-        db_bld.latitude = building.latitude
-    if building.longitude is not None:
-        db_bld.longitude = building.longitude
-    db.commit()
-    db.refresh(db_bld)
-    return StandardResponse(success=True, message="Building updated", data={"item": BuildingResponse.model_validate(db_bld).model_dump()})
 
-@router.delete("/buildings/{building_id}", response_model=StandardResponse)
-async def delete_building(
-    building_id: int,
-    db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
-):
-    db_bld = db.query(Building).filter(Building.id == building_id).first()
-    if not db_bld:
-        raise HTTPException(status_code=404, detail="Building not found")
-    db.delete(db_bld)
-    db.commit()
-    return StandardResponse(success=True, message="Building deleted")
+@router.get("/visibility-types", response_model=StandardResponse)
+def list_visibility_types(db: Session = Depends(get_db)):
+    types = db.query(VisibilityType).all()
+    return StandardResponse(
+        success=True, message="Success",
+        data={"items": [VisibilityTypeResponse.model_validate(v).model_dump() for v in types]},
+    )
 
-# Problems
-@router.post("/create", response_model=StandardResponse, status_code=status.HTTP_201_CREATED)
+
+# ──────────────────────────────────────────────
+# Problem CRUD
+# ──────────────────────────────────────────────
+@router.post("/create", response_model=StandardResponse, status_code=201)
 async def create_problem(
+    request: Request,
     title: str = Form(...),
     description: str = Form(...),
     category_id: int = Form(...),
+    visibility_name: str = Form("public"),
+    building_name: Optional[str] = Form(None),
     building_id: Optional[int] = Form(None),
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
-    visibility: str = Form("public"),
     image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    check_category_exists(db, category_id)
-    if building_id:
-        check_building_exists(db, building_id)
-        
-    image_url = None
+    # AI Profanity Check
+    from app.services.ai_service import check_profanity, suggest_category
+    if check_profanity(description):
+        raise HTTPException(status_code=400, detail="เนื้อหาไม่เหมาะสมเนื่องจากมีคำหยาบคาย")
+
+    # Validate category
+    cat = db.query(Category).filter(Category.category_id == category_id).first()
+    if not cat:
+        raise HTTPException(404, f"Category {category_id} not found")
+
+    # AI Category Suggestion if category is "อื่นๆ"
+    if cat.category_name == "อื่นๆ" or cat.category_name == "อื่น ๆ":
+        categories = db.query(Category).all()
+        categories_list = [{"id": c.category_id, "name": c.category_name} for c in categories]
+        suggested_id = suggest_category(description, categories_list)
+        if suggested_id:
+            category_id = suggested_id
+            cat = db.query(Category).filter(Category.category_id == category_id).first() or cat
+
+    # Resolve FK lookups
+    status_obj = get_status_by_name(db, "OPEN")
+    vis_obj = get_visibility_by_name(db, visibility_name)
+    
+    if not building_name and building_id:
+        b = db.query(Building).filter(Building.building_id == building_id).first()
+        if b:
+            building_name = b.name
+
+    # Handle image upload
+    attachment_url: Optional[str] = None
     if image and image.filename:
-        upload_dir = config.IMAGE_UPLOAD_DIR
-        os.makedirs(upload_dir, exist_ok=True)
-        file_ext = os.path.splitext(image.filename)[1]
-        unique_filename = f"{uuid.uuid4().hex}{file_ext}"
-        file_path = os.path.join(upload_dir, unique_filename)
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(image.file, buffer)
-        image_url = f"/uploads/images/{unique_filename}"
-        
-    db_problem = Problem(
-        user_id=user_id,
+        os.makedirs(config.IMAGE_UPLOAD_DIR, exist_ok=True)
+        ext = os.path.splitext(image.filename)[1]
+        filename = f"{uuid.uuid4().hex}{ext}"
+        filepath = os.path.join(config.IMAGE_UPLOAD_DIR, filename)
+        with open(filepath, "wb") as buf:
+            shutil.copyfileobj(image.file, buf)
+        attachment_url = f"/uploads/images/{filename}"
+
+    # User mapping
+    problem_user_id = current_user.user_id
+
+    # Create problem
+    problem = Problem(
+        user_id=problem_user_id,
         category_id=category_id,
-        building_id=building_id,
+        status_id=status_obj.status_id,
+        visibility_id=vis_obj.visibility_id,
         title=title,
         description=description,
         latitude=latitude,
         longitude=longitude,
-        visibility=visibility,
-        image_url=image_url,
-        status="OPEN",
-        created_at=datetime.utcnow()
+        building_name=building_name,
     )
-    
-    db.add(db_problem)
+    db.add(problem)
+    db.flush()   # get problem_id
+
+    # Attach image if uploaded
+    if attachment_url:
+        att = ProblemAttachment(
+            problem_id=problem.problem_id,
+            file_url=attachment_url,
+            file_type=image.content_type if image else None,
+        )
+        db.add(att)
+
+    # Record initial status history
+    history = ProblemStatusHistory(
+        problem_id=problem.problem_id,
+        status_id=status_obj.status_id,
+        changed_by=problem_user_id,
+        notes="Problem created",
+    )
+    db.add(history)
     db.commit()
-    db.refresh(db_problem)
-    
+
+    # Eager-load for serialization
+    problem = (
+        db.query(Problem)
+        .options(
+            joinedload(Problem.category),
+            joinedload(Problem.status),
+            joinedload(Problem.visibility),
+            joinedload(Problem.attachments),
+        )
+        .filter(Problem.problem_id == problem.problem_id)
+        .first()
+    )
+
     return StandardResponse(
         success=True,
         message="Problem reported successfully",
-        data={"problem": serialize_problem(db_problem, current_user_id=user_id)}
+        data={"problem": serialize_problem(problem, db, current_user)},
     )
+
 
 @router.get("/list", response_model=StandardResponse)
 async def list_problems(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     category_id: Optional[int] = None,
-    status: Optional[str] = None,
-    visibility: Optional[str] = Query("public"),
+    status_name: Optional[str] = None,
+    user_id: Optional[int] = None,
+    visibility_name: str = Query("public"),
     db: Session = Depends(get_db),
-    current_user_id: Optional[int] = Depends(get_current_user_optional)
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     query = (
         db.query(Problem)
-        .options(joinedload(Problem.author), joinedload(Problem.category), joinedload(Problem.building), joinedload(Problem.upvotes))
-        .filter(Problem.status != "CLOSED")
+        .join(Category, Problem.category_id == Category.category_id)
+        .options(
+            contains_eager(Problem.category),
+            joinedload(Problem.status),
+            joinedload(Problem.visibility),
+            joinedload(Problem.attachments),
+        )
+        .filter(Problem.is_deleted == False)
     )
-    
-    # RBAC logic for visibility
-    if current_user_id:
-        user = db.query(User).filter(User.id == current_user_id).first()
-        if user and user.role_id in [2, 4]:
-            if visibility == "internal":
-                query = query.filter(Problem.visibility == "internal")
-            else:
-                query = query.filter(Problem.visibility == "public")
-        else:
-            query = query.filter(Problem.visibility == "public")
-    else:
-        query = query.filter(Problem.visibility == "public")
-        
-    if category_id: query = query.filter(Problem.category_id == category_id)
-    if status: query = query.filter(Problem.status == status)
-    
+
+    # Visibility gate: only staff/admin can see internal problems
+    vis = db.query(VisibilityType).filter(
+        VisibilityType.visibility_name == visibility_name
+    ).first()
+    if vis:
+        is_privileged = False
+        if current_user:
+            is_privileged = bool(
+                db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
+                or db.query(SuperAdmin).filter(
+                    SuperAdmin.user_id == current_user.user_id, SuperAdmin.is_active == True
+                ).first()
+            )
+        if visibility_name == "internal" and not is_privileged:
+            # Fall back to public for unprivileged users
+            vis = db.query(VisibilityType).filter(
+                VisibilityType.visibility_name == "public"
+            ).first()
+        if vis:
+            query = query.filter(Problem.visibility_id == vis.visibility_id)
+
+    if category_id:
+        query = query.filter(Problem.category_id == category_id)
+    if status_name:
+        status_obj = db.query(Status).filter(Status.status_name == status_name).first()
+        if status_obj:
+            query = query.filter(Problem.status_id == status_obj.status_id)
+
+    if user_id:
+        query = query.filter(Problem.user_id == user_id)
+
+    # Category Admin RBAC filter
+    if current_user:
+        cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+        if cat_admin and cat_admin.category_id:
+            query = query.filter(Problem.category_id == cat_admin.category_id)
+
     total = query.count()
     skip = (page - 1) * page_size
     problems = query.order_by(Problem.created_at.desc()).offset(skip).limit(page_size).all()
-    
+
     return StandardResponse(
         success=True,
         message=f"Retrieved {len(problems)} problems",
@@ -279,25 +442,30 @@ async def list_problems(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "items": [serialize_problem(p, current_user_id) for p in problems]
-        }
+            "items": [serialize_problem(p, db, current_user) for p in problems],
+        },
     )
+
 
 @router.get("/my-problems", response_model=StandardResponse)
 async def get_my_problems(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user_id: int = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     query = (
         db.query(Problem)
-        .options(joinedload(Problem.author), joinedload(Problem.category), joinedload(Problem.building), joinedload(Problem.upvotes))
-        .filter(Problem.user_id == current_user_id)
+        .options(
+            joinedload(Problem.category),
+            joinedload(Problem.status),
+            joinedload(Problem.visibility),
+            joinedload(Problem.attachments),
+        )
+        .filter(Problem.user_id == current_user.user_id, Problem.is_deleted == False)
     )
     total = query.count()
-    skip = (page - 1) * page_size
-    problems = query.order_by(Problem.created_at.desc()).offset(skip).limit(page_size).all()
+    problems = query.order_by(Problem.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     return StandardResponse(
         success=True,
@@ -306,83 +474,113 @@ async def get_my_problems(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "items": [serialize_problem(p, current_user_id) for p in problems]
-        }
+            "items": [serialize_problem(p, db, current_user) for p in problems],
+        },
     )
+
 
 @router.get("/analytics", response_model=StandardResponse)
-async def get_analytics(db: Session = Depends(get_db)):
-    from sqlalchemy import func
-    
-    total = db.query(func.count(Problem.id)).scalar() or 0
+async def get_analytics(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    base_filters = [Problem.is_deleted == False]
+    if current_user:
+        cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+        if cat_admin and cat_admin.category_id:
+            base_filters.append(Problem.category_id == cat_admin.category_id)
 
-    status_counts = {}
-    for s in ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"]:
-        count = db.query(func.count(Problem.id)).filter(Problem.status == s).scalar() or 0
-        status_counts[s] = count
+    total = db.query(func.count(Problem.problem_id)).filter(*base_filters).scalar() or 0
 
+    # By status
+    status_rows = (
+        db.query(Status.status_name, func.count(Problem.problem_id).label("cnt"))
+        .join(Problem, Problem.status_id == Status.status_id)
+        .filter(*base_filters)
+        .group_by(Status.status_id, Status.status_name)
+        .all()
+    )
+    by_status = {row[0]: row[1] for row in status_rows}
+
+    # By category
     cat_rows = (
-        db.query(Category.name, func.count(Problem.id).label("count"))
-        .join(Problem, Problem.category_id == Category.id)
-        .group_by(Category.id, Category.name)
-        .order_by(func.count(Problem.id).desc())
+        db.query(Category.category_name, func.count(Problem.problem_id).label("cnt"))
+        .join(Problem, Problem.category_id == Category.category_id)
+        .filter(*base_filters)
+        .group_by(Category.category_id, Category.category_name)
+        .order_by(func.count(Problem.problem_id).desc())
         .all()
     )
-    by_category = [{"category_name": row[0], "count": row[1]} for row in cat_rows]
+    by_category = [{"category_name": r[0], "count": r[1]} for r in cat_rows]
 
-    role_rows = (
-        db.query(User.role_id, func.count(Problem.id).label("count"))
-        .join(Problem, Problem.user_id == User.id)
-        .group_by(User.role_id)
-        .all()
+    # By role (separate sub-table counts)
+    student_count = (
+        db.query(func.count(Problem.problem_id))
+        .join(Student, Student.user_id == Problem.user_id)
+        .filter(*base_filters)
+        .scalar() or 0
     )
-    by_role = {row[0]: row[1] for row in role_rows}
+    staff_count = (
+        db.query(func.count(Problem.problem_id))
+        .join(Staff, Staff.user_id == Problem.user_id)
+        .filter(*base_filters)
+        .scalar() or 0
+    )
+    public_count = (
+        db.query(func.count(Problem.problem_id))
+        .join(PublicUser, PublicUser.user_id == Problem.user_id)
+        .filter(*base_filters)
+        .scalar() or 0
+    )
+    by_role = {"student": student_count, "staff": staff_count, "public": public_count}
 
-    geo_problems = (
-        db.query(Problem.id, Problem.latitude, Problem.longitude, Problem.status)
-        .filter(Problem.latitude.isnot(None), Problem.longitude.isnot(None))
+    # Geo points
+    geo_rows = (
+        db.query(Problem.problem_id, Problem.latitude, Problem.longitude, Status.status_name)
+        .join(Status, Status.status_id == Problem.status_id)
+        .filter(Problem.latitude.isnot(None), Problem.longitude.isnot(None), *base_filters)
         .all()
     )
-    geo_points = [{"id": r[0], "latitude": r[1], "longitude": r[2], "status": r[3]} for r in geo_problems]
+    geo_points = [
+        {"id": r[0], "latitude": float(r[1]), "longitude": float(r[2]), "status": r[3]}
+        for r in geo_rows
+    ]
 
     return StandardResponse(
         success=True,
-        message="Analytics retrieved successfully",
-        data={
-            "total": total,
-            "by_status": status_counts,
-            "by_category": by_category,
-            "by_role": by_role,
-            "geo_points": geo_points,
-        }
+        message="Analytics retrieved",
+        data={"total": total, "by_status": by_status, "by_category": by_category,
+              "by_role": by_role, "geo_points": geo_points},
     )
 
-@router.get("/analytics/time-series", response_model=StandardResponse)
-async def get_time_series(db: Session = Depends(get_db)):
-    """Returns problem counts grouped by day (last 30 days) and by category per day."""
-    from sqlalchemy import func, cast, Date
 
+@router.get("/analytics/time-series", response_model=StandardResponse)
+async def get_time_series(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     since = datetime.utcnow() - timedelta(days=29)
 
-    # Daily totals
+    base_filters = [Problem.created_at >= since, Problem.is_deleted == False]
+    if current_user:
+        cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+        if cat_admin and cat_admin.category_id:
+            base_filters.append(Problem.category_id == cat_admin.category_id)
+
     daily_rows = (
-        db.query(
-            cast(Problem.created_at, Date).label("day"),
-            func.count(Problem.id).label("count")
-        )
-        .filter(Problem.created_at >= since)
+        db.query(cast(Problem.created_at, Date).label("day"), func.count(Problem.problem_id).label("cnt"))
+        .filter(*base_filters)
         .group_by(cast(Problem.created_at, Date))
         .order_by(cast(Problem.created_at, Date))
         .all()
     )
 
-    # Per-category per-day counts (top 5 categories by volume)
     top_cats = (
-        db.query(Category.name)
-        .join(Problem, Problem.category_id == Category.id)
-        .filter(Problem.created_at >= since)
-        .group_by(Category.id, Category.name)
-        .order_by(func.count(Problem.id).desc())
+        db.query(Category.category_name)
+        .join(Problem, Problem.category_id == Category.category_id)
+        .filter(*base_filters)
+        .group_by(Category.category_id, Category.category_name)
+        .order_by(func.count(Problem.problem_id).desc())
         .limit(5)
         .all()
     )
@@ -391,320 +589,411 @@ async def get_time_series(db: Session = Depends(get_db)):
     cat_daily_rows = (
         db.query(
             cast(Problem.created_at, Date).label("day"),
-            Category.name.label("category"),
-            func.count(Problem.id).label("count")
+            Category.category_name.label("category"),
+            func.count(Problem.problem_id).label("cnt"),
         )
-        .join(Category, Problem.category_id == Category.id)
-        .filter(Problem.created_at >= since, Category.name.in_(top_cat_names))
-        .group_by(cast(Problem.created_at, Date), Category.name)
+        .join(Category, Problem.category_id == Category.category_id)
+        .filter(*base_filters, Category.category_name.in_(top_cat_names) if top_cat_names else True)
+        .group_by(cast(Problem.created_at, Date), Category.category_name)
         .order_by(cast(Problem.created_at, Date))
         .all()
     )
 
-    # Build a date-keyed dict for easy frontend consumption
-    series_map = {}
+    series_map: dict = {}
     for row in daily_rows:
         key = str(row.day)
-        series_map[key] = {"date": key, "total": row.count}
-
+        series_map[key] = {"date": key, "total": row.cnt}
     for row in cat_daily_rows:
         key = str(row.day)
         if key not in series_map:
             series_map[key] = {"date": key, "total": 0}
-        series_map[key][row.category] = row.count
+        series_map[key][row.category] = row.cnt
 
     series = sorted(series_map.values(), key=lambda x: x["date"])
-
     return StandardResponse(
-        success=True,
-        message="Time series retrieved",
-        data={"series": series, "categories": top_cat_names}
+        success=True, message="Time series retrieved",
+        data={"series": series, "categories": top_cat_names},
     )
 
 
 @router.get("/analytics/user-reputation", response_model=StandardResponse)
-async def get_user_reputation(db: Session = Depends(get_db)):
-    """Returns per-user posting stats: total posts, total upvotes received, and ratio."""
-    from sqlalchemy import func
+async def get_user_reputation(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    base_filters = [Problem.is_deleted == False]
+    if current_user:
+        cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+        if cat_admin and cat_admin.category_id:
+            base_filters.append(Problem.category_id == cat_admin.category_id)
 
-    rows = (
+    stats = (
         db.query(
-            User.id.label("user_id"),
-            User.display_name.label("display_name"),
-            User.role_id.label("role_id"),
-            func.count(Problem.id).label("total_posts"),
-            func.coalesce(func.sum(func.coalesce(
-                db.query(func.count(Upvote.id))
-                  .filter(Upvote.problem_id == Problem.id)
-                  .correlate(Problem)
-                  .scalar_subquery(),
-                0
-            )), 0).label("total_upvotes")
+            Problem.user_id,
+            func.count(Problem.problem_id.distinct()).label("total_posts"),
+            func.count(ProblemLike.like_id).label("total_upvotes")
         )
-        .join(Problem, Problem.user_id == User.id)
-        .group_by(User.id, User.display_name, User.role_id)
-        .order_by(func.count(Problem.id).desc())
-        .limit(50)
+        .outerjoin(ProblemLike, ProblemLike.problem_id == Problem.problem_id)
+        .filter(*base_filters)
+        .group_by(Problem.user_id)
         .all()
     )
 
-    result = []
-    for r in rows:
-        total_posts   = r.total_posts   or 0
-        total_upvotes = int(r.total_upvotes or 0)
-        ratio = round(total_upvotes / total_posts, 2) if total_posts > 0 else 0.0
-
-        if ratio >= 3.0:   reputation = "Trusted"
-        elif ratio >= 1.0: reputation = "Active"
-        elif ratio >= 0.3: reputation = "Regular"
-        else:              reputation = "New"
-
-        result.append({
-            "user_id":      r.user_id,
-            "display_name": r.display_name,
-            "role_id":      r.role_id,
-            "total_posts":  total_posts,
-            "total_upvotes": total_upvotes,
-            "upvote_ratio": ratio,
-            "reputation":   reputation,
+    items = []
+    for row in stats:
+        if not row.user_id:
+            continue
+        user_id = row.user_id
+        posts = row.total_posts
+        upvotes = row.total_upvotes
+        ratio = round(upvotes / posts, 2) if posts > 0 else 0
+        
+        rep = "New"
+        if ratio >= 5: rep = "Trusted"
+        elif ratio >= 2: rep = "Active"
+        elif ratio > 0: rep = "Regular"
+        
+        role = get_user_role(user_id, db)
+        role_map = {"student": 1, "staff": 2, "public": 3, "super_admin": 4, "category_admin": 4, "anonymous": 5}
+        
+        items.append({
+            "user_id": user_id,
+            "display_name": get_display_name(user_id, db),
+            "role": role_map.get(role, 5),
+            "total_posts": posts,
+            "total_upvotes": upvotes,
+            "ratio": ratio,
+            "reputation_status": rep,
         })
+        
+    items = sorted(items, key=lambda x: x["total_posts"], reverse=True)
 
     return StandardResponse(
-        success=True,
-        message="User reputation retrieved",
-        data={"items": result}
+        success=True, message="User reputation retrieved",
+        data={"items": items}
     )
 
 
 @router.get("/analytics/report", response_model=StandardResponse)
 async def get_report(
-    start_date: str = Query(..., description="Start date YYYY-MM-DD"),
-    end_date:   str = Query(..., description="End date YYYY-MM-DD"),
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
-    """Generate a summarized analytics report for the given date range."""
-    from sqlalchemy import func
-
     try:
         dt_start = datetime.strptime(start_date, "%Y-%m-%d")
-        dt_end   = datetime.strptime(end_date,   "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        dt_end = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD.")
 
     if dt_start > dt_end:
-        raise HTTPException(status_code=400, detail="start_date must be before end_date.")
+        raise HTTPException(400, "start_date must be before end_date.")
 
-    base_q = db.query(Problem).filter(
+    base_filters = [
         Problem.created_at >= dt_start,
-        Problem.created_at <= dt_end
-    )
+        Problem.created_at <= dt_end,
+        Problem.is_deleted == False,
+    ]
+    if current_user:
+        cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+        if cat_admin and cat_admin.category_id:
+            base_filters.append(Problem.category_id == cat_admin.category_id)
 
+    base_q = db.query(Problem).filter(*base_filters)
     total = base_q.count()
 
-    # Status breakdown
-    status_counts = {}
-    for s in ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"]:
-        status_counts[s] = base_q.filter(Problem.status == s).count()
+    status_rows = (
+        db.query(Status.status_name, func.count(Problem.problem_id))
+        .join(Problem, Problem.status_id == Status.status_id)
+        .filter(*base_filters)
+        .group_by(Status.status_id, Status.status_name)
+        .all()
+    )
+    by_status = {r[0]: r[1] for r in status_rows}
 
-    # By category
     cat_rows = (
-        db.query(Category.name, func.count(Problem.id).label("count"))
-        .join(Problem, Problem.category_id == Category.id)
-        .filter(Problem.created_at >= dt_start, Problem.created_at <= dt_end)
-        .group_by(Category.id, Category.name)
-        .order_by(func.count(Problem.id).desc())
+        db.query(Category.category_name, func.count(Problem.problem_id))
+        .join(Problem, Problem.category_id == Category.category_id)
+        .filter(*base_filters)
+        .group_by(Category.category_id, Category.category_name)
+        .order_by(func.count(Problem.problem_id).desc())
         .all()
     )
     by_category = [{"name": r[0], "count": r[1]} for r in cat_rows]
 
-    # By role
-    role_map = {1: "Student", 2: "Staff", 3: "Public", 4: "Admin"}
-    role_rows = (
-        db.query(User.role_id, func.count(Problem.id).label("count"))
-        .join(Problem, Problem.user_id == User.id)
-        .filter(Problem.created_at >= dt_start, Problem.created_at <= dt_end)
-        .group_by(User.role_id)
-        .all()
-    )
-    by_role = [{"name": role_map.get(r[0], f"Role {r[0]}"), "count": r[1]} for r in role_rows]
-
-    # Detailed rows for CSV export — explicit outerjoin on Building ensures location is always populated
-    problems = (
-        base_q
-        .options(
-            joinedload(Problem.author),
-            joinedload(Problem.category),
-            joinedload(Problem.building),
-        )
-        .order_by(Problem.created_at.desc())
-        .all()
-    )
-    rows = []
-    for p in problems:
-        author_role = role_map.get(p.author.role_id, f"Role {p.author.role_id}") if p.author else ""
-        rows.append({
-            "id":          p.id,
-            "title":       p.title,
-            "status":      p.status,
-            "visibility":  p.visibility,
-            "category":    p.category.name if p.category else "",
-            "author":      p.author.display_name if p.author else "",
-            "role":        author_role,
-            "location":    p.building.name if p.building else "",   # renamed from 'building'
-            "latitude":    p.latitude,
-            "longitude":   p.longitude,
-            "created_at":  p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "",
-        })
-
-    resolved   = status_counts.get("CLOSED", 0) + status_counts.get("RESOLVED", 0)
+    resolved = by_status.get("RESOLVED", 0) + by_status.get("CLOSED", 0)
     unresolved = total - resolved
     resolution_rate = round((resolved / total) * 100, 1) if total > 0 else 0.0
 
+    problems = (
+        base_q
+        .options(joinedload(Problem.category), joinedload(Problem.status), joinedload(Problem.visibility))
+        .order_by(Problem.created_at.desc())
+        .all()
+    )
+    rows = [
+        {
+            "id": p.problem_id,
+            "title": p.title,
+            "status": p.status.status_name if p.status else "",
+            "visibility": p.visibility.visibility_name if p.visibility else "",
+            "category": p.category.category_name if p.category else "",
+            "author": get_author_info(p.user_id, db),
+            "building_name": p.building_name,
+            "latitude": float(p.latitude) if p.latitude else None,
+            "longitude": float(p.longitude) if p.longitude else None,
+            "created_at": p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "",
+        }
+        for p in problems
+    ]
+
+    student_count = db.query(func.count(Problem.problem_id)).join(Student, Student.user_id == Problem.user_id).filter(*base_filters).scalar() or 0
+    staff_count = db.query(func.count(Problem.problem_id)).join(Staff, Staff.user_id == Problem.user_id).filter(*base_filters).scalar() or 0
+    public_count = db.query(func.count(Problem.problem_id)).join(PublicUser, PublicUser.user_id == Problem.user_id).filter(*base_filters).scalar() or 0
+    by_role = [
+        {"name": "Student", "count": student_count},
+        {"name": "Staff", "count": staff_count},
+        {"name": "Public", "count": public_count}
+    ]
+
     return StandardResponse(
         success=True,
-        message=f"Report generated: {total} problems from {start_date} to {end_date}",
+        message=f"Report generated: {total} problems ({start_date} → {end_date})",
         data={
             "summary": {
-                "total":           total,
-                "resolved":        resolved,
-                "unresolved":      unresolved,
-                "resolution_rate": resolution_rate,
-                "by_status":       status_counts,
+                "total": total, "resolved": resolved,
+                "unresolved": unresolved, "resolution_rate": resolution_rate,
+                "by_status": by_status,
             },
             "by_category": by_category,
-            "by_role":     by_role,
-            "rows":        rows,
-            "date_range":  {"start": start_date, "end": end_date},
-        }
+            "by_role": by_role,
+            "rows": rows,
+            "date_range": {"start": start_date, "end": end_date},
+        },
     )
 
 
 @router.patch("/bulk-update", response_model=StandardResponse)
 async def bulk_update_status(
     payload: BulkStatusUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    updated = db.query(Problem).filter(Problem.id.in_(payload.problem_ids)).all()
-    if not updated:
-        raise HTTPException(status_code=404, detail="Posts not found")
+    require_admin_or_staff(current_user, db)
+    status_obj = get_status_by_name(db, payload.status_name)
+    problems = db.query(Problem).filter(Problem.problem_id.in_(payload.problem_ids)).all()
+    if not problems:
+        raise HTTPException(404, "No matching problems found")
 
-    for p in updated:
-        p.status = payload.new_status
+    for p in problems:
+        p.status_id = status_obj.status_id
+        history = ProblemStatusHistory(
+            problem_id=p.problem_id,
+            status_id=status_obj.status_id,
+            changed_by=current_user.user_id,
+            notes=f"Bulk update to {payload.status_name}",
+        )
+        db.add(history)
+
     db.commit()
-    
     return StandardResponse(
         success=True,
-        message=f"Updated {len(updated)} posts to {payload.new_status}",
-        data={"updated_count": len(updated), "new_status": payload.new_status}
+        message=f"Updated {len(problems)} problems to {payload.status_name}",
+        data={"updated_count": len(problems), "new_status": payload.status_name},
     )
+
 
 @router.get("/{problem_id}", response_model=StandardResponse)
 async def get_problem_detail(
-    problem_id: int, 
+    problem_id: int,
     db: Session = Depends(get_db),
-    current_user_id: Optional[int] = Depends(get_current_user_optional)
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     problem = (
         db.query(Problem)
-        .options(joinedload(Problem.author), joinedload(Problem.category), joinedload(Problem.building), joinedload(Problem.upvotes))
-        .filter(Problem.id == problem_id).first()
+        .options(
+            joinedload(Problem.category),
+            joinedload(Problem.status),
+            joinedload(Problem.visibility),
+            joinedload(Problem.attachments),
+        )
+        .filter(Problem.problem_id == problem_id, Problem.is_deleted == False)
+        .first()
     )
-    if not problem: raise HTTPException(status_code=404, detail="Problem not found")
-    return StandardResponse(success=True, message="Success", data={"problem": serialize_problem(problem, current_user_id)})
+    if not problem:
+        raise HTTPException(404, "Problem not found")
+    return StandardResponse(
+        success=True, message="Success",
+        data={"problem": serialize_problem(problem, db, current_user)},
+    )
+
 
 @router.patch("/{problem_id}/status", response_model=StandardResponse)
 async def update_problem_status(
     problem_id: int,
-    new_status: str,
+    new_status_name: str,
+    notes: Optional[str] = None,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    require_admin_or_staff(current_user, db)
+    problem = db.query(Problem).filter(Problem.problem_id == problem_id).first()
     if not problem:
-        raise HTTPException(status_code=404, detail="Problem not found")
+        raise HTTPException(404, "Problem not found")
 
-    problem.status = new_status
+    cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+    if cat_admin and cat_admin.category_id and problem.category_id != cat_admin.category_id:
+        raise HTTPException(403, "You can only update problems in your assigned category")
+
+    status_obj = get_status_by_name(db, new_status_name)
+    problem.status_id = status_obj.status_id
+
+    history = ProblemStatusHistory(
+        problem_id=problem_id,
+        status_id=status_obj.status_id,
+        changed_by=current_user.user_id,
+        notes=notes,
+    )
+    db.add(history)
     db.commit()
-    db.refresh(problem)
 
     return StandardResponse(
         success=True,
-        message=f"Status updated to {new_status}",
-        data={"problem_id": problem_id, "new_status": new_status}
+        message=f"Status updated to {new_status_name}",
+        data={"problem_id": problem_id, "new_status": new_status_name},
     )
+
+
+@router.get("/{problem_id}/status-history", response_model=StandardResponse)
+async def get_status_history(problem_id: int, db: Session = Depends(get_db)):
+    problem = db.query(Problem).filter(Problem.problem_id == problem_id).first()
+    if not problem:
+        raise HTTPException(404, "Problem not found")
+
+    histories = (
+        db.query(ProblemStatusHistory)
+        .options(joinedload(ProblemStatusHistory.status))
+        .filter(ProblemStatusHistory.problem_id == problem_id)
+        .order_by(ProblemStatusHistory.changed_at.asc())
+        .all()
+    )
+    result = [
+        {
+            "history_id": h.history_id,
+            "problem_id": h.problem_id,
+            "status_id": h.status_id,
+            "status_name": h.status.status_name if h.status else "",
+            "status_color": h.status.color_code if h.status else None,
+            "changed_by": h.changed_by,
+            "notes": h.notes,
+            "changed_at": h.changed_at,
+        }
+        for h in histories
+    ]
+    return StandardResponse(success=True, message="Status history retrieved", data={"items": result})
+
 
 @router.post("/{problem_id}/comments", response_model=StandardResponse, status_code=201)
 async def add_comment(
     problem_id: int,
-    body: CommentCreate,
+    body: ProblemCommentCreate,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    problem = db.query(Problem).filter(Problem.problem_id == problem_id, Problem.is_deleted == False).first()
     if not problem:
-        raise HTTPException(status_code=404, detail="Problem not found")
+        raise HTTPException(404, "Problem not found")
 
-    new_comment = Comment(
+    comment = ProblemComment(
         problem_id=problem_id,
-        user_id=user_id,
-        content=body.content,
+        user_id=current_user.user_id,
+        comment_text=body.comment_text,
     )
-    db.add(new_comment)
+    db.add(comment)
     db.commit()
-    db.refresh(new_comment)
+    db.refresh(comment)
 
     return StandardResponse(
-        success=True,
-        message="Comment added successfully",
-        data={"comment": CommentResponse.model_validate(new_comment).model_dump()}
+        success=True, message="Comment added",
+        data={"comment": ProblemCommentResponse.model_validate(comment).model_dump()},
     )
 
-@router.post("/{problem_id}/upvote", response_model=StandardResponse)
-async def toggle_upvote(
+
+@router.get("/{problem_id}/comments", response_model=StandardResponse)
+async def list_comments(problem_id: int, db: Session = Depends(get_db)):
+    comments = (
+        db.query(ProblemComment)
+        .filter(ProblemComment.problem_id == problem_id, ProblemComment.is_deleted == False)
+        .order_by(ProblemComment.created_at.asc())
+        .all()
+    )
+    return StandardResponse(
+        success=True, message=f"Retrieved {len(comments)} comments",
+        data={"items": [ProblemCommentResponse.model_validate(c).model_dump() for c in comments]},
+    )
+
+
+@router.post("/{problem_id}/like", response_model=StandardResponse)
+async def toggle_like(
     problem_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    problem = db.query(Problem).filter(Problem.problem_id == problem_id, Problem.is_deleted == False).first()
     if not problem:
-        raise HTTPException(status_code=404, detail="Problem not found")
-        
-    existing_upvote = db.query(Upvote).filter(Upvote.problem_id == problem_id, Upvote.user_id == user_id).first()
-    
-    if existing_upvote:
-        db.delete(existing_upvote)
+        raise HTTPException(404, "Problem not found")
+
+    # User mapping
+    action_user_id = current_user.user_id
+
+    existing = db.query(ProblemLike).filter(
+        ProblemLike.problem_id == problem_id, ProblemLike.user_id == action_user_id
+    ).first()
+
+    if existing:
+        db.delete(existing)
         db.commit()
-        message = "Upvote removed"
-        is_upvoted = False
+        is_liked, msg = False, "Like removed"
     else:
-        new_upvote = Upvote(problem_id=problem_id, user_id=user_id)
-        db.add(new_upvote)
+        db.add(ProblemLike(problem_id=problem_id, user_id=action_user_id))
         db.commit()
-        message = "Upvote added"
-        is_upvoted = True
-        
-    upvote_count = db.query(Upvote).filter(Upvote.problem_id == problem_id).count()
-        
+        is_liked, msg = True, "Like added"
+
+    like_count = db.query(func.count(ProblemLike.like_id)).filter(
+        ProblemLike.problem_id == problem_id
+    ).scalar() or 0
+
     return StandardResponse(
-        success=True,
-        message=message,
-        data={
-            "problem_id": problem_id,
-            "upvote_count": upvote_count,
-            "is_upvoted_by_me": is_upvoted
-        }
+        success=True, message=msg,
+        data={"problem_id": problem_id, "like_count": like_count, "is_liked_by_me": is_liked},
     )
+
 
 @router.delete("/{problem_id}", response_model=StandardResponse)
 async def delete_problem(
     problem_id: int,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    problem = db.query(Problem).filter(Problem.problem_id == problem_id).first()
     if not problem:
-        raise HTTPException(status_code=404, detail="Problem not found")
-        
-    db.delete(problem)
+        raise HTTPException(404, "Problem not found")
+
+    # Owners can soft-delete their own; admins/staff can hard-delete
+    is_owner = problem.user_id == current_user.user_id
+    is_privileged = bool(
+        db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
+        or db.query(SuperAdmin).filter(SuperAdmin.user_id == current_user.user_id).first()
+    )
+
+    if not (is_owner or is_privileged):
+        raise HTTPException(403, "Not authorized to delete this problem")
+
+    # Soft delete
+    problem.is_deleted = True
+    problem.deleted_at = datetime.utcnow()
     db.commit()
+
     return StandardResponse(success=True, message="Problem deleted successfully")

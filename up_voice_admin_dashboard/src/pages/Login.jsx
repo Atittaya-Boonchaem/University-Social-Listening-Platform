@@ -24,16 +24,27 @@ const Login = () => {
 
       if (payload?.access_token) {
         localStorage.setItem('token', payload.access_token);
+        if (payload.user?.admin_category_name) {
+          localStorage.setItem('admin_category_name', payload.user.admin_category_name);
+        } else {
+          localStorage.removeItem('admin_category_name');
+        }
 
-        // Optional role guard: only allow staff (2) and admin (4) to access the dashboard
-        const roleId = payload.user?.role_id;
-        if (roleId !== 2 && roleId !== 4) {
+        // v2 API returns role as a string: 'super_admin' | 'staff' | 'category_admin' | ...
+        const role = payload.user?.role;
+        const allowedRoles = ['super_admin', 'staff', 'category_admin'];
+        if (!allowedRoles.includes(role)) {
           localStorage.removeItem('token');
           setError('Access denied. This dashboard is for Staff and Admins only.');
           return;
         }
 
-        navigate('/', { replace: true });
+        // Super admins go directly to the super admin section
+        if (role === 'super_admin') {
+          navigate('/super-admin', { replace: true });
+        } else {
+          navigate('/', { replace: true });
+        }
       } else {
         setError('Login failed: unexpected server response.');
       }

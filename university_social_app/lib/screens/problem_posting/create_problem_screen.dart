@@ -45,6 +45,12 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
     _fetchDropdownData();
   }
 
+  bool get _isTeachingCategory {
+    if (_selectedCategory == null) return false;
+    final cat = _categories.firstWhere((e) => e['id'].toString() == _selectedCategory, orElse: () => null);
+    return cat != null && cat['name'] == 'การเรียนการสอน';
+  }
+
   Future<void> _fetchDropdownData() async {
     try {
       setState(() => _isLoading = true);
@@ -56,8 +62,8 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
           _roleId = savedRoleId;
         });
       }
-      final catResponse = await http.get(Uri.parse('https://university-social-listening-platform.onrender.com/api/v1/problems/categories'));
-      final bldResponse = await http.get(Uri.parse('https://university-social-listening-platform.onrender.com/api/v1/problems/buildings'));
+      final catResponse = await http.get(Uri.parse('http://127.0.0.1:8000/api/v1/problems/categories'));
+      final bldResponse = await http.get(Uri.parse('http://127.0.0.1:8000/api/v1/buildings'));
 
       if (catResponse.statusCode == 200) {
         final decoded = jsonDecode(utf8.decode(catResponse.bodyBytes));
@@ -66,9 +72,6 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
             _categories = decoded['data']['items'];
           } else if (decoded['data'] is List) {
             _categories = decoded['data'];
-          }
-          if (_categories.isNotEmpty) {
-            _selectedCategory = _categories[0]['id'].toString();
           }
         });
       }
@@ -79,9 +82,6 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
             _buildings = decoded['data']['items'];
           } else if (decoded['data'] is List) {
             _buildings = decoded['data'];
-          }
-          if (_buildings.isNotEmpty) {
-            _selectedBuilding = _buildings[0]['id'].toString();
           }
         });
       }
@@ -171,8 +171,8 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
           _imageBytes = null;
           _imageName = null;
           _selectedLocation = null;
-          if (_categories.isNotEmpty) _selectedCategory = _categories[0]['id'].toString();
-          if (_buildings.isNotEmpty) _selectedBuilding = _buildings[0]['id'].toString();
+          _selectedCategory = null;
+          _selectedBuilding = null;
         });
         scaffoldMessenger.showSnackBar(
           const SnackBar(
@@ -391,14 +391,20 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                                     ),
                                     child: DropdownButtonHideUnderline(
                                       child: DropdownButton<String>(
-                                        value: _selectedCategory,
+                                        value: _categories.any((e) => e['id'].toString() == _selectedCategory) ? _selectedCategory : null,
+                                        hint: const Text('เลือกหมวดหมู่', style: TextStyle(fontSize: 13, color: Colors.grey)),
                                         isExpanded: true,
                                         icon: const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
                                         items: _categories.map((e) => DropdownMenuItem<String>(
                                           value: e['id'].toString(), 
                                           child: Text(e['name'] ?? '', style: const TextStyle(fontSize: 13))
                                         )).toList(),
-                                        onChanged: (val) => setState(() => _selectedCategory = val!),
+                                        onChanged: (val) => setState(() {
+                                          _selectedCategory = val;
+                                          if (_isTeachingCategory) {
+                                            _selectedLocation = null;
+                                          }
+                                        }),
                                       ),
                                     ),
                                   ),
@@ -420,7 +426,8 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                           ),
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<String>(
-                              value: _selectedBuilding,
+                              value: _buildings.any((e) => e['id'].toString() == _selectedBuilding) ? _selectedBuilding : null,
+                              hint: const Text('เลือกสถานที่ / อาคาร', style: TextStyle(fontSize: 13, color: Colors.grey)),
                               isExpanded: true,
                               icon: const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
                               items: _buildings.map((e) => DropdownMenuItem<String>(
@@ -428,7 +435,7 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                                 child: Text(e['name'] ?? '', style: const TextStyle(fontSize: 13))
                               )).toList(),
                               onChanged: (val) {
-                                setState(() => _selectedBuilding = val!);
+                                setState(() => _selectedBuilding = val);
                                 final b = _buildings.firstWhere((e) => e['id'].toString() == val, orElse: () => null);
                                 if (b != null && b['latitude'] != null && b['longitude'] != null) {
                                   final lat = double.tryParse(b['latitude'].toString());
@@ -519,65 +526,67 @@ class _CreateProblemScreenState extends State<CreateProblemScreen> {
                         const SizedBox(height: 18),
 
                         // 🗺️ Map Picker UI
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('พิกัดสถานที่ (ไม่บังคับ)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            if (_selectedLocation != null)
-                              TextButton(
-                                onPressed: () => setState(() => _selectedLocation = null),
-                                child: const Text('ล้างพิกัด', style: TextStyle(fontSize: 12, color: Colors.red)),
-                              )
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Container(
-                          height: 200,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                        if (!_isTeachingCategory) ...[
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('พิกัดสถานที่ (ไม่บังคับ)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              if (_selectedLocation != null)
+                                TextButton(
+                                  onPressed: () => setState(() => _selectedLocation = null),
+                                  child: const Text('ล้างพิกัด', style: TextStyle(fontSize: 12, color: Colors.red)),
+                                )
+                            ],
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: FlutterMap(
-                              mapController: _mapController,
-                              options: MapOptions(
-                                initialCenter: const LatLng(19.0289, 99.8973), // มหาวิทยาลัยพะเยา
-                                initialZoom: 14,
-                                onTap: (tapPosition, point) {
-                                  setState(() {
-                                    _selectedLocation = point;
-                                  });
-                                },
-                              ),
-                              children: [
-                                TileLayer(
-                                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                  userAgentPackageName: 'com.university_social_app',
+                          const SizedBox(height: 4),
+                          Container(
+                            height: 200,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: FlutterMap(
+                                mapController: _mapController,
+                                options: MapOptions(
+                                  initialCenter: const LatLng(19.0289, 99.8973), // มหาวิทยาลัยพะเยา
+                                  initialZoom: 14,
+                                  onTap: (tapPosition, point) {
+                                    setState(() {
+                                      _selectedLocation = point;
+                                    });
+                                  },
                                 ),
-                                if (_selectedLocation != null)
-                                  MarkerLayer(
-                                    markers: [
-                                      Marker(
-                                        point: _selectedLocation!,
-                                        width: 40,
-                                        height: 40,
-                                        child: const Icon(Icons.location_on, color: Colors.red, size: 40),
-                                      ),
-                                    ],
+                                children: [
+                                  TileLayer(
+                                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                    userAgentPackageName: 'com.university_social_app',
                                   ),
-                              ],
+                                  if (_selectedLocation != null)
+                                    MarkerLayer(
+                                      markers: [
+                                        Marker(
+                                          point: _selectedLocation!,
+                                          width: 40,
+                                          height: 40,
+                                          child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _selectedLocation != null 
-                            ? 'พิกัดที่เลือก: ${_selectedLocation!.latitude.toStringAsFixed(4)}, ${_selectedLocation!.longitude.toStringAsFixed(4)}'
-                            : '📍 แตะบนแผนที่เพื่อระบุตำแหน่ง',
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                        ),
-                        const SizedBox(height: 18),
+                          const SizedBox(height: 8),
+                          Text(
+                            _selectedLocation != null 
+                              ? 'พิกัดที่เลือก: ${_selectedLocation!.latitude.toStringAsFixed(4)}, ${_selectedLocation!.longitude.toStringAsFixed(4)}'
+                              : '📍 แตะบนแผนที่เพื่อระบุตำแหน่ง',
+                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                          ),
+                          const SizedBox(height: 18),
+                        ],
                         
 
                         

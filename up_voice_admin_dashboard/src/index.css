@@ -1,9 +1,113 @@
+/* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Base ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background-color: #F9FAFB;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #F4F6FB;
+  color: #1E1E2E;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* ── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+/* ── Sidebar nav link active indicator ─────────────────────── */
+.sa-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.625rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #64748B;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+  text-decoration: none;
+}
+.sa-nav-link:hover {
+  background: #EEF2FF;
+  color: #4F46E5;
+}
+.sa-nav-link.active {
+  background: #EEF2FF;
+  color: #4F46E5;
+  font-weight: 600;
+}
+.sa-nav-link.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 3px;
+  background: #4F46E5;
+  border-radius: 0 3px 3px 0;
+}
+
+/* ── Group label ────────────────────────────────────────────── */
+.sa-group-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94A3B8;
+  padding: 0.5rem 0.875rem 0.25rem;
+  margin-top: 0.5rem;
+}
+
+/* ── Stat card gradient accents ─────────────────────────────── */
+.stat-card-indigo { background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%); }
+.stat-card-emerald { background: linear-gradient(135deg, #10B981 0%, #059669 100%); }
+.stat-card-amber { background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); }
+.stat-card-rose { background: linear-gradient(135deg, #F43F5E 0%, #E11D48 100%); }
+.stat-card-violet { background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%); }
+
+/* ── Page fade-in ───────────────────────────────────────────── */
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: pageFadeIn 0.25s ease forwards; }
+
+/* ── Badge ──────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ── Table ──────────────────────────────────────────────────── */
+.data-table th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94A3B8;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid #E2E8F0;
+}
+.data-table td {
+  padding: 0.875rem 1rem;
+  font-size: 0.875rem;
+  color: #334155;
+  border-bottom: 1px solid #F1F5F9;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: #F8FAFC; }

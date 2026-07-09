@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../navigation/main_navigation_screen.dart'; 
 import '../../services/auth_service.dart'; 
 import '../../super_admin/super_admin_screen.dart';
@@ -12,95 +13,37 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  int _selectedRole = 0; // 0 = Student, 1 = Staff, 2 = Public
-  bool _obscurePassword = true;
-  bool _isLoading = false;
-
   final Color upPurple = const Color(0xFF2B164D);
 
-  // Controllers
-  final TextEditingController _idController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-
-  @override
-  void dispose() {
-    _idController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _handleSubmit() async {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    String idText = _idController.text.trim();
-    final pwdText = _passwordController.text;
-
-    if (idText.isEmpty || pwdText.isEmpty) {
-      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('กรุณากรอกข้อมูลให้ครบถ้วน'), backgroundColor: Colors.orange));
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      Map<String, dynamic> result;
-
-      if (_selectedRole == 0) {
-        result = await AuthService.loginStudent(idText, pwdText);
-      } else if (_selectedRole == 1) {
-        result = await AuthService.loginStaff(idText, pwdText);
-      } else {
-        result = await AuthService.login(phoneNumber: idText, password: pwdText, expectedRoleId: 3);
-      }
-
-      if (!mounted) return;
-
-      if (result['success'] == true) {
-        final actualRoleId = result['role_id'] ?? 1;
-        if (actualRoleId.toString() == '4') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const SuperAdminScreen()),
-          );
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => MainNavigationScreen(roleId: actualRoleId as int?)),
-          );
-        }
-      } else {
-        String errorMessage = result['message'] ?? 'เกิดข้อผิดพลาด';
-        if (errorMessage == 'บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานในบทบาทนี้') {
-          errorMessage = 'ไม่สามารถเข้าสู่ระบบได้ กรุณาตรวจสอบสิทธิ์การใช้งานหรือบัญชีของคุณอีกครั้ง';
-        }
-        scaffoldMessenger.showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: Colors.red));
-        setState(() => _isLoading = false);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      scaffoldMessenger.showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
-      setState(() => _isLoading = false);
+  Future<void> _handleAnonymousLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // Clear old tokens
+    await prefs.setInt('role_id', 5); // 5 for Anonymous / Guest
+    await prefs.setString('display_name', 'ผู้เยี่ยมชม (Guest)');
+    
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const MainNavigationScreen(roleId: 5)),
+      );
     }
   }
 
-  Widget _buildLabel(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 8, left: 4),
-    child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF333333))),
-  );
+  void _showPublicUserLoginModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _PublicLoginModal(upPurple: upPurple),
+    );
+  }
 
-  Widget _buildTextField(String hint, {TextEditingController? controller, bool isPassword = false, bool isNumber = false}) {
-    return TextField(
-      controller: controller,
-      obscureText: isPassword && _obscurePassword,
-      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-      decoration: InputDecoration(
-        hintText: hint,
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
-        suffixIcon: isPassword ? IconButton(icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off, size: 20), onPressed: () => setState(() => _obscurePassword = !_obscurePassword)) : null,
-      ),
+  void _showSSOLoginModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _SSOLoginModal(upPurple: upPurple),
     );
   }
 
@@ -140,45 +83,82 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 5),
                     const Text('เข้าสู่ระบบเพื่อดำเนินการต่อ', 
                       textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: Colors.grey)),
-                    const SizedBox(height: 25),
-
-                    // Role Tabs
-                    Row(
-                      children: [
-                        _buildRoleTab('นิสิต มพ.', 0),
-                        const SizedBox(width: 10),
-                        _buildRoleTab('บุคลากร', 1),
-                        const SizedBox(width: 10),
-                        _buildRoleTab('บุคคลทั่วไป', 2),
-                      ],
-                    ),
-                    const SizedBox(height: 25),
-
-                    // Form
-                    _buildDynamicForm(),
-
                     const SizedBox(height: 35),
 
-                    // Action Button
+                    // Primary Section (University Users)
                     SizedBox(
                       width: double.infinity,
                       height: 55,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleSubmit,
+                        onPressed: _showSSOLoginModal,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: upPurple,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           elevation: 5,
                         ),
-                        child: _isLoading 
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('เข้าสู่ระบบ', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                        child: const Text('เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัย (SSO)', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
                       ),
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 25),
+
+                    // Divider
+                    Row(
+                      children: [
+                        const Expanded(child: Divider(color: Color(0xFFE0E0E0), thickness: 1)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text('หรือ', style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                        const Expanded(child: Divider(color: Color(0xFFE0E0E0), thickness: 1)),
+                      ],
+                    ),
+
+                    const SizedBox(height: 25),
+
+                    // Secondary Section (Other Users)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 50,
+                            child: ElevatedButton(
+                              onPressed: _showPublicUserLoginModal,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFF1F5F9),
+                                foregroundColor: upPurple,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              child: const Text('บุคคลทั่วไป', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: SizedBox(
+                            height: 50,
+                            child: OutlinedButton(
+                              onPressed: _handleAnonymousLogin,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.grey.shade700,
+                                side: BorderSide(color: Colors.grey.shade300),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              child: const Text('ไม่ระบุตัวตน', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 30),
                     
-                    // Toggle Mode Button
+                    // Register Link
                     TextButton(
                       onPressed: () {
                         Navigator.push(
@@ -187,7 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         );
                       },
                       child: Text(
-                        'ยังไม่มีบัญชี? สมัครสมาชิก',
+                        'ยังไม่มีบัญชีบุคคลทั่วไป? สมัครสมาชิก',
                         style: TextStyle(color: upPurple, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -200,73 +180,281 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
+}
 
-  Widget _buildRoleTab(String label, int index) {
-    bool isSelected = _selectedRole == index;
-    return Expanded(
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            _selectedRole = index;
-            _idController.clear();
-            _passwordController.clear();
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? upPurple : Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: isSelected ? Border(bottom: BorderSide(color: Colors.orange.shade400, width: 4)) : Border.all(color: Colors.grey.shade200),
-          ),
-          child: Center(
-            child: Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.grey.shade700, fontWeight: FontWeight.bold, fontSize: 12)),
-          ),
+// ----------------------------------------------------
+// Modal for Public User Login
+// ----------------------------------------------------
+class _PublicLoginModal extends StatefulWidget {
+  final Color upPurple;
+  const _PublicLoginModal({required this.upPurple});
+
+  @override
+  State<_PublicLoginModal> createState() => _PublicLoginModalState();
+}
+
+class _PublicLoginModalState extends State<_PublicLoginModal> {
+  final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _obscure = true;
+  bool _isLoading = false;
+
+  Future<void> _login() async {
+    final phone = _phoneController.text.trim();
+    final pwd = _passwordController.text;
+    if (phone.isEmpty || pwd.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final result = await AuthService.login(phoneNumber: phone, password: pwd, expectedRoleId: 3);
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MainNavigationScreen(roleId: 3)),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'เข้าสู่ระบบล้มเหลว'), backgroundColor: Colors.red));
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('เข้าสู่ระบบสำหรับบุคคลทั่วไป', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: widget.upPurple)),
+                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                hintText: 'เบอร์โทรศัพท์',
+                filled: true,
+                fillColor: const Color(0xFFF8F9FA),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _passwordController,
+              obscureText: _obscure,
+              decoration: InputDecoration(
+                hintText: 'รหัสผ่าน',
+                filled: true,
+                fillColor: const Color(0xFFF8F9FA),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off, color: Colors.grey),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _login,
+                style: ElevatedButton.styleFrom(backgroundColor: widget.upPurple, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                child: _isLoading 
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text('เข้าสู่ระบบ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildDynamicForm() {
-    String idHint = 'รหัสนิสิต (เช่น 66xxxx)';
-    String idLabel = 'บัญชีนิสิต';
-    String suffix = '@up.ac.th';
-    bool useSuffix = true;
+// ----------------------------------------------------
+// Modal for SSO Login (Student & Staff)
+// ----------------------------------------------------
+class _SSOLoginModal extends StatefulWidget {
+  final Color upPurple;
+  const _SSOLoginModal({required this.upPurple});
 
-    if (_selectedRole == 1) {
-      idHint = 'บัญชีบุคลากร';
-      idLabel = 'บัญชีบุคลากร';
-    } else if (_selectedRole == 2) {
-      idHint = 'เบอร์โทรศัพท์';
-      idLabel = 'เบอร์โทรศัพท์';
-      useSuffix = false;
+  @override
+  State<_SSOLoginModal> createState() => _SSOLoginModalState();
+}
+
+class _SSOLoginModalState extends State<_SSOLoginModal> {
+  final _idController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _obscure = true;
+  bool _isLoading = false;
+  int _selectedRole = 0; // 0 = Student, 1 = Staff
+
+  Future<void> _login() async {
+    final idText = _idController.text.trim();
+    final pwdText = _passwordController.text;
+    if (idText.isEmpty || pwdText.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    try {
+      Map<String, dynamic> result;
+      if (_selectedRole == 0) {
+        result = await AuthService.loginStudent(idText, pwdText);
+      } else {
+        result = await AuthService.loginStaff(idText, pwdText);
+      }
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        final actualRoleId = result['role_id'] ?? 1;
+        if (actualRoleId.toString() == '4') {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SuperAdminScreen()));
+        } else {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => MainNavigationScreen(roleId: actualRoleId as int?)));
+        }
+      } else {
+        String errorMessage = result['message'] ?? 'เกิดข้อผิดพลาด';
+        if (errorMessage == 'บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานในบทบาทนี้') {
+          errorMessage = 'ไม่สามารถเข้าสู่ระบบได้ กรุณาตรวจสอบสิทธิ์การใช้งาน';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: Colors.red));
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
+        setState(() => _isLoading = false);
+      }
     }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildLabel(idLabel),
-        if (useSuffix)
-          Row(
-            children: [
-              Expanded(child: _buildTextField(idHint, controller: _idController, isNumber: _selectedRole == 0)),
-              const SizedBox(width: 10),
-              _buildSuffixBox(suffix),
-            ],
-          )
-        else
-          _buildTextField(idHint, controller: _idController, isNumber: true),
-
-        const SizedBox(height: 16),
-        _buildLabel('รหัสผ่าน'),
-        _buildTextField('รหัสผ่าน', controller: _passwordController, isPassword: true),
-      ],
-    );
   }
 
-  Widget _buildSuffixBox(String text) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
-    decoration: BoxDecoration(color: const Color(0xFFE9E9FF), borderRadius: BorderRadius.circular(10)),
-    child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2B164D))),
-  );
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัย', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: widget.upPurple)),
+                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Toggle for Student / Staff
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedRole = 0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _selectedRole == 0 ? widget.upPurple : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text('นิสิต มพ.', style: TextStyle(fontWeight: FontWeight.bold, color: _selectedRole == 0 ? Colors.white : Colors.grey.shade600)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedRole = 1),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _selectedRole == 1 ? widget.upPurple : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text('บุคลากร', style: TextStyle(fontWeight: FontWeight.bold, color: _selectedRole == 1 ? Colors.white : Colors.grey.shade600)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 20),
+            
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _idController,
+                    keyboardType: _selectedRole == 0 ? TextInputType.number : TextInputType.text,
+                    decoration: InputDecoration(
+                      hintText: _selectedRole == 0 ? 'รหัสนิสิต (เช่น 66xxxx)' : 'บัญชีบุคลากร',
+                      filled: true,
+                      fillColor: const Color(0xFFF8F9FA),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 16),
+                  decoration: BoxDecoration(color: const Color(0xFFE9E9FF), borderRadius: BorderRadius.circular(10)),
+                  child: Text('@up.ac.th', style: TextStyle(fontWeight: FontWeight.bold, color: widget.upPurple)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _passwordController,
+              obscureText: _obscure,
+              decoration: InputDecoration(
+                hintText: 'รหัสผ่าน',
+                filled: true,
+                fillColor: const Color(0xFFF8F9FA),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off, color: Colors.grey),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _login,
+                style: ElevatedButton.styleFrom(backgroundColor: widget.upPurple, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                child: _isLoading 
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text('เข้าสู่ระบบ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

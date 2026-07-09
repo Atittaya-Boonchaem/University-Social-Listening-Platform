@@ -15,7 +15,11 @@ const Navbar = () => {
           <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-700 font-semibold">
             <User size={16} />
           </div>
-          <span className="text-sm font-medium text-gray-700">Admin</span>
+          <span className="text-sm font-medium text-gray-700">
+            {localStorage.getItem('admin_category_name') 
+              ? `Admin (หมวดหมู่: ${localStorage.getItem('admin_category_name')})` 
+              : 'Admin'}
+          </span>
         </div>
       </div>
     </header>
