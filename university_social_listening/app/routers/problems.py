@@ -275,6 +275,14 @@ async def create_problem(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    API สำหรับแจ้งปัญหา/ข้อร้องเรียนใหม่
+    เข้าได้เฉพาะ: ผู้ที่เข้าสู่ระบบแล้ว (นิสิต, บุคลากร, บุคคลทั่วไป, หรือ Guest)
+    การทำงาน: 
+    1. รับข้อมูลเรื่องที่แจ้งพร้อมรูปภาพ 
+    2. มีระบบ AI กรองคำหยาบ 
+    3. บันทึกข้อมูลลงฐานข้อมูลและผูกเข้ากับหมวดหมู่
+    """
     # AI Profanity Check
     from app.services.ai_service import check_profanity, suggest_category
     if check_profanity(description):
@@ -296,6 +304,17 @@ async def create_problem(
 
     # Resolve FK lookups
     status_obj = get_status_by_name(db, "OPEN")
+    
+    # Ensure students/anonymous cannot create internal visibility problems
+    if visibility_name == "internal":
+        is_privileged = bool(
+            db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
+            or db.query(SuperAdmin).filter(SuperAdmin.user_id == current_user.user_id).first()
+            or db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id).first()
+        )
+        if not is_privileged:
+            visibility_name = "public"
+            
     vis_obj = get_visibility_by_name(db, visibility_name)
     
     if not building_name and building_id:
@@ -382,6 +401,13 @@ async def list_problems(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
+    """
+    API สำหรับดึงรายการปัญหาทั้งหมด (หน้า Feed)
+    เข้าได้เฉพาะ: ทุกคน (Public) ยกเว้นฟีดภายใน
+    การทำงาน: 
+    1. ดึงข้อมูลโพสต์ปัญหาแบบแบ่งหน้า (Pagination)
+    2. ตรวจสอบสิทธิ์ Visibility: ถ้าขอเรียกฟีด 'internal' จะต้องเป็น บุคลากร หรือ Admin เท่านั้น
+    """
     query = (
         db.query(Problem)
         .join(Category, Problem.category_id == Category.category_id)
@@ -482,13 +508,13 @@ async def get_my_problems(
 @router.get("/analytics", response_model=StandardResponse)
 async def get_analytics(
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: User = Depends(get_current_user)
 ):
+    require_admin_or_staff(current_user, db)
     base_filters = [Problem.is_deleted == False]
-    if current_user:
-        cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
-        if cat_admin and cat_admin.category_id:
-            base_filters.append(Problem.category_id == cat_admin.category_id)
+    cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+    if cat_admin and cat_admin.category_id:
+        base_filters.append(Problem.category_id == cat_admin.category_id)
 
     total = db.query(func.count(Problem.problem_id)).filter(*base_filters).scalar() or 0
 
@@ -557,15 +583,15 @@ async def get_analytics(
 @router.get("/analytics/time-series", response_model=StandardResponse)
 async def get_time_series(
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: User = Depends(get_current_user)
 ):
+    require_admin_or_staff(current_user, db)
     since = datetime.utcnow() - timedelta(days=29)
 
     base_filters = [Problem.created_at >= since, Problem.is_deleted == False]
-    if current_user:
-        cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
-        if cat_admin and cat_admin.category_id:
-            base_filters.append(Problem.category_id == cat_admin.category_id)
+    cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+    if cat_admin and cat_admin.category_id:
+        base_filters.append(Problem.category_id == cat_admin.category_id)
 
     daily_rows = (
         db.query(cast(Problem.created_at, Date).label("day"), func.count(Problem.problem_id).label("cnt"))
@@ -619,13 +645,13 @@ async def get_time_series(
 @router.get("/analytics/user-reputation", response_model=StandardResponse)
 async def get_user_reputation(
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: User = Depends(get_current_user)
 ):
+    require_admin_or_staff(current_user, db)
     base_filters = [Problem.is_deleted == False]
-    if current_user:
-        cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
-        if cat_admin and cat_admin.category_id:
-            base_filters.append(Problem.category_id == cat_admin.category_id)
+    cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+    if cat_admin and cat_admin.category_id:
+        base_filters.append(Problem.category_id == cat_admin.category_id)
 
     stats = (
         db.query(
@@ -679,8 +705,9 @@ async def get_report(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: User = Depends(get_current_user)
 ):
+    require_admin_or_staff(current_user, db)
     try:
         dt_start = datetime.strptime(start_date, "%Y-%m-%d")
         dt_end = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
@@ -695,10 +722,9 @@ async def get_report(
         Problem.created_at <= dt_end,
         Problem.is_deleted == False,
     ]
-    if current_user:
-        cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
-        if cat_admin and cat_admin.category_id:
-            base_filters.append(Problem.category_id == cat_admin.category_id)
+    cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+    if cat_admin and cat_admin.category_id:
+        base_filters.append(Problem.category_id == cat_admin.category_id)
 
     base_q = db.query(Problem).filter(*base_filters)
     total = base_q.count()
@@ -866,10 +892,22 @@ async def update_problem_status(
 
 
 @router.get("/{problem_id}/status-history", response_model=StandardResponse)
-async def get_status_history(problem_id: int, db: Session = Depends(get_db)):
+async def get_status_history(
+    problem_id: int, 
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     problem = db.query(Problem).filter(Problem.problem_id == problem_id).first()
     if not problem:
         raise HTTPException(404, "Problem not found")
+        
+    is_privileged = False
+    if current_user:
+        is_privileged = bool(
+            db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
+            or db.query(SuperAdmin).filter(SuperAdmin.user_id == current_user.user_id).first()
+            or db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id).first()
+        )
 
     histories = (
         db.query(ProblemStatusHistory)
@@ -886,7 +924,7 @@ async def get_status_history(problem_id: int, db: Session = Depends(get_db)):
             "status_name": h.status.status_name if h.status else "",
             "status_color": h.status.color_code if h.status else None,
             "changed_by": h.changed_by,
-            "notes": h.notes,
+            "notes": h.notes if is_privileged else None,
             "changed_at": h.changed_at,
         }
         for h in histories

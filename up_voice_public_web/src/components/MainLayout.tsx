@@ -221,6 +221,8 @@ function Sidebar() {
                 ? 'ผู้ดูแลระบบ'
                 : localStorage.getItem('role_id') === '5'
                 ? 'ผู้ดูแลหมวดหมู่'
+                : localStorage.getItem('role_id') === '6'
+                ? 'ผู้ใช้งานไม่ระบุตัวตน'
                 : 'ผู้ใช้งานทั่วไป'}
             </p>
           </div>

@@ -14,7 +14,7 @@ const LS = {
     const u = data['user'] as Record<string, unknown>;
     if (!u) return;
     const set = (k: string, lk = k) => { if (u[k] != null) localStorage.setItem(lk, String(u[k])); };
-    
+
     let roleId = 1;
     const roleStr = u['role'] as string;
     if (roleStr === 'student') roleId = 1;
@@ -22,16 +22,17 @@ const LS = {
     else if (roleStr === 'public') roleId = 3;
     else if (roleStr === 'super_admin') roleId = 4;
     else if (roleStr === 'category_admin') roleId = 5;
+    else if (roleStr === 'anonymous') roleId = 6;
     else if (u['role_id'] != null) roleId = Number(u['role_id']);
-    
+
     localStorage.setItem('role_id', String(roleId));
-    
+
     if (u['id'] != null) localStorage.setItem('user_id', String(u['id']));
     else if (u['user_id'] != null) localStorage.setItem('user_id', String(u['user_id']));
-    
+
     set('email'); set('display_name'); set('student_id'); set('faculty');
     set('education_level'); set('age'); set('gender'); set('phone_number'); set('relationship');
-    
+
     const p = u['profile'] as Record<string, unknown>;
     const setP = (k: string) => { if (p && p[k] != null) localStorage.setItem(k, String(p[k])); };
     setP('position'); setP('department'); setP('office_location'); setP('employee_id');
@@ -88,6 +89,7 @@ function SSOPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: () =
         else if (actualRoleStr === 'public') actualRoleId = 3;
         else if (actualRoleStr === 'super_admin') actualRoleId = 4;
         else if (actualRoleStr === 'category_admin') actualRoleId = 5;
+        else if (actualRoleStr === 'anonymous') actualRoleId = 6;
         else if (data.data?.user?.role_id != null) actualRoleId = Number(data.data.user.role_id);
 
         if (selectedRole === 0 && actualRoleId !== 1) {
@@ -133,11 +135,10 @@ function SSOPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: () =
           <button
             key={idx}
             onClick={() => setSelectedRole(idx as 0 | 1)}
-            className={`py-2.5 rounded-xl text-sm font-bold transition-all ${
-              selectedRole === idx
-                ? 'bg-[#2B164D] text-white shadow-md shadow-[#2B164D]/20'
-                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-            }`}
+            className={`py-2.5 rounded-xl text-sm font-bold transition-all ${selectedRole === idx
+              ? 'bg-[#2B164D] text-white shadow-md shadow-[#2B164D]/20'
+              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}
           >
             {label}
           </button>
@@ -230,6 +231,7 @@ function PublicPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: (
         else if (actualRoleStr === 'public') actualRoleId = 3;
         else if (actualRoleStr === 'super_admin') actualRoleId = 4;
         else if (actualRoleStr === 'category_admin') actualRoleId = 5;
+        else if (actualRoleStr === 'anonymous') actualRoleId = 6;
         else if (data.data?.user?.role_id != null) actualRoleId = Number(data.data.user.role_id);
 
         if (actualRoleId !== 3) {
@@ -318,6 +320,13 @@ function PublicPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: (
 
 type Panel = 'none' | 'sso' | 'public';
 
+// ─── LoginPage Component ──────────────────────────────────────────────────────
+// หน้าที่: จัดการหน้าจอเข้าสู่ระบบ (Login) ทั้งหมดของแอปพลิเคชัน
+// การทำงานหลัก:
+// 1. แสดงตัวเลือกการเข้าสู่ระบบ: ผ่านระบบ SSO ของมหาวิทยาลัย หรือ บัญชีบุคคลทั่วไป
+// 2. มีระบบ Guest (เข้าสู่ระบบแบบไม่ระบุตัวตน)
+// 3. หลังจากล็อกอินสำเร็จ จะดึงข้อมูล Token และ Role มาบันทึกลงใน localStorage
+// 4. เมื่อเข้าสู่ระบบสำเร็จ จะทำการ Redirect ผู้ใช้ไปยังหน้าหลัก (HomeFeed) ทันที
 export default function LoginPage() {
   const [activePanel, setActivePanel] = useState<Panel>('none');
   const [isAnonLoading, setIsAnonLoading] = useState(false);
@@ -361,13 +370,23 @@ export default function LoginPage() {
 
         {activePanel === 'none' && (
           <div className="flex flex-col gap-4">
-            <button
+            {/* <button
               id="btn-sso"
               onClick={() => setActivePanel('sso')}
               className="w-full h-14 rounded-xl bg-[#2B164D] hover:bg-[#3d2268] text-white text-sm font-bold transition shadow-lg shadow-[#2B164D]/25 active:scale-[0.98]"
             >
               เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัย (SSO)
+            </button> */}
+
+            <button
+              id="btn-sso"
+              // เปลี่ยนคำสั่ง onClick ตรงนี้จุดเดียวครับ 👇
+              onClick={() => window.location.href = 'http://localhost:8000/api/v1/auth/sso/login'}
+              className="w-full h-14 rounded-xl bg-[#2B164D] hover:bg-[#3d2268] text-white text-sm font-bold transition shadow-lg shadow-[#2B164D]/25 active:scale-[0.98]"
+            >
+              เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัย (SSO)
             </button>
+
 
             <div className="flex items-center gap-3">
               <div className="flex-1 h-px bg-slate-200" />

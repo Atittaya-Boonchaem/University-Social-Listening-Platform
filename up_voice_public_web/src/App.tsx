@@ -16,7 +16,9 @@ import LoginPage from './pages/LoginPage';
 
 // ─── Global Auth Guard ────────────────────────────────────────────────────────
 function ProtectedRoute() {
-  const isAuthed = !!(localStorage.getItem('access_token') || localStorage.getItem('role_id'));
+  // ⚠️ FIX: Strictly verify the actual JWT token. Do not trust `role_id` alone.
+  const token = localStorage.getItem('access_token');
+  const isAuthed = !!token;
   const location = useLocation();
 
   if (!isAuthed) {

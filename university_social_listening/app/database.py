@@ -39,10 +39,10 @@ class Config:
     DEBUG: bool = os.getenv("DEBUG", "False") == "True"
 
     # Microsoft SSO
-    SSO_TENANT_ID: str = os.getenv("SSO_TENANT_ID", "")
-    SSO_CLIENT_ID: str = os.getenv("SSO_CLIENT_ID", "")
-    SSO_CLIENT_SECRET: str = os.getenv("SSO_CLIENT_SECRET", "")
-    SSO_REDIRECT_URI: str = os.getenv("SSO_REDIRECT_URI", "http://localhost:8000/api/v1/auth/sso/callback")
+    SSO_TENANT_ID: str = os.getenv("SSO_TENANT_ID", "").strip()
+    SSO_CLIENT_ID: str = os.getenv("SSO_CLIENT_ID", "").strip()
+    SSO_CLIENT_SECRET: str = os.getenv("SSO_CLIENT_SECRET", "").strip()
+    SSO_REDIRECT_URI: str = os.getenv("SSO_REDIRECT_URI", "http://localhost:8000/api/v1/auth/sso/callback").strip()
 
     @property
     def DATABASE_URL(self) -> str:

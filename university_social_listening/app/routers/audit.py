@@ -16,6 +16,11 @@ def get_login_logs(
     current_user: User = Depends(get_current_user),
     limit: int = 100,
 ):
+    """
+    API สำหรับดึงประวัติการเข้าสู่ระบบ (Login Logs)
+    เข้าได้เฉพาะ: บุคลากรขึ้นไป (Staff, Admin, Super Admin)
+    การทำงาน: ดึงประวัติการล็อกอินทั้งหมดของระบบ รวมถึงของ Guest (แสดง IP)
+    """
     require_staff_or_above(current_user, db)
 
     logs = (
@@ -62,6 +67,11 @@ def get_system_audit_logs(
     current_user: User = Depends(get_current_user),
     limit: int = 100,
 ):
+    """
+    API สำหรับดึงประวัติการทำงานของระบบ (System Audit Logs)
+    เข้าได้เฉพาะ: Super Admin
+    การทำงาน: ดึงประวัติการเปลี่ยนแปลงข้อมูลสำคัญๆ ที่ถูกบันทึกไว้ (เช่น การลบข้อมูล การเปลี่ยนสิทธิ์)
+    """
     require_super_admin(current_user, db)
 
     logs = (

@@ -147,6 +147,11 @@ def get_current_user_optional(
 # ──────────────────────────────────────────────
 @router.post("/register/student", response_model=StandardResponse, status_code=201)
 def register_student(data: StudentRegisterCreate, db: Session = Depends(get_db)):
+    """
+    API สำหรับสมัครสมาชิกของ นิสิต มพ.
+    เข้าได้เฉพาะ: ทุกคน (Public)
+    การทำงาน: ตรวจสอบอีเมลและรหัสนิสิตซ้ำ จากนั้นสร้างบัญชีผู้ใช้และผูกข้อมูลลงในตาราง Student
+    """
     # Duplicate check
     if db.query(User).filter(User.email == data.email).first():
         raise HTTPException(400, "อีเมลนี้ถูกใช้งานแล้ว (Email already registered)")
@@ -186,6 +191,11 @@ def register_student(data: StudentRegisterCreate, db: Session = Depends(get_db))
 
 @router.post("/register/staff", response_model=StandardResponse, status_code=201)
 def register_staff(data: StaffRegisterCreate, db: Session = Depends(get_db)):
+    """
+    API สำหรับสมัครสมาชิกของ บุคลากร มพ.
+    เข้าได้เฉพาะ: ทุกคน (Public)
+    การทำงาน: ตรวจสอบอีเมลและรหัสพนักงานซ้ำ จากนั้นสร้างบัญชีผู้ใช้และผูกข้อมูลลงในตาราง Staff
+    """
     if db.query(User).filter(User.email == data.email).first():
         raise HTTPException(400, "อีเมลนี้ถูกใช้งานแล้ว (Email already registered)")
     if db.query(Staff).filter(Staff.employee_id == data.employee_id).first():
@@ -221,6 +231,11 @@ def register_staff(data: StaffRegisterCreate, db: Session = Depends(get_db)):
 
 @router.post("/register/public", response_model=StandardResponse, status_code=201)
 def register_public(data: PublicUserRegisterCreate, db: Session = Depends(get_db)):
+    """
+    API สำหรับสมัครสมาชิกของ บุคคลทั่วไป
+    เข้าได้เฉพาะ: ทุกคน (Public)
+    การทำงาน: สร้างบัญชีผู้ใช้และผูกข้อมูลลงในตาราง PublicUser
+    """
     if data.email and db.query(User).filter(User.email == data.email).first():
         raise HTTPException(400, "อีเมลนี้ถูกใช้งานแล้ว (Email already registered)")
 
@@ -255,6 +270,11 @@ def register_public(data: PublicUserRegisterCreate, db: Session = Depends(get_db
 # ──────────────────────────────────────────────
 @router.post("/login", response_model=StandardResponse)
 def login(login_data: UserLogin, db: Session = Depends(get_db)):
+    """
+    API สำหรับเข้าสู่ระบบ (Login)
+    เข้าได้เฉพาะ: ทุกคน (Public)
+    การทำงาน: ตรวจสอบอีเมล/เบอร์โทรและรหัสผ่าน หากถูกต้องจะคืนค่า JWT Token และข้อมูล Profile ตาม Role ของผู้ใช้งาน
+    """
     user: Optional[User] = None
 
     # Look up by email
@@ -393,6 +413,11 @@ def complete_onboarding(
 # ──────────────────────────────────────────────
 @router.post("/anonymous", response_model=StandardResponse)
 def login_anonymous(request: Request, db: Session = Depends(get_db)):
+    """
+    API สำหรับเข้าสู่ระบบแบบไม่ระบุตัวตน (Guest / Anonymous)
+    เข้าได้เฉพาะ: ทุกคน (Public)
+    การทำงาน: สร้างบัญชีผู้ใช้งานชั่วคราวโดยอิงจาก IP Address และคืนค่า JWT Token สำหรับ Guest
+    """
     raw_ip = request.client.host if request.client else "unknown"
     from app.models import AnonymousUser
     
@@ -421,7 +446,7 @@ def login_anonymous(request: Request, db: Session = Depends(get_db)):
             "user": {
                 "user_id": user.user_id,
                 "role": "anonymous",
-                "role_id": "5",
+                "role_id": "6",
                 "display_name": display_name,
             }
         }
@@ -433,6 +458,11 @@ def login_anonymous(request: Request, db: Session = Depends(get_db)):
 # ──────────────────────────────────────────────
 @router.get("/sso/login")
 def sso_login():
+    """
+    API สำหรับสร้าง URL ของ Microsoft SSO
+    เข้าได้เฉพาะ: ทุกคน (Public)
+    การทำงาน: สร้าง URL สำหรับล็อกอินผ่านระบบของมหาวิทยาลัย (Microsoft Entra ID) และ Redirect ผู้ใช้ไปที่นั่น
+    """
     tenant_id = config.SSO_TENANT_ID
     client_id = config.SSO_CLIENT_ID
     redirect_uri = config.SSO_REDIRECT_URI
@@ -445,6 +475,7 @@ def sso_login():
         f"&response_mode=query"
         f"&scope=openid profile email User.Read"
     )
+    print(f"DEBUG SSO URL: {auth_url}")
     return RedirectResponse(auth_url)
 
 
@@ -469,7 +500,9 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
         "client_secret": client_secret,
     }
 
+    print(f"DEBUG: Exchanging code for token...")
     token_res = requests.post(token_url, data=token_data)
+    print(f"DEBUG: Token response status: {token_res.status_code}, body: {token_res.text}")
     if token_res.status_code != 200:
         raise HTTPException(400, f"Failed to get access token: {token_res.text}")
 
@@ -483,48 +516,52 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
     if graph_res.status_code != 200:
         raise HTTPException(400, f"Failed to fetch user profile: {graph_res.text}")
 
-    user_info = graph_res.json()
-    email = user_info.get("mail") or user_info.get("userPrincipalName")
-    display_name = user_info.get("displayName") or "Unknown SSO User"
+    try:
+        user_info = graph_res.json()
+        email = user_info.get("mail") or user_info.get("userPrincipalName")
+        display_name = user_info.get("displayName") or "Unknown SSO User"
 
-    if not email:
-        raise HTTPException(400, "Could not extract email from Microsoft account")
+        if not email:
+            raise HTTPException(400, "Could not extract email from Microsoft account")
 
-    # Check if user exists
-    user = db.query(User).filter(User.email == email).first()
+        # Check if user exists
+        user = db.query(User).filter(User.email == email).first()
 
-    if not user:
-        # Auto-registration logic
-        user = User(
-            email=email,
-            password_hash=hash_password("sso-auto-generated-password-do-not-use"),
-            is_active=True,
-        )
-        db.add(user)
-        db.flush()
-
-        # Check prefix logic (starts with digit -> student, else -> staff)
-        prefix = email.split('@')[0]
-        if prefix and prefix[0].isdigit():
-            student = Student(
-                user_id=user.user_id,
-                student_id=prefix,
-                student_name=display_name,
+        if not user:
+            # Auto-registration logic
+            user = User(
+                email=email,
+                password_hash=hash_password("sso-auto-generated-password-do-not-use"),
+                is_active=True,
             )
-            db.add(student)
-        else:
-            staff = Staff(
-                user_id=user.user_id,
-                employee_id=f"SSO-{prefix}",
-                staff_name=display_name,
-            )
-            db.add(staff)
+            db.add(user)
+            db.flush()
+
+            # Check prefix logic (starts with digit -> student, else -> staff)
+            prefix = email.split('@')[0]
+            if prefix and prefix[0].isdigit():
+                student = Student(
+                    user_id=user.user_id,
+                    student_id=prefix,
+                    student_name=display_name,
+                )
+                db.add(student)
+            else:
+                staff = Staff(
+                    user_id=user.user_id,
+                    employee_id=f"SSO-{prefix}",
+                    staff_name=display_name,
+                )
+                db.add(staff)
+            
+            db.commit()
+            db.refresh(user)
+
+        actual_role = get_user_role(user.user_id, db)
+        token = create_access_token({"user_id": user.user_id, "role": actual_role})
         
-        db.commit()
-        db.refresh(user)
-
-    actual_role = get_user_role(user.user_id, db)
-    token = create_access_token({"user_id": user.user_id, "role": actual_role})
-    
-    # Redirect back to frontend
-    return RedirectResponse(f"http://localhost:5173/sso-success?token={token}")
+        # Redirect back to frontend
+        return RedirectResponse(f"http://localhost:5173/sso-success?token={token}")
+    except Exception as e:
+        print(f"DEBUG: DB or Processing Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error during SSO process")

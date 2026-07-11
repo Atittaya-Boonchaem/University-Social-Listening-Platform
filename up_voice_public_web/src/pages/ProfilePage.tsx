@@ -14,6 +14,7 @@ const PROBLEMS_BASE = 'http://127.0.0.1:8000/api/v1/problems';
 interface UserFields {
   access_token: string;
   role_id: number;
+  role_name: string | null;
   user_id: number | null;
   display_name: string;
   email: string;
@@ -40,6 +41,7 @@ const LS = {
   readUserFields: (): Partial<UserFields> => ({
     access_token: localStorage.getItem('access_token') ?? undefined,
     role_id: localStorage.getItem('role_id') != null ? Number(localStorage.getItem('role_id')) : undefined,
+    role_name: localStorage.getItem('role') ?? null,
     user_id: localStorage.getItem('user_id') != null ? Number(localStorage.getItem('user_id')) : null,
     display_name: localStorage.getItem('display_name') ?? '',
     email: localStorage.getItem('email') ?? '',
@@ -56,7 +58,8 @@ const LS = {
   }),
 };
 
-function getRoleName(roleId: number, studentId?: string | null): string {
+function getRoleName(roleId: number, studentId?: string | null, roleName?: string | null): string {
+  if (roleName === 'anonymous') return 'ผู้ใช้ไม่ระบุตัวตน';
   switch (roleId) {
     case 1: {
       const prefix = studentId && studentId.length >= 2 ? ` ${studentId.substring(0, 2)}` : '';
@@ -66,6 +69,7 @@ function getRoleName(roleId: number, studentId?: string | null): string {
     case 3: return 'บุคคลทั่วไป';
     case 4: return 'ผู้ดูแลระบบ';
     case 5: return 'ผู้ดูแลหมวดหมู่';
+    case 6: return 'ผู้ใช้ไม่ระบุตัวตน';
     default: return 'ผู้ใช้งานทั่วไป';
   }
 }
@@ -90,6 +94,13 @@ function ProfileInfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+// ─── ProfilePage Component ──────────────────────────────────────────────────────
+// หน้าที่: แสดงหน้าโปรไฟล์ส่วนตัวของผู้ใช้งาน
+// การทำงานหลัก:
+// 1. ดึงข้อมูลส่วนตัวจาก localStorage (เช่น ชื่อ, อีเมล, บทบาท, คณะ/สาขา, ตำแหน่ง) มาแสดงผล
+// 2. มีฟังก์ชัน Logout เพื่อออกจากระบบ และเคลียร์ข้อมูลใน localStorage
+// 3. แสดงสถิติการใช้งาน เช่น จำนวนปัญหาที่แจ้ง และจำนวนที่ได้รับการแก้ไขแล้ว (ดึงจาก API)
+// 4. แสดงข้อมูลเพิ่มเติม (Extra Fields) ที่แตกต่างกันตามแต่ละ Role เช่น นิสิตจะมีรหัสนิสิต บุคลากรจะมีตำแหน่ง
 export default function ProfilePage() {
   const [userFields] = useState<Partial<UserFields>>(LS.readUserFields);
   const roleId = userFields.role_id ?? 0;
@@ -138,7 +149,7 @@ export default function ProfilePage() {
 
   const displayName = localStorage.getItem('display_name') || userFields.display_name || 'ไม่ระบุตัวตน';
   const displayEmail = userFields.email || userFields.phone_number || '';
-  const roleName = getRoleName(roleId, userFields.student_id);
+  const roleName = getRoleName(roleId, userFields.student_id, userFields.role_name);
   const roleIcon = getRoleIcon(roleId);
 
   const hasExtraFields = !!(

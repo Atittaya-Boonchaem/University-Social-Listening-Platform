@@ -489,7 +489,7 @@ export default function ReportProblem({
                   </label>
                   
                   {/* ซ่อนตัวเลือกภายในสำหรับ Guest/บุคคลทั่วไป/นิสิต */}
-                  {(currentRoleId === 2 || currentRoleId === 4 || currentRoleId === 5) && (
+                  {(currentRoleId === 2 || currentRoleId === 4 || currentRoleId === 5) && localStorage.getItem('role') !== 'anonymous' && (
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="radio"

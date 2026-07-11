@@ -39,8 +39,27 @@ function getTokenPayload() {
 
 // ── Generic auth guard (staff + super_admin) ───────────────────
 const PrivateRoute = () => {
-  const token = localStorage.getItem('token');
-  if (!token) return <Navigate to="/login" replace />;
+  const payload = getTokenPayload();
+  if (!payload) return <Navigate to="/login" replace />;
+
+  const role = payload.role;
+  // Strictly prevent students, anonymous, and public users from accessing admin routes
+  if (role !== 'staff' && role !== 'super_admin' && role !== 'category_admin') {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="text-center p-8 bg-white rounded-xl shadow-lg border border-red-100">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl">🚫</span>
+          </div>
+          <h1 className="text-3xl font-bold text-slate-800 mb-2">403 Forbidden</h1>
+          <p className="text-slate-500 mb-6">คุณไม่มีสิทธิ์เข้าถึงส่วนผู้ดูแลระบบ (Admin Dashboard)</p>
+          <a href="http://localhost:5173/" className="px-6 py-2 bg-[#2B164D] text-white rounded-lg hover:bg-[#3d2268] transition">
+            กลับสู่หน้าหลัก
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
