@@ -47,6 +47,7 @@ export interface Category {
   id: number;
   name: string;
   description?: string;
+  requireMap?: boolean;
 }
 
 export interface Building {
@@ -149,7 +150,6 @@ export default function ReportProblem({
   onUnauthorized,
 }: ReportProblemProps) {
   // ── Form state ──────────────────────────────────────────────────────────────
-  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedBuilding, setSelectedBuilding] = useState<string>('');
@@ -160,10 +160,37 @@ export default function ReportProblem({
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [isFetchingData, setIsFetchingData] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAiSuggesting, setIsAiSuggesting] = useState(false);
 
-  // ── Image state ──────────────────────────────────────────────────────────────
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const handleAiSuggest = async () => {
+    if (description.trim().length < 10) {
+      showToast('โปรดพิมพ์รายละเอียดปัญหาอย่างน้อย 10 ตัวอักษรก่อนให้ AI ช่วยเลือก', 'warning');
+      return;
+    }
+    
+    setIsAiSuggesting(true);
+    try {
+      const response = await axios.post(`${API_BASE}/problems/ai/suggest-category`, {
+        description: description.trim()
+      });
+      if (response.data?.success && response.data?.data?.category_id) {
+        const suggestedId = String(response.data.data.category_id);
+        setSelectedCategory(suggestedId);
+        showToast('🪄 AI ช่วยเลือกหมวดหมู่ให้แล้ว!', 'success');
+      } else {
+        showToast('AI ไม่สามารถแนะนำหมวดหมู่ได้', 'warning');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI', 'error');
+    } finally {
+      setIsAiSuggesting(false);
+    }
+  };
+
+  // ─── Reset map location when selected building changes ──────────────────────────────────────────────────────────────
+  const [images, setImages] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Map state ────────────────────────────────────────────────────────────────
@@ -177,11 +204,19 @@ export default function ReportProblem({
   // ── Role (may be overridden by token stored in localStorage) ─────────────────
   const [currentRoleId, setCurrentRoleId] = useState(roleId);
 
-  // ── Smart Location Privacy: hide map for 'การเรียนการสอน' category ───────────
-  const isTeachingCategory = React.useMemo(() => {
-    if (!selectedCategory) return false;
+  // ── Smart Location Privacy: hide map based on category requires_location_privacy ───────────
+  const { requiresMap, isTeachingCategory } = React.useMemo(() => {
+    if (!selectedCategory) return { requiresMap: false, isTeachingCategory: false };
     const cat = categories.find((c) => String(c.id) === selectedCategory);
-    return cat?.name === 'การเรียนการสอน';
+    return {
+      requiresMap: cat?.requireMap ?? false,
+      isTeachingCategory: cat?.name === 'การเรียนการสอน',
+    };
+  }, [selectedCategory, categories]);
+
+  const selectedCategoryName = React.useMemo(() => {
+    const cat = categories.find((c) => String(c.id) === selectedCategory);
+    return cat ? cat.name : 'ทั่วไป';
   }, [selectedCategory, categories]);
 
   // ─── Toast helpers ────────────────────────────────────────────────────────────
@@ -214,15 +249,22 @@ export default function ReportProblem({
         console.log('Categories Raw Data:', catRes.data);
         if (!cancelled) {
           const rawData = catRes.data;
-          // Extract array from nested payload like { data: { items: [...] } }
-          const itemsArray = Array.isArray(rawData) ? rawData : (rawData?.data?.items || rawData?.data || rawData?.items || []);
+          let itemsArray: any[] = [];
+          if (Array.isArray(rawData)) itemsArray = rawData;
+          else if (rawData?.data && Array.isArray(rawData.data)) itemsArray = rawData.data;
+          else if (rawData?.data?.items && Array.isArray(rawData.data.items)) itemsArray = rawData.data.items;
+          else if (rawData?.items && Array.isArray(rawData.items)) itemsArray = rawData.items;
           // Normalize to match Category interface
           const formatted = itemsArray.map((item: any) => ({
             id: item.category_id ?? item.id,
             name: item.category_name ?? item.name,
             description: item.description,
+            requireMap: item.requires_location_privacy ?? false,
           }));
           setCategories(formatted);
+          if (formatted.length > 0) {
+            // Do not select default category to force user to choose or use AI
+          }
         }
       } catch (err) {
         if (!cancelled) console.error('🚨 ไม่สามารถดึงข้อมูลหมวดหมู่ได้:', err);
@@ -234,7 +276,11 @@ export default function ReportProblem({
         console.log('Buildings Raw Data:', bldRes.data);
         if (!cancelled) {
           const rawData = bldRes.data;
-          const itemsArray = Array.isArray(rawData) ? rawData : (rawData?.data?.items || rawData?.data || rawData?.items || []);
+          let itemsArray: any[] = [];
+          if (Array.isArray(rawData)) itemsArray = rawData;
+          else if (rawData?.data && Array.isArray(rawData.data)) itemsArray = rawData.data;
+          else if (rawData?.data?.items && Array.isArray(rawData.data.items)) itemsArray = rawData.data.items;
+          else if (rawData?.items && Array.isArray(rawData.items)) itemsArray = rawData.items;
           // Normalize to match Building interface
           const formatted = itemsArray.map((item: any) => ({
             id: item.building_id ?? item.id,
@@ -259,17 +305,35 @@ export default function ReportProblem({
 
   // ─── Image picker ─────────────────────────────────────────────────────────────
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setImagePreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    
+    if (images.length + files.length > 1) {
+      showToast('สามารถอัปโหลดรูปภาพได้สูงสุด 1 รูปเท่านั้น', 'warning');
+      return;
+    }
+    
+    setImages(prev => [...prev, ...files]);
+    
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setImagePreviews(prev => [...prev, ev.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+    
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  function clearImage() {
-    setImageFile(null);
-    setImagePreview(null);
+  function removeImage(index: number) {
+    setImages(prev => prev.filter((_, i) => i !== index));
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+  }
+
+  function clearAllImages() {
+    setImages([]);
+    setImagePreviews([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
@@ -287,29 +351,19 @@ export default function ReportProblem({
     }
   }
 
-  // ─── Category change + clear location when teaching ──────────────────────────
-  function handleCategoryChange(catId: string) {
-    setSelectedCategory(catId);
-    const cat = categories.find((c) => String(c.id) === catId);
-    if (cat?.name === 'การเรียนการสอน') {
-      setSelectedLocation(null);
-    }
-  }
+  // ─── Category change + clear location when not requiresMap ──────────────────────────
+
 
   // ─── Submit ───────────────────────────────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
     // Validation (mirrors Flutter)
-    if (title.trim().length < 5) {
-      showToast('กรุณาระบุหัวข้อปัญหาอย่างน้อย 5 ตัวอักษร', 'warning');
-      return;
-    }
     if (description.trim().length < 10) {
       showToast('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร', 'warning');
       return;
     }
-    if (!selectedCategory || !selectedBuilding) {
+    if (!selectedCategory || (requiresMap && !selectedBuilding)) {
       showToast('กรุณาเลือกหมวดหมู่และสถานที่', 'warning');
       return;
     }
@@ -322,17 +376,25 @@ export default function ReportProblem({
       const formData = new FormData();
       formData.append('category_id', selectedCategory);
       formData.append('building_id', selectedBuilding);
-      formData.append('title', title.trim());
+      
+      // Auto-generate title from the first 50 characters of description
+      const generatedTitle = description.trim().length > 50 
+        ? description.trim().substring(0, 50) + '...' 
+        : description.trim();
+      formData.append('title', generatedTitle);
       formData.append('description', description.trim());
       formData.append('visibility_name', visibility);
-      if (selectedLocation) {
+      if (selectedLocation && requiresMap) {
         formData.append('latitude', String(selectedLocation.lat));
         formData.append('longitude', String(selectedLocation.lng));
       }
-      if (imageFile) {
-        formData.append('image', imageFile, imageFile.name);
+      if (images.length > 0) {
+        images.forEach(img => {
+          formData.append('images', img, img.name);
+        });
       }
 
+      console.log("Submitting Payload:", Object.fromEntries(formData.entries()));
       const response = await axios.post(
         `${API_BASE}/problems/create`,
         formData,
@@ -348,14 +410,13 @@ export default function ReportProblem({
 
       if (data.success === true) {
         // Reset form (mirrors Flutter setState reset)
-        setTitle('');
         setDescription('');
         setSelectedCategory('');
         setSelectedBuilding('');
         setSelectedLocation(null);
         setMapFlyTarget(null);
         setVisibility('public');
-        clearImage();
+        clearAllImages();
         showToast('ส่งรายงานปัญหาสำเร็จ! 🎉', 'success');
         onSuccess?.();
       } else {
@@ -363,20 +424,26 @@ export default function ReportProblem({
       }
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
-        if (err.response?.status === 401) {
-          showToast('หมดอายุการเชื่อมต่อ กรุณาเข้าสู่ระบบใหม่', 'error');
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('role_id');
-          onUnauthorized?.();
-          return;
+        if (err.response) {
+          console.error("Backend Validation Error (400/422):", err.response.data);
+          if (err.response.status === 401) {
+            showToast('หมดอายุการเชื่อมต่อ กรุณาเข้าสู่ระบบใหม่', 'error');
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('role_id');
+            onUnauthorized?.();
+            return;
+          }
+          const detail = err.response.data.detail || err.response.data;
+          showToast(
+            typeof detail === 'string' ? detail : JSON.stringify(detail),
+            'error'
+          );
+        } else {
+          console.error("Network Error:", err.message);
+          showToast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ (network error)', 'error');
         }
-        const msg = err.response?.data?.message;
-        showToast(
-          msg ??
-            `ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ (${err.response?.status ?? 'network error'})`,
-          'error'
-        );
       } else {
+        console.error("Unexpected Error:", err);
         showToast('เกิดข้อผิดพลาดที่ไม่คาดคิด', 'error');
       }
     } finally {
@@ -392,7 +459,7 @@ export default function ReportProblem({
     4: { label: 'ผู้ดูแลระบบ', icon: '🛡️' },
     5: { label: localStorage.getItem('display_name') || 'ผู้เยี่ยมชม', icon: '👤' },
   };
-  const { label: roleLabel, icon: roleIcon } =
+  const { label: _roleLabel, icon: _roleIcon } =
     roleMeta[currentRoleId] ?? roleMeta[0];
 
   const canSetVisibility = currentRoleId === 2 || currentRoleId === 4;
@@ -403,13 +470,7 @@ export default function ReportProblem({
     : null;
 
   // ─── Shared input classes ─────────────────────────────────────────────────────
-  const inputCls =
-    'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 ' +
-    'outline-none transition focus:border-[#2B164D] focus:ring-2 focus:ring-[#2B164D]/20 disabled:opacity-50';
 
-  const selectCls =
-    'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 ' +
-    'outline-none transition focus:border-[#2B164D] focus:ring-2 focus:ring-[#2B164D]/20 disabled:opacity-50 cursor-pointer';
 
   // ─── Loading skeleton while fetching dropdown data ────────────────────────────
   if (isFetchingData && categories.length === 0) {
@@ -423,359 +484,267 @@ export default function ReportProblem({
     );
   }
 
+
+
   return (
-    <>
-      {/* ── Page wrapper ── */}
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50/30 to-slate-100 py-8 px-4">
-        {/* ── Header ── */}
-        <header className="max-w-[550px] mx-auto mb-6 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#2B164D] flex items-center justify-center shadow-md shadow-[#2B164D]/20">
-            <span className="text-lg">📝</span>
+    <div className="min-h-screen bg-surface text-on-surface antialiased pb-24 font-body-md">
+      {/* Desktop Sticky TopAppBar */}
+      <header className="md:hidden fixed top-0 left-0 w-full z-50 bg-surface-container-lowest/80 backdrop-blur-md border-b border-outline-variant h-16 px-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="material-symbols-outlined text-primary text-3xl">hub</span>
+          <h1 className="font-headline-lg-mobile text-headline-lg-mobile font-extrabold text-primary tracking-tight">UP Connect</h1>
+        </div>
+      </header>
+
+      <main className="pt-24 md:pt-8 pb-32 px-4 md:px-8 flex justify-center">
+        <div className="w-full max-w-2xl">
+          {/* Header Section */}
+          <div className="mb-8 text-center">
+            <h2 className="font-headline-lg text-headline-lg text-on-surface mb-2">แจ้งปัญหา (Report Issue)</h2>
+            <p className="font-body-md text-body-md text-outline">รายงานปัญหาหรือข้อเสนอแนะเพื่อพัฒนาพื้นที่ภายในมหาวิทยาลัยพะเยา</p>
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-[#2B164D] leading-tight m-0">
-              สร้างโพสต์แจ้งปัญหา
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5 m-0">
-              University Social Listening Platform
-            </p>
-          </div>
-        </header>
 
-        {/* ── Card ── */}
-        <main className="max-w-[550px] mx-auto">
-          <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-100 p-6">
-            {/* Subtitle */}
-            <p className="text-center text-xs text-slate-500 font-medium mb-5 m-0">
-              กรุณากรอกข้อมูลและสถานที่ให้ชัดเจนเพื่อการแก้ไขที่รวดเร็ว
-            </p>
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="glass-card rounded-2xl overflow-hidden shadow-sm" noValidate>
+            <div className="p-6 md:p-10 space-y-8">
+              
 
-            {/* ── Role badge ── */}
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-bold text-slate-700">
-                บทบาทของคุณ:
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-100 text-xs font-semibold text-[#2B164D]">
-                <span>{roleIcon}</span>
-                {roleLabel}
-              </span>
-            </div>
 
-            <hr className="border-slate-100 mb-5" />
+              {/* Category Selection Grid */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-end">
+                  <label className="block font-label-md text-label-md text-on-surface-variant font-bold">หมวดหมู่ปัญหา (Category) <span className="text-error">*</span></label>
+                  <button type="button" onClick={handleAiSuggest} disabled={isAiSuggesting || isFetchingData} className="text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-full transition-colors flex items-center gap-1 disabled:opacity-50">
+                    {isAiSuggesting ? <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span> : '🪄'}
+                    {isAiSuggesting ? 'กำลังวิเคราะห์...' : 'ให้ AI ช่วยเลือก'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {categories.map((cat) => {
+                    const isSelected = selectedCategory === String(cat.id);
+                    
+                    // Map category name to icon
+                    const icons: Record<string, string> = {
+                      'อาคารและสถานที่': 'apartment',
+                      'ไฟฟ้าและแสงสว่าง': 'lightbulb',
+                      'ประปาและสุขาภิบาล': 'water_drop',
+                      'ความปลอดภัย': 'shield',
+                      'ไอทีและเครือข่าย': 'router',
+                      'ความสะอาด': 'cleaning_services',
+                      'อื่นๆ': 'more_horiz',
+                    };
+                    const iconName = icons[cat.name] || 'category';
 
-            <form
-              onSubmit={handleSubmit}
-              className="flex flex-col gap-5"
-              noValidate
-            >
-              {/* ── Visibility ── */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-slate-700">
-                  ระดับการมองเห็น
-                  <span className="text-red-400 ml-1">*</span>
-                </label>
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="visibility"
-                      value="public"
-                      checked={visibility === 'public'}
-                      onChange={() => setVisibility('public')}
-                      disabled={isSubmitting}
-                      className="accent-[#2B164D] w-4 h-4 cursor-pointer"
-                    />
-                    <span className="text-sm text-slate-700 font-medium">สาธารณะ (Public)</span>
-                  </label>
-                  
-                  {/* ซ่อนตัวเลือกภายในสำหรับ Guest/บุคคลทั่วไป/นิสิต */}
-                  {(currentRoleId === 2 || currentRoleId === 4 || currentRoleId === 5) && localStorage.getItem('role') !== 'anonymous' && (
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="visibility"
-                        value="internal"
-                        checked={visibility === 'internal'}
-                        onChange={() => setVisibility('internal')}
-                        disabled={isSubmitting}
-                        className="accent-[#2B164D] w-4 h-4 cursor-pointer"
-                      />
-                      <span className="text-sm text-slate-700 font-medium">เฉพาะบุคลากร (Staff Only)</span>
-                    </label>
-                  )}
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setSelectedCategory(String(cat.id))}
+                        disabled={isSubmitting || isFetchingData}
+                        className={`relative flex flex-col items-center justify-center p-4 rounded-xl border transition-all ${
+                          isSelected
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                            : 'border-outline-variant bg-surface hover:border-primary hover:bg-primary/5'
+                        }`}
+                        style={{
+                          gridColumn: cat.name === 'อื่นๆ' ? '1 / -1' : 'auto'
+                        }}
+                      >
+                        <span className={`font-label-sm text-label-sm text-center ${isSelected ? 'text-primary font-bold' : 'text-on-surface'}`}>
+                          {cat.name}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* ── Title ── */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="report-title"
-                  className="text-xs font-bold text-slate-700"
-                >
-                  หัวข้อปัญหา
-                  <span className="text-red-400 ml-1">*</span>
-                </label>
-                <input
-                  id="report-title"
-                  type="text"
-                  className={inputCls}
-                  placeholder="ระบุหัวข้อปัญหาที่ต้องการแจ้ง (อย่างน้อย 5 ตัวอักษร)"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  disabled={isSubmitting}
-                  maxLength={200}
-                />
-                <span className="text-[11px] text-slate-400 self-end">
-                  {title.length}/200
-                </span>
-              </div>
-
-              {/* ── Category ── */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="report-category"
-                  className="text-xs font-bold text-slate-700"
-                >
-                  หมวดหมู่ปัญหา
-                  <span className="text-red-400 ml-1">*</span>
-                </label>
-                <select
-                  id="report-category"
-                  className={selectCls}
-                  value={selectedCategory}
-                  onChange={(e) => handleCategoryChange(e.target.value)}
-                  disabled={isSubmitting || isFetchingData}
-                >
-                  <option value="" disabled>
-                    {isFetchingData ? 'กำลังโหลด...' : 'เลือกหมวดหมู่'}
-                  </option>
-                  {categories.map((cat, idx) => (
-                    <option key={cat.id || `cat-${idx}`} value={String(cat.id)}>
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* ── Building / Location ── */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="report-building"
-                  className="text-xs font-bold text-slate-700"
-                >
-                  สถานที่ / อาคาร
-                  <span className="text-red-400 ml-1">*</span>
-                </label>
-                <select
-                  id="report-building"
-                  className={selectCls}
-                  value={selectedBuilding}
-                  onChange={(e) => handleBuildingChange(e.target.value)}
-                  disabled={isSubmitting || isFetchingData}
-                >
-                  <option value="" disabled>
-                    {isFetchingData
-                      ? 'กำลังโหลด...'
-                      : 'เลือกสถานที่ / อาคาร'}
-                  </option>
-                  {buildings.map((bld, idx) => (
-                    <option key={bld.id || `bld-${idx}`} value={String(bld.id)}>
-                      {bld.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* ── Description ── */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="report-description"
-                  className="text-xs font-bold text-slate-700"
-                >
-                  รายละเอียดปัญหาที่พบเจอ
-                  <span className="text-red-400 ml-1">*</span>
-                </label>
+              {/* Description */}
+              <div className="space-y-2">
+                <label className="block font-label-md text-label-md text-on-surface-variant font-bold">รายละเอียดปัญหา <span className="text-error">*</span></label>
                 <textarea
-                  id="report-description"
-                  className={`${inputCls} resize-none`}
-                  rows={4}
-                  placeholder="พิมพ์ข้อความบรรยายปัญหาของคุณ... (อย่างน้อย 10 ตัวอักษร)"
+                  className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-xl font-body-md text-body-md p-4 transition-all min-h-[140px] resize-none outline-none focus:ring-2 focus:ring-primary/20"
+                  placeholder="ระบุรายละเอียดเพิ่มเติมเพื่อช่วยให้เจ้าหน้าที่เข้าใจสถานการณ์ได้ดีขึ้น... (อย่างน้อย 10 ตัวอักษร)"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   disabled={isSubmitting}
                   maxLength={2000}
                 />
-                <span className="text-[11px] text-slate-400 self-end">
-                  {description.length}/2000
-                </span>
+                <div className="flex justify-between items-center mt-1">
+                  <div className="flex items-center h-5">
+                  </div>
+                  <div className="text-[11px] text-outline text-right">{description.length}/2000</div>
+                </div>
               </div>
 
-              {/* ── Image Upload ── */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700">
-                  รูปภาพประกอบ
-                  <span className="text-slate-400 font-normal ml-1">
-                    (ไม่บังคับ)
-                  </span>
-                </label>
-
-                {imagePreview ? (
-                  /* Preview with remove button */
-                  <div className="relative rounded-xl overflow-hidden border border-slate-200">
-                    <img
-                      src={imagePreview}
-                      alt="preview"
-                      className="w-full object-cover max-h-52"
-                    />
-                    <button
-                      type="button"
-                      onClick={clearImage}
-                      className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition"
-                      aria-label="Remove image"
-                    >
-                      <span className="text-white text-sm leading-none">
-                        ✕
-                      </span>
-                    </button>
+              {/* Image Upload */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="block font-label-md text-label-md text-on-surface-variant font-bold">หลักฐานรูปภาพ <span className="text-outline font-normal">(สูงสุด 1 รูป)</span></label>
+                  {images.length > 0 && <span className="text-[11px] text-outline font-medium">{images.length}/1</span>}
+                </div>
+                
+                {imagePreviews.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 mt-2 mb-2">
+                    {imagePreviews.map((preview, index) => (
+                      <div key={index} className="relative rounded-xl overflow-hidden border border-outline-variant group/preview aspect-video bg-surface-container-low">
+                        <img src={preview} alt={`preview-${index}`} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/preview:opacity-100 transition-opacity flex items-center justify-center">
+                          <button type="button" onClick={() => removeImage(index)} className="bg-error text-white px-4 py-2 rounded-full font-label-md flex items-center gap-1 shadow-lg">
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                            ลบรูป
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  /* Upload zone */
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isSubmitting}
-                    className="
-                      w-full h-28 rounded-xl border-2 border-dashed border-slate-200
-                      bg-slate-50 hover:bg-purple-50/50 hover:border-[#2B164D]/30
-                      flex flex-col items-center justify-center gap-2
-                      transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed
-                    "
-                  >
-                    <span className="text-3xl">☁️</span>
-                    <span className="text-xs text-slate-500">
-                      คลิกเพื่ออัปโหลดรูปภาพ
-                    </span>
-                  </button>
                 )}
 
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageChange}
-                />
+                {images.length < 1 && (
+                  <div 
+                    className="relative group cursor-pointer flex flex-col items-center justify-center py-8 border-2 border-dashed border-outline-variant rounded-xl hover:border-primary hover:bg-primary/5 transition-all"
+                    onClick={() => !isSubmitting && fileInputRef.current?.click()}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageChange}
+                      disabled={isSubmitting}
+                    />
+                    <div className="text-center">
+                      <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3 text-primary">
+                        <span className="material-symbols-outlined text-2xl">upload_file</span>
+                      </div>
+                      <p className="font-label-md text-label-md text-on-surface font-semibold">อัปโหลดรูปภาพ</p>
+                      <p className="font-label-sm text-label-sm text-outline mt-1">คลิกเพื่อเลือกรูปภาพ</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* ── Leaflet Map (hidden for 'การเรียนการสอน') ── */}
-              {!isTeachingCategory && (
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-700">
-                      พิกัดสถานที่
-                      <span className="text-slate-400 font-normal ml-1">
-                        (ไม่บังคับ)
-                      </span>
-                    </label>
+              {/* Location */}
+              {requiresMap && (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-end">
+                    <label className="font-label-md text-label-md text-on-surface-variant font-bold">ระบุพิกัดที่เกิดปัญหา <span className="text-error">*</span></label>
                     {selectedLocation && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedLocation(null);
-                          setMapFlyTarget(null);
-                        }}
-                        className="text-[11px] text-red-500 hover:text-red-700 transition font-medium"
-                      >
+                      <button type="button" onClick={() => { setSelectedLocation(null); setMapFlyTarget(null); }} className="flex items-center gap-1 text-error text-label-sm font-bold hover:underline transition-all">
+                        <span className="material-symbols-outlined text-base">location_off</span>
                         ล้างพิกัด
                       </button>
                     )}
                   </div>
-
-                  {/* Map container */}
-                  <div className="rounded-xl overflow-hidden border border-slate-200 h-52">
-                    <MapContainer
-                      center={UP_CENTER}
-                      zoom={14}
-                      style={{ height: '100%', width: '100%' }}
-                      scrollWheelZoom={false}
+                  
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline">apartment</span>
+                    <select
+                      className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-xl font-body-md text-body-md p-3 pl-12 transition-all appearance-none cursor-pointer outline-none focus:ring-2 focus:ring-primary/20"
+                      value={selectedBuilding}
+                      onChange={(e) => handleBuildingChange(e.target.value)}
+                      disabled={isSubmitting || isFetchingData}
                     >
-                      <TileLayer
-                        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                      />
+                      <option value="" disabled>{isFetchingData ? 'กำลังโหลด...' : 'ค้นหาจุดสำคัญ หรือระบุอาคาร...'}</option>
+                      {buildings.map((bld, idx) => (
+                        <option key={bld.id || `bld-${idx}`} value={String(bld.id)}>{bld.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="h-48 rounded-xl border border-outline-variant overflow-hidden relative bg-surface-container-low">
+                    <MapContainer center={UP_CENTER} zoom={14} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
+                      <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' />
                       <MapClickHandler onLocationSelect={setSelectedLocation} />
                       <MapFlyTo center={mapFlyTarget} />
                       {markerPosition && <Marker position={markerPosition} />}
                     </MapContainer>
+                    {!selectedLocation && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-primary/5 pointer-events-none z-[400]">
+                        <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm border border-outline-variant flex items-center gap-2">
+                          <span className="material-symbols-outlined text-error" style={{ fontVariationSettings: "'FILL' 1" }}>location_on</span>
+                          <span className="text-label-sm font-medium text-on-surface">คลิกเพื่อระบุพิกัด หรือเลือกอาคาร</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
-
-                  <p className="text-[11px] text-slate-500 m-0">
-                    {selectedLocation
-                      ? `📍 พิกัดที่เลือก: ${selectedLocation.lat.toFixed(4)}, ${selectedLocation.lng.toFixed(4)}`
-                      : '📍 แตะบนแผนที่เพื่อระบุตำแหน่ง'}
-                  </p>
                 </div>
               )}
 
-              {/* ── Smart Privacy Notice ── */}
+              {/* Smart Privacy Notice */}
               {isTeachingCategory && (
-                <div className="flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
-                  <span className="text-amber-500 mt-0.5">🔒</span>
-                  <p className="text-xs text-amber-700 font-medium leading-relaxed m-0">
-                    <strong>Smart Location Privacy:</strong>{' '}
-                    ปิดการระบุพิกัดแผนที่สำหรับหมวดหมู่{' '}
-                    &ldquo;การเรียนการสอน&rdquo; เพื่อปกป้องความเป็นส่วนตัว
+                <div className="flex items-start gap-2 rounded-xl bg-error-container/30 border border-error-container px-4 py-3">
+                  <span className="material-symbols-outlined text-error mt-0.5 text-lg">lock</span>
+                  <p className="font-label-sm text-label-sm text-on-error-container leading-relaxed m-0">
+                    <strong>Smart Location Privacy:</strong> ปิดการระบุพิกัดแผนที่สำหรับหมวดหมู่ "การเรียนการสอน" เพื่อปกป้องความเป็นส่วนตัว
                   </p>
                 </div>
               )}
 
-              {/* ── Submit button ── */}
-              <button
-                id="report-submit-btn"
-                type="submit"
-                disabled={isSubmitting || isFetchingData}
-                className="
-                  w-full h-12 rounded-xl font-bold text-sm text-white
-                  bg-[#2B164D] hover:bg-[#3d2268]
-                  active:scale-[0.98]
-                  shadow-lg shadow-[#2B164D]/25
-                  transition-all duration-200
-                  disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100
-                  flex items-center justify-center gap-2
-                "
-              >
-                {isSubmitting ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>กำลังส่ง...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>📤</span>
-                    <span>ส่งโพสต์แจ้งปัญหา</span>
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
+              {/* Visibility Settings (Role 2 or 4 only) */}
+              {canSetVisibility && (
+                <div className="space-y-4 pt-2 border-t border-outline-variant/50">
+                  <label className="block font-label-md text-label-md text-on-surface font-bold">สิทธิ์การเข้าถึงข้อมูล</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className={`relative flex items-center p-4 border rounded-xl cursor-pointer transition-all group ${visibility === 'public' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-outline-variant hover:border-primary hover:bg-primary/5'}`}>
+                      <input type="radio" name="visibility" value="public" checked={visibility === 'public'} onChange={() => setVisibility('public')} className="w-5 h-5 text-primary border-outline-variant focus:ring-primary accent-primary" />
+                      <div className="ml-3">
+                        <span className="block font-label-md text-label-md text-on-surface font-semibold">สาธารณะ</span>
+                        <span className="block text-[11px] text-outline leading-tight mt-0.5">ทุกคนสามารถเห็นได้</span>
+                      </div>
+                      <span className={`material-symbols-outlined ml-auto text-xl transition-colors ${visibility === 'public' ? 'text-primary' : 'text-outline group-hover:text-primary'}`}>public</span>
+                    </label>
+                    <label className={`relative flex items-center p-4 border rounded-xl cursor-pointer transition-all group ${visibility === 'internal' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-outline-variant hover:border-primary hover:bg-primary/5'}`}>
+                      <input type="radio" name="visibility" value="internal" checked={visibility === 'internal'} onChange={() => setVisibility('internal')} className="w-5 h-5 text-primary border-outline-variant focus:ring-primary accent-primary" />
+                      <div className="ml-3">
+                        <span className="block font-label-md text-label-md text-on-surface font-semibold">ภายใน</span>
+                        <span className="block text-[11px] text-outline leading-tight mt-0.5">เฉพาะบุคลากร</span>
+                      </div>
+                      <span className={`material-symbols-outlined ml-auto text-xl transition-colors ${visibility === 'internal' ? 'text-primary' : 'text-outline group-hover:text-primary'}`}>lock</span>
+                    </label>
+                  </div>
+                </div>
+              )}
 
-          {/* Footer note */}
-          <p className="text-center text-[11px] text-slate-400 mt-4 pb-4 m-0">
-            ข้อมูลของคุณจะถูกส่งไปยังทีมงานที่รับผิดชอบโดยตรง
-          </p>
-        </main>
-      </div>
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-3 pt-4">
+                <button
+                  type="submit"
+                  disabled={isSubmitting || isFetchingData}
+                  className="w-full bg-primary text-white py-4 rounded-xl font-headline-md shadow-md hover:bg-primary/90 hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 disabled:active:scale-100"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                      กำลังดำเนินการ...
+                    </>
+                  ) : (
+                    <>
+                      ส่งรายงานปัญหา
+                      <span className="material-symbols-outlined text-2xl">send</span>
+                    </>
+                  )}
+                </button>
+                <button type="button" onClick={() => window.history.back()} disabled={isSubmitting} className="w-full bg-transparent text-outline py-3 rounded-xl font-label-md hover:text-on-surface-variant hover:bg-surface-variant/30 transition-all">
+                  ยกเลิก
+                </button>
+              </div>
 
-      {/* ── Toast notifications ── */}
+            </div>
+          </form>
+        </div>
+      </main>
+
+      {/* Toast notifications */}
       <ToastContainer toasts={toasts} />
-
-      {/* ── Slide-up animation ── */}
+      
+      {/* Slide-up animation */}
       <style>{`
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(20px); }
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-    </>
+    </div>
   );
 }

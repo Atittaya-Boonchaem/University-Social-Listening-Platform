@@ -14,7 +14,7 @@ Key changes from v1:
 """
 from fastapi import (
     APIRouter, Depends, HTTPException, Query,
-    status as http_status, File, UploadFile, Form, Request
+    status as http_status, File, UploadFile, Form, Request, BackgroundTasks
 )
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, joinedload, contains_eager
@@ -108,6 +108,20 @@ def require_admin_or_staff(user: User, db: Session) -> None:
         raise HTTPException(403, "Only staff or admin users can perform this action")
 
 
+def compute_sla_status(created_at, sla_due_date=None):
+    """Return SLA status: 'green' < 3 days, 'yellow' 3-7 days, 'red' > 7 days."""
+    if not created_at:
+        return {"level": "grey", "label": "Unknown", "days_open": 0}
+    days_open = (datetime.utcnow() - created_at).days
+    if sla_due_date and datetime.utcnow() > sla_due_date:
+        return {"level": "red", "label": "SLA Breached", "days_open": days_open}
+    if days_open < 3:
+        return {"level": "green", "label": "On Track", "days_open": days_open}
+    if days_open <= 7:
+        return {"level": "yellow", "label": "At Risk", "days_open": days_open}
+    return {"level": "red", "label": "SLA Breached", "days_open": days_open}
+
+
 def serialize_problem(p: Problem, db: Session, current_user: Optional[User] = None) -> dict:
     """Convert a Problem ORM object into a serialisable dict."""
     # Status & visibility (use ORM relationships if loaded, else query)
@@ -140,12 +154,16 @@ def serialize_problem(p: Problem, db: Session, current_user: Optional[User] = No
     ]
 
     author_data = get_author_info(p.user_id, db)
+    sla = compute_sla_status(p.created_at, p.sla_due_date)
     return {
         "id": p.problem_id,
         "problem_id": p.problem_id,
+        "ticket_id": p.ticket_id,
+        "parent_problem_id": p.parent_problem_id,
         "user_id": p.user_id,
         "category_id": p.category_id,
         "category_name": category_name,
+        "ticket_prefix": p.category.ticket_prefix if p.category else None,
         "visibility_id": p.visibility_id,
         "visibility_name": visibility_name,
         "status_id": p.status_id,
@@ -157,9 +175,12 @@ def serialize_problem(p: Problem, db: Session, current_user: Optional[User] = No
         "longitude": float(p.longitude) if p.longitude is not None else None,
         "building_name": p.building_name,
         "is_deleted": p.is_deleted,
+        "is_hidden": p.is_hidden,
         "is_flagged": p.is_flagged,
         "flagged_reason": p.flagged_reason,
         "llm_analysis": p.llm_analysis,
+        "sla_due_date": p.sla_due_date,
+        "sla_status": sla,
         "created_at": p.created_at,
         "like_count": like_count,
         "is_liked_by_me": is_liked,
@@ -231,9 +252,40 @@ def delete_category(
     db_cat = db.query(Category).filter(Category.category_id == category_id).first()
     if not db_cat:
         raise HTTPException(404, "Category not found")
-    db.delete(db_cat)
+    db_cat.is_active = False
     db.commit()
     return StandardResponse(success=True, message="Category deleted")
+
+
+@router.post("/categories/{category_id}/import-data", response_model=StandardResponse)
+async def import_category_data(
+    category_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_or_staff(current_user, db)
+    db_cat = db.query(Category).filter(Category.category_id == category_id).first()
+    if not db_cat:
+        raise HTTPException(404, "Category not found")
+        
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(400, "Only CSV files are supported")
+        
+    content = await file.read()
+    text_content = content.decode('utf-8-sig', errors='ignore')
+    
+    # Save training data to file
+    save_dir = os.path.join(os.path.dirname(__file__), "..", "ai_data", "categories")
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, f"{category_id}_training.csv")
+    
+    # Append or create
+    mode = 'a' if os.path.exists(save_path) else 'w'
+    with open(save_path, mode, encoding='utf-8') as f:
+        f.write("\n" + text_content)
+        
+    return StandardResponse(success=True, message="Training data imported successfully")
 
 
 # ──────────────────────────────────────────────
@@ -271,7 +323,8 @@ async def create_problem(
     building_id: Optional[int] = Form(None),
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
-    image: Optional[UploadFile] = File(None),
+    images: List[UploadFile] = File(default=[]),
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -283,24 +336,34 @@ async def create_problem(
     2. มีระบบ AI กรองคำหยาบ 
     3. บันทึกข้อมูลลงฐานข้อมูลและผูกเข้ากับหมวดหมู่
     """
-    # AI Profanity Check
+    # AI Profanity Check & Category Suggestion
     from app.services.ai_service import check_profanity, suggest_category
-    if check_profanity(description):
-        raise HTTPException(status_code=400, detail="เนื้อหาไม่เหมาะสมเนื่องจากมีคำหยาบคาย")
+    try:
+        if check_profanity(description):
+            raise HTTPException(status_code=400, detail="เนื้อหาไม่เหมาะสมเนื่องจากมีคำหยาบคาย")
 
-    # Validate category
-    cat = db.query(Category).filter(Category.category_id == category_id).first()
-    if not cat:
-        raise HTTPException(404, f"Category {category_id} not found")
+        # AI Category Suggestion if category is "อื่นๆ"
+        cat = db.query(Category).filter(Category.category_id == category_id).first()
+        if not cat:
+            raise HTTPException(404, f"Category {category_id} not found")
 
-    # AI Category Suggestion if category is "อื่นๆ"
-    if cat.category_name == "อื่นๆ" or cat.category_name == "อื่น ๆ":
-        categories = db.query(Category).all()
-        categories_list = [{"id": c.category_id, "name": c.category_name} for c in categories]
-        suggested_id = suggest_category(description, categories_list)
-        if suggested_id:
-            category_id = suggested_id
-            cat = db.query(Category).filter(Category.category_id == category_id).first() or cat
+        if cat.category_name == "อื่นๆ" or cat.category_name == "อื่น ๆ":
+            categories = db.query(Category).all()
+            categories_list = [{"id": c.category_id, "name": c.category_name, "description": c.description} for c in categories]
+            suggested_id = suggest_category(description, categories_list)
+            if suggested_id:
+                category_id = suggested_id
+                cat = db.query(Category).filter(Category.category_id == category_id).first() or cat
+    except HTTPException:
+        # Re-raise HTTP exceptions (like the 400 for profanity or 404 for category)
+        raise
+    except Exception as e:
+        import logging
+        logging.error(f"AI Service Failed during problem creation: {e}")
+        # Bypass AI if it fails, fallback to querying category normally if not done
+        cat = db.query(Category).filter(Category.category_id == category_id).first()
+        if not cat:
+            raise HTTPException(404, f"Category {category_id} not found")
 
     # Resolve FK lookups
     status_obj = get_status_by_name(db, "OPEN")
@@ -323,15 +386,17 @@ async def create_problem(
             building_name = b.name
 
     # Handle image upload
-    attachment_url: Optional[str] = None
-    if image and image.filename:
+    attachment_urls = []
+    if images:
         os.makedirs(config.IMAGE_UPLOAD_DIR, exist_ok=True)
-        ext = os.path.splitext(image.filename)[1]
-        filename = f"{uuid.uuid4().hex}{ext}"
-        filepath = os.path.join(config.IMAGE_UPLOAD_DIR, filename)
-        with open(filepath, "wb") as buf:
-            shutil.copyfileobj(image.file, buf)
-        attachment_url = f"/uploads/images/{filename}"
+        for img in images:
+            if img.filename:
+                ext = os.path.splitext(img.filename)[1]
+                filename = f"{uuid.uuid4().hex}{ext}"
+                filepath = os.path.join(config.IMAGE_UPLOAD_DIR, filename)
+                with open(filepath, "wb") as buf:
+                    shutil.copyfileobj(img.file, buf)
+                attachment_urls.append((f"/uploads/images/{filename}", img.content_type))
 
     # User mapping
     problem_user_id = current_user.user_id
@@ -351,12 +416,19 @@ async def create_problem(
     db.add(problem)
     db.flush()   # get problem_id
 
+    # Advanced features: Generate ticket_id & SLA
+    if cat.ticket_prefix:
+        year_str = datetime.utcnow().strftime("%y")
+        problem.ticket_id = f"{cat.ticket_prefix}-{year_str}-{problem.problem_id:04d}"
+    
+    problem.sla_due_date = datetime.utcnow() + timedelta(days=7)
+
     # Attach image if uploaded
-    if attachment_url:
+    for url, ctype in attachment_urls:
         att = ProblemAttachment(
             problem_id=problem.problem_id,
-            file_url=attachment_url,
-            file_type=image.content_type if image else None,
+            file_url=url,
+            file_type=ctype,
         )
         db.add(att)
 
@@ -382,6 +454,25 @@ async def create_problem(
         .filter(Problem.problem_id == problem.problem_id)
         .first()
     )
+
+    # Background task for Sentiment Analysis + Auto Clustering
+    if background_tasks:
+        from app.services.ai_service import analyze_sentiment, auto_cluster_problem
+
+        def bg_analyze_and_cluster(prob_id: int):
+            with next(get_db()) as bg_db:
+                bg_prob = bg_db.query(Problem).filter(Problem.problem_id == prob_id).first()
+                if bg_prob:
+                    # Sentiment analysis
+                    sentiment_data = analyze_sentiment(bg_prob.description)
+                    current_analysis = bg_prob.llm_analysis or {}
+                    current_analysis.update(sentiment_data)
+                    bg_prob.llm_analysis = current_analysis
+                    bg_db.commit()
+                    # Auto clustering
+                    auto_cluster_problem(prob_id, bg_db)
+
+        background_tasks.add_task(bg_analyze_and_cluster, problem.problem_id)
 
     return StandardResponse(
         success=True,
@@ -419,6 +510,18 @@ async def list_problems(
         )
         .filter(Problem.is_deleted == False)
     )
+
+    # Determine if requester is admin/staff (can see hidden posts)
+    is_admin = False
+    if current_user:
+        is_admin = bool(
+            db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
+            or db.query(SuperAdmin).filter(SuperAdmin.user_id == current_user.user_id, SuperAdmin.is_active == True).first()
+            or db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+        )
+    # Non-admins cannot see quarantined (hidden) posts
+    if not is_admin:
+        query = query.filter(Problem.is_hidden == False)
 
     # Visibility gate: only staff/admin can see internal problems
     vis = db.query(VisibilityType).filter(
@@ -800,6 +903,129 @@ async def get_report(
     )
 
 
+@router.get("/analytics/sla-breached", response_model=StandardResponse)
+async def get_sla_breached(
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return top N open/in-progress tickets with worst SLA status."""
+    require_admin_or_staff(current_user, db)
+    base_filters = [Problem.is_deleted == False, Problem.is_hidden == False]
+
+    # Category Admin RBAC
+    cat_admin = db.query(CategoryAdmin).filter(
+        CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True
+    ).first()
+    if cat_admin and cat_admin.category_id:
+        base_filters.append(Problem.category_id == cat_admin.category_id)
+
+    # Only open / in-progress
+    open_statuses = db.query(Status).filter(Status.status_name.in_(["OPEN", "IN_PROGRESS"])).all()
+    open_ids = [s.status_id for s in open_statuses]
+    if open_ids:
+        base_filters.append(Problem.status_id.in_(open_ids))
+
+    problems = (
+        db.query(Problem)
+        .options(joinedload(Problem.category), joinedload(Problem.status))
+        .filter(*base_filters)
+        .order_by(Problem.created_at.asc())  # oldest first = worst SLA
+        .limit(limit * 3)  # over-fetch then sort in Python
+        .all()
+    )
+
+    items = []
+    for p in problems:
+        sla = compute_sla_status(p.created_at, p.sla_due_date)
+        items.append({
+            "problem_id": p.problem_id,
+            "ticket_id": p.ticket_id,
+            "title": p.title,
+            "category_name": p.category.category_name if p.category else "",
+            "status_name": p.status.status_name if p.status else "",
+            "created_at": p.created_at,
+            "sla_due_date": p.sla_due_date,
+            "sla_status": sla,
+        })
+
+    # Sort: red first, then yellow, then green; within same level by days_open desc
+    level_order = {"red": 0, "yellow": 1, "green": 2, "grey": 3}
+    items.sort(key=lambda x: (level_order.get(x["sla_status"]["level"], 9), -x["sla_status"]["days_open"]))
+    items = items[:limit]
+
+    return StandardResponse(
+        success=True, message="SLA breached tickets retrieved",
+        data={"items": items, "total": len(items)},
+    )
+
+
+@router.post("/merge-duplicate", response_model=StandardResponse)
+async def merge_duplicate(
+    parent_id: int,
+    child_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Merge child_id into parent_id.
+    - Guards against circular merge (child cannot be an existing parent)
+    - Sets child.parent_problem_id = parent_id
+    - Soft-hides the child ticket
+    - Logs in status history
+    """
+    require_admin_or_staff(current_user, db)
+
+    if parent_id == child_id:
+        raise HTTPException(400, "Parent and child tickets must be different")
+
+    parent = db.query(Problem).filter(Problem.problem_id == parent_id, Problem.is_deleted == False).first()
+    child = db.query(Problem).filter(Problem.problem_id == child_id, Problem.is_deleted == False).first()
+
+    if not parent:
+        raise HTTPException(404, f"Parent ticket #{parent_id} not found")
+    if not child:
+        raise HTTPException(404, f"Child ticket #{child_id} not found")
+
+    # Guard: circular merge — prevent if parent is already merged into child
+    if parent.parent_problem_id == child_id:
+        raise HTTPException(400, "Circular merge detected: the parent ticket is already a child of the target")
+
+    # Guard: prevent re-merging an already merged ticket into another parent
+    if child.parent_problem_id is not None and child.parent_problem_id != parent_id:
+        raise HTTPException(400, f"Ticket #{child_id} is already merged into #{child.parent_problem_id}")
+
+    # Perform merge
+    child.parent_problem_id = parent_id
+    child.is_hidden = True  # hide the duplicate from public view
+
+    closed_status = db.query(Status).filter(Status.status_name == "CLOSED").first()
+    if closed_status:
+        child.status_id = closed_status.status_id
+
+    # Log action on both tickets
+    db.add(ProblemStatusHistory(
+        problem_id=child_id,
+        status_id=child.status_id,
+        changed_by=current_user.user_id,
+        notes=f"Merged as duplicate into ticket #{parent_id}",
+    ))
+    db.add(ProblemStatusHistory(
+        problem_id=parent_id,
+        status_id=parent.status_id,
+        changed_by=current_user.user_id,
+        notes=f"Ticket #{child_id} was merged into this ticket as a duplicate",
+    ))
+
+    db.commit()
+
+    return StandardResponse(
+        success=True,
+        message=f"Ticket #{child_id} successfully merged into #{parent_id}",
+        data={"parent_id": parent_id, "child_id": child_id},
+    )
+
+
 @router.patch("/bulk-update", response_model=StandardResponse)
 async def bulk_update_status(
     payload: BulkStatusUpdate,
@@ -1035,3 +1261,225 @@ async def delete_problem(
     db.commit()
 
     return StandardResponse(success=True, message="Problem deleted successfully")
+
+
+@router.patch("/{problem_id}", response_model=StandardResponse)
+async def update_problem(
+    problem_id: int,
+    payload: ProblemUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_or_staff(current_user, db)
+    problem = db.query(Problem).filter(Problem.problem_id == problem_id).first()
+    if not problem:
+        raise HTTPException(404, "Problem not found")
+
+    cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
+    if cat_admin and cat_admin.category_id and problem.category_id != cat_admin.category_id:
+        raise HTTPException(403, "You can only update problems in your assigned category")
+
+    # Handle Forwarding (category change)
+    if payload.category_id and payload.category_id != problem.category_id:
+        new_cat = db.query(Category).filter(Category.category_id == payload.category_id).first()
+        if not new_cat:
+            raise HTTPException(400, "New category not found")
+        
+        # Log the forward
+        history = ProblemStatusHistory(
+            problem_id=problem_id,
+            status_id=problem.status_id,
+            changed_by=current_user.user_id,
+            notes=f"Forwarded from category {problem.category_id} to {payload.category_id}",
+        )
+        db.add(history)
+        problem.category_id = payload.category_id
+
+        # Update ticket_id based on new category
+        if new_cat.ticket_prefix:
+            year_str = datetime.utcnow().strftime("%y")
+            problem.ticket_id = f"{new_cat.ticket_prefix}-{year_str}-{problem.problem_id:04d}"
+
+    # Handle other fields
+    update_data = payload.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        if field != "category_id":
+            setattr(problem, field, value)
+
+    db.commit()
+    db.refresh(problem)
+
+    return StandardResponse(
+        success=True, message="Problem updated successfully",
+        data={"problem": serialize_problem(problem, db, current_user)}
+    )
+
+from pydantic import BaseModel
+
+class AISuggestCategoryRequest(BaseModel):
+    description: str
+
+from typing import Optional
+
+class AIGenerateCategoryDescRequest(BaseModel):
+    category_name: str
+    existing_description: Optional[str] = None
+
+@router.post("/ai/suggest-category", response_model=StandardResponse)
+async def ai_suggest_category(
+    payload: AISuggestCategoryRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    AI Auto-Categorization endpoint.
+    Accepts a problem description and returns the most suitable category_id.
+    """
+    from app.services.ai_service import suggest_category
+    
+    categories = db.query(Category).all()
+    categories_list = [{"id": c.category_id, "name": c.category_name, "description": c.description} for c in categories]
+    
+    suggested_id = suggest_category(payload.description, categories_list)
+    
+    if suggested_id:
+        return StandardResponse(
+            success=True,
+            message="AI suggested category successfully",
+            data={"category_id": suggested_id}
+        )
+    else:
+        # Fallback to first category if AI fails
+        fallback_id = categories_list[0]["id"] if categories_list else None
+        return StandardResponse(
+            success=True,
+            message="AI suggestion failed, using fallback",
+            data={"category_id": fallback_id}
+        )
+
+@router.post("/ai/generate-category-desc", response_model=StandardResponse)
+async def ai_generate_category_desc(
+    payload: AIGenerateCategoryDescRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    require_admin_or_staff(current_user, db)
+    from app.services.ai_service import generate_category_description
+    
+    desc = generate_category_description(payload.category_name, payload.existing_description)
+    return StandardResponse(
+        success=True,
+        message="AI generated category description successfully",
+        data={"description": desc}
+    )
+
+class AICheckDuplicateRequest(BaseModel):
+    description: str
+
+@router.post("/ai/check-duplicate", response_model=StandardResponse)
+async def ai_check_duplicate(
+    payload: AICheckDuplicateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Checks for similar active problems in the recent timeframe.
+    """
+    from app.services.ai_service import find_similar_problems
+    
+    # Get active problems from the last 3 days
+    recent_limit = datetime.utcnow() - timedelta(days=3)
+    active_problems = (
+        db.query(Problem)
+        .filter(
+            Problem.is_deleted == False,
+            Problem.created_at >= recent_limit
+        )
+        .all()
+    )
+    
+    problem_dicts = [{"id": p.problem_id, "description": p.description, "title": p.title} for p in active_problems]
+    
+    similar = find_similar_problems(payload.description, problem_dicts)
+    
+    return StandardResponse(
+        success=True,
+        message="Duplicate check completed",
+        data={"similar_problems": similar}
+    )
+    """
+    AI Auto-generates a description for a new category.
+    """
+    require_admin_or_staff(current_user, db)
+    
+    from app.services.ai_service import generate_category_description
+    
+    desc = generate_category_description(payload.category_name, payload.existing_description)
+    
+    return StandardResponse(
+        success=True,
+        message="AI generated description successfully",
+        data={"description": desc}
+    )
+
+@router.get("/{problem_id}/ai-analysis", response_model=StandardResponse)
+async def get_problem_ai_analysis(
+    problem_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns AI insights for a specific problem.
+    """
+    problem = db.query(Problem).filter(Problem.problem_id == problem_id).first()
+    if not problem:
+        raise HTTPException(404, "Problem not found")
+
+    from app.services.ai_service import suggest_category, find_similar_problems
+
+    categories = db.query(Category).all()
+    categories_list = [{"id": c.category_id, "name": c.category_name, "description": c.description} for c in categories]
+    
+    # 1. AI Category Prediction
+    suggested_id = suggest_category(problem.description or problem.title, categories_list)
+    predicted_category = "ไม่ทราบหมวดหมู่"
+    if suggested_id:
+        for c in categories:
+            if c.category_id == suggested_id:
+                predicted_category = c.category_name
+                break
+
+    # 2. Coordinates
+    lat = problem.latitude
+    lng = problem.longitude
+    
+    # 3. Similar posts count (exclude self)
+    # Include all non-deleted problems, not just OPEN
+    all_problems = db.query(Problem).filter(
+        Problem.problem_id != problem_id,
+        Problem.is_deleted == False
+    ).all()
+    
+    dict_problems = [
+        {
+            "id": p.problem_id, 
+            "description": p.description or p.title,
+            "title": p.title,
+            "category_id": p.category_id,
+        } for p in all_problems
+    ]
+    
+    similar_problems = find_similar_problems(
+        problem.description or problem.title,
+        dict_problems,
+        category_id=problem.category_id
+    )
+
+    return StandardResponse(
+        success=True,
+        message="AI Analysis retrieved",
+        data={
+            "ai_predicted_category": predicted_category,
+            "latitude": lat,
+            "longitude": lng,
+            "similar_posts_count": len(similar_problems),
+            "similar_posts": similar_problems
+        }
+    )

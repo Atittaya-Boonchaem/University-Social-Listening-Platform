@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const API_BASE = 'http://127.0.0.1:8000/api/v1/auth';
 
@@ -57,7 +57,7 @@ function parseError(data: unknown): string {
   return 'เกิดข้อผิดพลาด';
 }
 
-function SSOPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: () => void }) {
+function SSOPanel({ onSuccess, onClose }: { onSuccess: (roleId: number, token: string) => void; onClose: () => void }) {
   const [selectedRole, setSelectedRole] = useState<0 | 1>(0); // 0=student, 1=staff
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
@@ -97,14 +97,14 @@ function SSOPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: () =
           setIsLoading(false);
           return;
         }
-        if (selectedRole === 1 && actualRoleId !== 2) {
-          setError('อีเมลนี้ไม่ใช่บัญชีของบุคลากร กรุณาเข้าสู่ระบบผ่านช่องทางที่ถูกต้อง');
+        if (selectedRole === 1 && ![2, 4, 5].includes(actualRoleId)) {
+          setError('อีเมลนี้ไม่ใช่บัญชีของบุคลากร หรือผู้ดูแลระบบ');
           setIsLoading(false);
           return;
         }
 
         LS.saveUser(data.data, data.data.access_token);
-        onSuccess();
+        onSuccess(actualRoleId, data.data.access_token);
       } else {
         let msg = parseError(data);
         if (msg === 'บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานในบทบาทนี้') {
@@ -205,23 +205,31 @@ function SSOPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: () =
   );
 }
 
-function PublicPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: () => void }) {
-  const [phone, setPhone] = useState('');
+function PublicPanel({ onSuccess, onClose }: { onSuccess: (roleId: number, token: string) => void; onClose: () => void }) {
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function handleLogin() {
-    if (!phone.trim() || !password) { setError('กรุณากรอกข้อมูลให้ครบถ้วน'); return; }
+    if (!loginId.trim() || !password) { setError('กรุณากรอกข้อมูลให้ครบถ้วน'); return; }
     setIsLoading(true); setError('');
 
     try {
-      const res = await axios.post(`${API_BASE}/login`, {
-        phone_number: phone.trim(),
+      const isEmail = loginId.includes('@');
+      const payload: Record<string, string | number> = {
         password,
-        expected_role_id: 3,
-      });
+        expected_role: 'public',
+      };
+      
+      if (isEmail) {
+        payload.email = loginId.trim();
+      } else {
+        payload.phone = loginId.trim();
+      }
+
+      const res = await axios.post(`${API_BASE}/login`, payload);
       const data = res.data;
       if (data.success === true) {
         const actualRoleStr = data.data?.user?.role;
@@ -234,14 +242,14 @@ function PublicPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: (
         else if (actualRoleStr === 'anonymous') actualRoleId = 6;
         else if (data.data?.user?.role_id != null) actualRoleId = Number(data.data.user.role_id);
 
-        if (actualRoleId !== 3) {
-          setError('เบอร์โทรศัพท์นี้ไม่ใช่บัญชีของบุคคลทั่วไป กรุณาเข้าสู่ระบบผ่านช่องทางที่ถูกต้อง');
+        if (![3, 4, 5].includes(actualRoleId)) {
+          setError('บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานผ่านช่องทางนี้');
           setIsLoading(false);
           return;
         }
 
         LS.saveUser(data.data, data.data.access_token);
-        onSuccess();
+        onSuccess(actualRoleId, data.data.access_token);
       } else {
         setError(parseError(data));
       }
@@ -264,12 +272,12 @@ function PublicPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: (
       </div>
 
       <input
-        id="public-phone"
-        type="tel"
+        id="public-id"
+        type="text"
         className={inputCls}
-        placeholder="เบอร์โทรศัพท์"
-        value={phone}
-        onChange={e => setPhone(e.target.value)}
+        placeholder="อีเมล หรือ เบอร์โทรศัพท์"
+        value={loginId}
+        onChange={e => setLoginId(e.target.value)}
         disabled={isLoading}
       />
 
@@ -318,7 +326,7 @@ function PublicPanel({ onSuccess, onClose }: { onSuccess: () => void; onClose: (
   );
 }
 
-type Panel = 'none' | 'sso' | 'public';
+type Panel = 'none' | 'sso' | 'public' | 'sso_mock';
 
 // ─── LoginPage Component ──────────────────────────────────────────────────────
 // หน้าที่: จัดการหน้าจอเข้าสู่ระบบ (Login) ทั้งหมดของแอปพลิเคชัน
@@ -332,9 +340,22 @@ export default function LoginPage() {
   const [isAnonLoading, setIsAnonLoading] = useState(false);
   const [anonError, setAnonError] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
 
-  function onLoggedIn() {
-    navigate('/');
+  // Read sso_error from URL if redirected back from failed SSO
+  const ssoErrorParam = new URLSearchParams(location.search).get('sso_error');
+  const ssoErrorMsg = ssoErrorParam === 'server_error'
+    ? 'เกิดข้อผิดพลาดในการเชื่อมต่อ SSO กรุณาลองใหม่'
+    : ssoErrorParam
+    ? 'ไม่สามารถเข้าสู่ระบบด้วย SSO ได้'
+    : '';
+
+  function onLoggedIn(roleId: number, token: string) {
+    if (roleId === 4 || roleId === 5) {
+      window.location.href = `http://localhost:5173/sso?token=${token}`;
+    } else {
+      navigate('/');
+    }
   }
 
   async function handleAnonymousLogin() {
@@ -345,7 +366,7 @@ export default function LoginPage() {
       const data = res.data;
       if (data.success === true) {
         LS.saveUser(data.data, data.data.access_token);
-        onLoggedIn();
+        onLoggedIn(6, data.data.access_token); // anonymous roleId is 6
       } else {
         setAnonError(data.message || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
       }
@@ -357,71 +378,151 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#D8B4E2] to-[#F1DFA8] flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-[440px] bg-white/95 backdrop-blur rounded-[2rem] shadow-2xl shadow-purple-200/40 p-7">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[#2B164D]">📣 UP Voice</h1>
-          <p className="text-sm font-semibold text-slate-600 mt-2 leading-snug">
-            ระบบรับฟังเสียงและวิเคราะห์ปัญหาของชุมชนมหาวิทยาลัยพะเยา
-          </p>
-          <p className="text-sm text-slate-400 mt-1">เข้าสู่ระบบเพื่อดำเนินการต่อ</p>
-          {anonError && <p className="text-xs text-red-600 font-medium bg-red-50 px-3 py-2 rounded-lg mt-3">{anonError}</p>}
-        </div>
-
-        {activePanel === 'none' && (
-          <div className="flex flex-col gap-4">
-            {/* <button
-              id="btn-sso"
-              onClick={() => setActivePanel('sso')}
-              className="w-full h-14 rounded-xl bg-[#2B164D] hover:bg-[#3d2268] text-white text-sm font-bold transition shadow-lg shadow-[#2B164D]/25 active:scale-[0.98]"
-            >
-              เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัย (SSO)
-            </button> */}
-
-            <button
-              id="btn-sso"
-              // เปลี่ยนคำสั่ง onClick ตรงนี้จุดเดียวครับ 👇
-              onClick={() => window.location.href = 'http://localhost:8000/api/v1/auth/sso/login'}
-              className="w-full h-14 rounded-xl bg-[#2B164D] hover:bg-[#3d2268] text-white text-sm font-bold transition shadow-lg shadow-[#2B164D]/25 active:scale-[0.98]"
-            >
-              เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัย (SSO)
-            </button>
-
-
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-slate-200" />
-              <span className="text-xs font-bold text-slate-400">หรือ</span>
-              <div className="flex-1 h-px bg-slate-200" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                id="btn-public"
-                onClick={() => setActivePanel('public')}
-                className="h-12 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#2B164D] text-sm font-bold transition"
-              >
-                บุคคลทั่วไป
-              </button>
-              <button
-                id="btn-anonymous"
-                onClick={handleAnonymousLogin}
-                disabled={isAnonLoading}
-                className="h-12 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-bold transition flex items-center justify-center gap-2"
-              >
-                {isAnonLoading ? <><span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" /><span>กำลังประมวลผล...</span></> : 'ไม่ระบุตัวตน'}
-              </button>
-            </div>
-
-            <p className="text-center text-xs text-slate-500 mt-1">
-              ยังไม่มีบัญชีบุคคลทั่วไป?{' '}
-              <a href="#" className="text-[#2B164D] font-bold hover:underline">สมัครสมาชิก</a>
-            </p>
+    <div className="login-body-bg flex flex-col min-h-screen text-on-background font-body-md">
+      {/* TopNavBar */}
+      <nav className="sticky top-0 z-50 bg-background/80 dark:bg-background/80 backdrop-blur-xl border-b border-outline-variant/30 w-full">
+        <div className="flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 max-w-container-max mx-auto">
+          <div className="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed-dim">UP Connect</div>
+          <div className="flex gap-gutter items-center">
+            {/* Nav links removed as requested */}
           </div>
-        )}
+        </div>
+      </nav>
 
-        {activePanel === 'sso' && <SSOPanel onSuccess={onLoggedIn} onClose={() => setActivePanel('none')} />}
-        {activePanel === 'public' && <PublicPanel onSuccess={onLoggedIn} onClose={() => setActivePanel('none')} />}
-      </div>
+      {/* Main Content Canvas */}
+      <main className="flex-grow flex items-center justify-center px-margin-mobile md:px-margin-desktop py-stack-lg relative overflow-hidden">
+        <div className="absolute -top-24 -right-24 w-96 h-96 bg-primary-fixed opacity-20 blur-3xl rounded-full pointer-events-none"></div>
+        <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-secondary-fixed opacity-20 blur-3xl rounded-full pointer-events-none"></div>
+        <div className="w-full max-w-[480px] relative z-10">
+          
+          {/* Header Section */}
+          <div className="text-center mb-stack-lg">
+            <h1 className="font-headline-lg text-headline-lg text-primary mb-2">ยินดีต้อนรับเข้าสู่ระบบ</h1>
+            <p className="font-body-md text-body-md text-on-surface-variant">สำหรับนักศึกษาใหม่และบุคลากร University Portal Connect</p>
+            {anonError && <p className="text-xs text-red-600 font-medium bg-red-50 px-3 py-2 rounded-lg mt-3">{anonError}</p>}
+            {ssoErrorMsg && <p className="text-xs text-red-600 font-medium bg-red-50 px-3 py-2 rounded-lg mt-3">⚠️ {ssoErrorMsg}</p>}
+          </div>
+
+          {/* Login Card */}
+          <div className="bg-surface-container-lowest border border-outline-variant/50 p-8 md:p-10 rounded-xl login-card-shadow transition-all hover:border-primary/30">
+            
+            {activePanel === 'none' && (
+              <div className="space-y-stack-md">
+                {/* SSO Primary Action */}
+                {activePanel === 'none' ? (
+                  <button
+                    onClick={() => { window.location.href = 'http://localhost:8000/api/v1/auth/sso/login'; }}
+                    className="w-full py-4 px-6 bg-primary-container text-white rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-primary transition-all active:scale-[0.98] shadow-lg shadow-primary/10"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                      <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                      <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                      <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                    </svg>
+                    เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัย (@up.ac.th)
+                  </button>
+                ) : null}
+                
+                <div className="flex items-center gap-4 py-2">
+                  <div className="flex-grow h-[1px] bg-outline-variant/50"></div>
+                  <span className="font-label-sm text-label-sm text-outline">หรือเข้าใช้งานผ่านช่องทางอื่น</span>
+                  <div className="flex-grow h-[1px] bg-outline-variant/50"></div>
+                </div>
+
+                {/* Secondary Login Actions */}
+                <div className="grid grid-cols-1 gap-stack-sm">
+                  <button onClick={() => setActivePanel('public')} className="w-full py-4 px-6 border border-outline-variant text-primary rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-surface-container-low transition-all active:scale-[0.98]">
+                    <span className="material-symbols-outlined">person</span>
+                    เข้าสู่ระบบบุคคลทั่วไป
+                  </button>
+                  <button onClick={handleAnonymousLogin} disabled={isAnonLoading} className="w-full py-4 px-6 bg-surface-container-low text-on-surface-variant rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-surface-container-high transition-all active:scale-[0.98]">
+                    {isAnonLoading ? (
+                      <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <span className="material-symbols-outlined">visibility_off</span>
+                    )}
+                    {isAnonLoading ? 'กำลังประมวลผล...' : 'เข้าใช้งานแบบไม่ระบุตัวตน'}
+                  </button>
+                </div>
+
+                {/* Assistance Links */}
+                <div className="mt-stack-lg pt-stack-md border-t border-outline-variant/30 flex flex-col items-center gap-3">
+                  <p className="font-body-sm text-body-sm text-on-surface-variant">พบปัญหาในการเข้าสู่ระบบ?</p>
+                  <div className="flex gap-4">
+                    <a className="font-label-md text-label-md text-primary hover:underline" href="#">ลืมรหัสผ่าน</a>
+                    <span className="text-outline-variant">•</span>
+                    <a className="font-label-md text-label-md text-primary hover:underline" href="#">คู่มือการใช้งาน</a>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activePanel === 'sso_mock' && (
+              <div className="space-y-4 fade-in">
+                <div className="text-center mb-6">
+                  <h3 className="font-headline-md text-headline-md text-primary mb-2">จำลองการเข้าสู่ระบบ SSO</h3>
+                  <p className="font-body-md text-body-md text-on-surface-variant">กรุณาเลือกสถานะจำลองที่คุณต้องการ</p>
+                </div>
+                
+                <button onClick={() => navigate('/onboarding?type=student')} className="w-full py-4 px-6 bg-primary-container text-white rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-primary transition-all active:scale-[0.98] shadow-lg shadow-primary/10">
+                  <span className="material-symbols-outlined">school</span>
+                  เข้าสู่ระบบจำลอง (นิสิต)
+                </button>
+                
+                <button onClick={() => navigate('/onboarding?type=staff')} className="w-full py-4 px-6 border border-primary text-primary rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-surface-container-low transition-all active:scale-[0.98] shadow-sm">
+                  <span className="material-symbols-outlined">badge</span>
+                  เข้าสู่ระบบจำลอง (บุคลากร)
+                </button>
+                
+                <button
+                  onClick={() => setActivePanel('none')}
+                  className="w-full mt-4 py-3 text-on-surface-variant hover:bg-slate-100 rounded-lg text-sm font-medium transition"
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+                    กลับไปหน้าแรก
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {activePanel === 'sso' && <SSOPanel onSuccess={onLoggedIn} onClose={() => setActivePanel('none')} />}
+            {activePanel === 'public' && <PublicPanel onSuccess={onLoggedIn} onClose={() => setActivePanel('none')} />}
+
+          </div>
+
+          {/* Welcome Illustration/Image Placeholder */}
+          <div className="mt-stack-lg overflow-hidden rounded-xl border border-outline-variant/20 h-48 relative">
+            <div className="absolute inset-0 bg-gradient-to-t from-primary/60 to-transparent z-10"></div>
+            <img 
+              className="w-full h-full object-cover" 
+              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBqkwj8DfUfIlW1tJ8TC2H1T0TxLo1WW_tKn5hRRJ4abvwi6xr1R9nu1Q4yhCytCDGQXBZo4AgJ-LSwMsmb2JRqnFWJwbuP0D-X_matnIw_b3e9qVszfZxUP0pgAclmG0-NDFyB711YqJrFelWAqZupDz5a3YxCsQqkBWYU4RUuzpmmDDI0UnrnPpb85sw_OcTKroHuOuTByzhnQF73HStYjmW57pA4dP5aZemzztVclr8DdERAulXaDIOudqTCujzkI4MoScY-aACJ"
+              alt="Welcome Illustration"
+            />
+            <div className="absolute bottom-4 left-6 z-20">
+              <p className="text-white font-label-md text-label-md">ก้าวสู่ความสำเร็จที่ University Portal</p>
+            </div>
+          </div>
+
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-surface-container-lowest dark:bg-surface-container-lowest border-t border-outline-variant w-full">
+        <div className="flex flex-col md:flex-row justify-between items-center px-margin-desktop py-stack-md max-w-container-max mx-auto gap-4">
+          <div className="font-headline-md text-headline-md text-primary">UP Connect</div>
+          <div className="flex flex-wrap justify-center gap-6">
+            <a className="font-label-sm text-label-sm text-on-tertiary-fixed-variant hover:text-primary transition-all hover:underline" href="#">Privacy Policy</a>
+            <a className="font-label-sm text-label-sm text-on-tertiary-fixed-variant hover:text-primary transition-all hover:underline" href="#">Terms of Service</a>
+            <a className="font-label-sm text-label-sm text-on-tertiary-fixed-variant hover:text-primary transition-all hover:underline" href="#">Help Center</a>
+            <a className="font-label-sm text-label-sm text-on-tertiary-fixed-variant hover:text-primary transition-all hover:underline" href="#">Accessibility</a>
+          </div>
+          <div className="font-label-sm text-label-sm text-secondary dark:text-secondary-fixed-dim opacity-80">
+            © 2024 University Portal Connect. All rights reserved.
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -26,7 +26,14 @@ const NAV = [
         to: '/super-admin',
         end: true,
         icon: LayoutDashboard,
-        label: 'Global Heatmap',
+        label: 'Global Dashboard',
+        desc: 'KPIs, Charts, SLA & AI center',
+      },
+      {
+        to: '/super-admin/global-heatmap',
+        end: false,
+        icon: LayoutDashboard,
+        label: 'Heatmap View',
         desc: 'Problem distribution map',
       },
     ],
@@ -67,6 +74,12 @@ const NAV = [
         icon: Bot,
         label: 'LLM Settings',
         desc: 'Auto-ban words & AI thresholds',
+      },
+      {
+        to: '/super-admin/ai-clusters',
+        icon: Layers,
+        label: 'AI Cluster สรุปปัญหา',
+        desc: 'ปัญหาที่ AI รวบรวมเป็นกลุ่ม',
       },
     ],
   },
@@ -112,7 +125,7 @@ const Sidebar = ({ collapsed, onToggle }) => {
         </div>
         {!collapsed && (
           <div className="overflow-hidden">
-            <p className="text-sm font-800 text-slate-800 leading-tight font-bold">UP Voice</p>
+            <p className="text-sm font-800 text-slate-800 leading-tight font-bold"><span className="font-bold">UP</span> Connect</p>
             <p className="text-[10px] text-indigo-500 font-semibold uppercase tracking-widest leading-tight">
               Super Admin
             </p>
@@ -176,7 +189,8 @@ const TopNavbar = ({ collapsed }) => {
 
   // Map routes to page titles
   const PAGE_TITLES = {
-    '/super-admin':               { title: 'Global Overview', sub: 'Heatmap & Problem Distribution' },
+    '/super-admin':               { title: 'Global Dashboard', sub: 'KPIs, Charts, SLA Tracker & AI Control Center' },
+    '/super-admin/global-heatmap': { title: 'Global Heatmap', sub: 'Problem distribution map' },
     '/super-admin/users':         { title: 'User Management', sub: 'Students, Staff, Public & Anonymous' },
     '/super-admin/audit-logs':    { title: 'Audit & Logs', sub: 'Login history and admin actions' },
     '/super-admin/category-admins': { title: 'Category Admin Invites', sub: 'Assign & manage category admins' },

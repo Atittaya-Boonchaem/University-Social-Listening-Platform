@@ -4,11 +4,14 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   LogOut,
-  Shield,
-  Bell,
+  Archive,
+  BarChart2,
+  Settings,
   Menu,
   ChevronRight,
   Tag,
+  Bell,
+  LayoutGrid,
 } from 'lucide-react';
 
 // ── Decode JWT ─────────────────────────────────────────────────
@@ -32,13 +35,50 @@ const NAV = [
         label: 'My Problems',
         desc: 'Tickets assigned to your category',
       },
+      {
+        to: '/category-admin/kanban',
+        end: false,
+        icon: LayoutGrid,
+        label: 'Kanban Board',
+        desc: 'จัดการตั๋วแบบ Kanban',
+      },
+      {
+        to: '/category-admin/history',
+        end: false,
+        icon: Archive,
+        label: 'ประวัติการแก้ไข',
+        desc: 'ประวัติกลุ่มปัญหาที่ดำเนินการเสร็จสิ้นแล้ว',
+      },
+      {
+        to: '/category-admin/analytics',
+        end: false,
+        icon: BarChart2,
+        label: 'สถิติและรายงาน',
+        desc: 'ภาพรวมการดำเนินงานและการจัดการปัญหา',
+      },
+    ],
+  },
+  {
+    group: 'Settings',
+    items: [
+      {
+        to: '/category-admin/settings',
+        end: false,
+        icon: Settings,
+        label: 'ตั้งค่าบัญชี',
+        desc: 'จัดการข้อมูลส่วนตัวและรหัสผ่าน',
+      },
     ],
   },
 ];
 
 // ── Page title map ─────────────────────────────────────────────
 const PAGE_TITLES = {
-  '/category-admin': { title: 'My Problems', sub: 'Tickets assigned to your category' },
+  '/category-admin':          { title: 'My Problems', sub: 'Tickets assigned to your category' },
+  '/category-admin/kanban':   { title: 'Kanban Board', sub: 'จัดการตั๋วปัญหาด้วยระบบ Kanban' },
+  '/category-admin/history':  { title: 'ประวัติการแก้ไข', sub: 'ประวัติกลุ่มปัญหาที่ดำเนินการเสร็จสิ้นแล้ว' },
+  '/category-admin/analytics': { title: 'สถิติและรายงาน', sub: 'ภาพรวมการดำเนินงานและการจัดการปัญหา' },
+  '/category-admin/settings': { title: 'ตั้งค่าบัญชี', sub: 'จัดการข้อมูลส่วนตัวและรหัสผ่าน' },
 };
 
 // ── Sidebar ────────────────────────────────────────────────────
@@ -64,7 +104,7 @@ const Sidebar = ({ collapsed, onToggle }) => {
         </div>
         {!collapsed && (
           <div className="overflow-hidden">
-            <p className="text-sm font-bold text-slate-800 leading-tight">UP Voice</p>
+            <p className="text-sm font-bold text-slate-800 leading-tight"><span className="font-bold">UP</span> Connect</p>
             <p className="text-[10px] text-amber-500 font-semibold uppercase tracking-widest leading-tight">
               Category Admin
             </p>

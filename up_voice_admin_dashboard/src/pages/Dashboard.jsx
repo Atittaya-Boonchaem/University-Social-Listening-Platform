@@ -1,282 +1,271 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import StatCard from '../components/StatCard';
-import { Users, FileText, CheckCircle, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, AlertCircle, CheckCircle, ShieldAlert, MapPin, BarChart3, Activity, PieChart as PieChartIcon } from 'lucide-react';
+import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import api from '../services/api';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer
-} from 'recharts';
-
-// ── Palette for per-category lines ──────────────────────────────────────────
-const CAT_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
-
-// ── Reputation badge styles ──────────────────────────────────────────────────
-const reputationStyle = {
-  Trusted: 'bg-emerald-100 text-emerald-800',
-  Active:  'bg-indigo-100  text-indigo-800',
-  Regular: 'bg-amber-100   text-amber-800',
-  New:     'bg-gray-100    text-gray-600',
-};
-
-const ROLE_LABELS = { 1: 'Student', 2: 'Staff', 3: 'Public', 4: 'Admin', 5: 'ไม่ระบุตัวตน' };
-
-// ── Paginated fetch helper (backend max page_size = 100) ─────────────────────
-const fetchAllPages = async (visibility) => {
-  let page = 1;
-  let allItems = [];
-  while (true) {
-    const res = await api.get('/problems/list', {
-      params: { page, page_size: 100, visibility }
-    }).catch(() => null);
-    const items = res?.data?.data?.items || [];
-    allItems = [...allItems, ...items];
-    const total = res?.data?.data?.total || 0;
-    if (allItems.length >= total || items.length === 0) break;
-    page++;
-  }
-  return allItems;
-};
+import { fetchUsers } from '../services/userService';
+// --- MOCK DATA FALLBACKS REMOVED ---
+const phayaoCenter = [19.0289, 99.8967];
 
 const Dashboard = () => {
-  const [stats,        setStats]        = useState({ totalUsers: 0, totalProblems: 0, resolvedProblems: 0, pendingProblems: 0 });
-  const [categoryData, setCategoryData] = useState([]);
-  const [buildingData, setBuildingData] = useState([]);
-  const [timeSeries,   setTimeSeries]   = useState({ series: [], categories: [] });
-  const [reputation,   setReputation]   = useState([]);
-  const [loading,      setLoading]      = useState(true);
+  const [users, setUsers] = useState([]);
+  const [problems, setProblems] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      setLoading(true);
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        setLoading(true);
+        const usersData = await fetchUsers();
+        setUsers(usersData);
 
-      const [usersRes, publicItems, internalItems, tsRes, repRes] = await Promise.all([
-        api.get('/users/list').catch(() => null),
-        fetchAllPages('public'),
-        fetchAllPages('internal'),
-        api.get('/problems/analytics/time-series').catch(() => null),
-        api.get('/problems/analytics/user-reputation').catch(() => null),
-      ]);
+        const fetchAllPages = async (visibility) => {
+          let page = 1;
+          let allItems = [];
+          while (true) {
+            const res = await api.get('/problems/list', {
+              params: { page, page_size: 100, visibility }
+            }).catch(() => null);
 
-      // ── Stats cards ────────────────────────────────────────────────────────
-      const allProblems  = [...publicItems, ...internalItems];
-      const uniqueProblems = Array.from(new Map(allProblems.map(p => [p.id, p])).values());
-      setStats({
-        totalUsers:       usersRes?.data?.data?.items?.length || 0,
-        totalProblems:    uniqueProblems.length,
-        resolvedProblems: uniqueProblems.filter(p => p.status_name === 'CLOSED').length,
-        pendingProblems:  uniqueProblems.filter(p => p.status_name === 'OPEN').length,
-      });
+            const items = res?.data?.data?.items || [];
+            allItems = [...allItems, ...items];
 
-      // ── Bar chart category data ────────────────────────────────────────────
-      const catMap = {};
-      uniqueProblems.forEach(p => {
-        const name = p.category_name || 'Uncategorized';
-        catMap[name] = (catMap[name] || 0) + 1;
-      });
-      setCategoryData(
-        Object.entries(catMap)
-          .map(([name, count]) => ({ name, count }))
-          .sort((a, b) => b.count - a.count)
-      );
+            const total = res?.data?.data?.total || 0;
+            if (allItems.length >= total || items.length === 0) break;
+            page++;
+          }
+          return allItems;
+        };
 
-      // ── Bar chart location data ────────────────────────────────────────────
-      const bldgMap = {};
-      uniqueProblems.forEach(p => {
-        const loc = p.building_name || 'Unknown Location';
-        bldgMap[loc] = (bldgMap[loc] || 0) + 1;
-      });
-      setBuildingData(
-        Object.entries(bldgMap)
-          .map(([name, count]) => ({ name, count }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 10)
-      );
+        const [publicItems, internalItems] = await Promise.all([
+          fetchAllPages('public'),
+          fetchAllPages('internal'),
+        ]);
 
-      // ── Time-series ────────────────────────────────────────────────────────
-      const tsData = tsRes?.data?.data;
-      if (tsData) {
-        setTimeSeries({ series: tsData.series || [], categories: tsData.categories || [] });
+        const merged = [...publicItems, ...internalItems];
+        const unique = Array.from(new Map(merged.map(p => [p.id, p])).values());
+        
+        console.log("Dashboard Fetched Problems:", unique);
+        if (unique.length > 0) {
+          console.log("Sample Problem Status:", unique[0]?.status_name);
+        }
+        setProblems(unique);
+      } catch (err) {
+        console.error("Dashboard fetch error:", err);
+      } finally {
+        setLoading(false);
       }
-
-      // ── User reputation ────────────────────────────────────────────────────
-      const repData = repRes?.data?.data?.items;
-      if (repData) {
-        setReputation(repData.slice(0, 10)); // Top 10
-      }
-
-    } catch (error) {
-      console.error('Dashboard fetch error:', error);
-    } finally {
-      setLoading(false);
-    }
+    };
+    loadDashboardData();
   }, []);
 
-  useEffect(() => { fetchDashboardData(); }, [fetchDashboardData]);
+  // --- DYNAMIC DATA BINDINGS ---
+  const totalUsers = users.length;
+  const pendingProblems = problems.filter(p => p.status_name === 'OPEN' || p.status_name === 'IN_PROGRESS').length;
+  const resolvedProblems = problems.filter(p => p.status_name === 'RESOLVED' || p.status_name === 'CLOSED').length;
+  const aiAutoBans = 0; // Placeholder
+
+  const kpiStats = [
+    { title: 'Total Users', value: totalUsers, icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { title: 'Pending Problems', value: pendingProblems, icon: AlertCircle, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { title: 'Resolved Problems', value: resolvedProblems, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { title: 'AI Auto-Bans', value: aiAutoBans, icon: ShieldAlert, color: 'text-red-600', bg: 'bg-red-50' },
+  ];
+
+  const openCount = problems.filter(p => p.status_name === 'OPEN').length;
+  const inProgressCount = problems.filter(p => p.status_name === 'IN_PROGRESS').length;
+  
+  const statusData = [
+    { name: 'Open', value: openCount, color: '#f59e0b' },
+    { name: 'In Progress', value: inProgressCount, color: '#3b82f6' },
+    { name: 'Resolved', value: resolvedProblems, color: '#10b981' },
+  ];
+
+  const categoryMap = {};
+  problems.forEach(p => {
+    const cat = p.category_name || 'อื่นๆ';
+    categoryMap[cat] = (categoryMap[cat] || 0) + 1;
+  });
+
+  const categoryData = Object.keys(categoryMap).map(key => ({
+    name: key,
+    count: categoryMap[key]
+  })).sort((a, b) => b.count - a.count).slice(0, 5);
+
+  const sortedProblems = [...problems].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const recentActivity = sortedProblems.slice(0, 5).map(p => {
+    const isResolved = p.status_name === 'RESOLVED' || p.status_name === 'CLOSED';
+    return {
+      id: p.id,
+      title: p.title,
+      category: p.category_name || 'N/A',
+      time: new Date(p.created_at).toLocaleDateString(),
+      status: p.status_name,
+      statusColor: isResolved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+    };
+  });
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full min-h-screen">
-        <div className="text-xl font-semibold text-indigo-600 animate-pulse">Loading dashboard...</div>
-      </div>
-    );
+    return <div className="p-8 text-center text-indigo-600 font-semibold animate-pulse">Loading dashboard...</div>;
   }
-
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
-
-      {/* ── Page header ───────────────────────────────────────────────────── */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Dashboard Overview</h2>
-        <p className="text-gray-500 mt-1">Live analytics for the UP Voice platform.</p>
-      </div>
-
-      {/* ── Stat cards ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatCard title="Total Users"    value={stats.totalUsers}       icon={Users}       colorClass="bg-blue-50   text-blue-600" />
-        <StatCard title="Total Problems" value={stats.totalProblems}    icon={FileText}    colorClass="bg-indigo-50 text-indigo-600" />
-        <StatCard title="Pending"        value={stats.pendingProblems}  icon={Clock}       colorClass="bg-orange-50 text-orange-600" />
-        <StatCard title="Resolved"       value={stats.resolvedProblems} icon={CheckCircle} colorClass="bg-green-50  text-green-600" />
-      </div>
-
-      {/* ── Location Chart + Insights row (2/3 + 1/3) ────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-        {/* Location BarChart — 2/3 width */}
-        <div className="lg:col-span-2 bg-white border rounded-xl shadow-sm p-6">
-          <div className="mb-5">
-            <h3 className="text-lg font-semibold text-gray-800">Problems by Location</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Top 10 locations with highest problem reports</p>
-          </div>
-          {buildingData.length > 0 ? (
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={buildingData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
-                  <XAxis
-                    dataKey="name"
-                    axisLine={false} tickLine={false}
-                    tick={{ fill: '#9CA3AF', fontSize: 11 }} dy={8}
-                    tickFormatter={v => v.length > 15 ? v.slice(0, 15) + '...' : v}
-                  />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} dx={-5} allowDecimals={false} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', fontSize: '12px' }}
-                  />
-                  <Bar dataKey="count" fill="#6366F1" radius={[4, 4, 0, 0]} barSize={40} name="Total Problems" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-72 flex items-center justify-center text-gray-400 text-sm">
-              No location data available.
-            </div>
-          )}
-        </div>
-
-        {/* Insights panel — 1/3 width */}
-        <div className="bg-white border rounded-xl shadow-sm p-6 flex flex-col gap-4">
-          <h3 className="text-lg font-semibold text-gray-800">Quick Insights</h3>
-
-          <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
-            <p className="text-xs font-semibold text-indigo-500 uppercase tracking-wide">Top Category</p>
-            <p className="text-2xl font-bold text-indigo-700 mt-1">
-              {categoryData.length > 0 ? categoryData[0].name : 'N/A'}
-            </p>
-            <p className="text-xs text-indigo-400 mt-1">{categoryData[0]?.count || 0} problems</p>
-          </div>
-
-          <div className="p-4 bg-green-50 rounded-lg border border-green-100">
-            <p className="text-xs font-semibold text-green-500 uppercase tracking-wide">Resolution Rate</p>
-            <p className="text-2xl font-bold text-green-700 mt-1">
-              {stats.totalProblems > 0 ? Math.round((stats.resolvedProblems / stats.totalProblems) * 100) : 0}%
-            </p>
-            <p className="text-xs text-green-400 mt-1">{stats.resolvedProblems} of {stats.totalProblems} resolved</p>
-          </div>
-
-          <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
-            <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide">Open Tickets</p>
-            <p className="text-2xl font-bold text-amber-700 mt-1">{stats.pendingProblems}</p>
-            <p className="text-xs text-amber-400 mt-1">Need attention</p>
-          </div>
-
-          {/* Category mini-bars */}
-          <div className="mt-auto">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">By Category</p>
-            <div className="space-y-2">
-              {categoryData.slice(0, 4).map((cat, i) => (
-                <div key={cat.name}>
-                  <div className="flex justify-between text-xs text-gray-600 mb-0.5">
-                    <span className="truncate">{cat.name}</span>
-                    <span className="font-semibold">{cat.count}</span>
-                  </div>
-                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${Math.round((cat.count / (categoryData[0]?.count || 1)) * 100)}%`,
-                        backgroundColor: CAT_COLORS[i % CAT_COLORS.length]
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+    <div className="p-6 md:p-8 w-full max-w-7xl mx-auto space-y-6">
+      {/* ─── Header ─── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[#2B164D]">Super Admin Dashboard</h1>
+          <p className="text-sm text-slate-500 mt-1">ภาพรวมและสถิติการแจ้งปัญหาของระบบ UP Connect</p>
         </div>
       </div>
 
-      {/* ── User Reputation Table ─────────────────────────────────────────── */}
-      <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
-        <div className="px-6 py-5 border-b">
-          <h3 className="text-lg font-semibold text-gray-800">User Reputation</h3>
-          <p className="text-xs text-gray-400 mt-0.5">Top contributors ranked by post count. Status is based on upvote-to-post ratio.</p>
+      {/* ─── Task 1: KPI Cards ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpiStats.map((stat, idx) => {
+          const Icon = stat.icon;
+          return (
+            <div key={idx} className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">{stat.title}</p>
+                <h3 className="text-2xl font-bold text-slate-800">{stat.value}</h3>
+              </div>
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stat.bg} ${stat.color}`}>
+                <Icon size={24} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ─── Task 2: Map Section (Heatmap/Pin Map Simulation) ─── */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-slate-100 flex items-center gap-2">
+          <MapPin className="text-[#2B164D]" size={20} />
+          <h2 className="text-lg font-bold text-slate-800">Problem Heatmap (Phayao University)</h2>
+        </div>
+        <div className="h-[400px] w-full z-0 relative">
+          <MapContainer
+            center={phayaoCenter}
+            zoom={15}
+            scrollWheelZoom={false}
+            className="h-full w-full absolute inset-0 z-0"
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            {problems.map((point) => {
+              if (!point.latitude || !point.longitude) return null;
+              const isResolved = point.status_name === 'RESOLVED' || point.status_name === 'CLOSED';
+              const color = isResolved ? '#10b981' : (point.status_name === 'IN_PROGRESS' ? '#3b82f6' : '#ef4444');
+              return (
+                <CircleMarker
+                  key={point.id}
+                  center={[parseFloat(point.latitude), parseFloat(point.longitude)]}
+                  pathOptions={{ color, fillColor: color, fillOpacity: 0.6 }}
+                  radius={8}
+                >
+                  <Popup>
+                    <div className="font-sans">
+                      <strong className="block text-sm text-gray-900">{point.title}</strong>
+                      <span className="text-xs text-gray-500">{point.category_name} - {point.status_name}</span>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              )
+            })}
+          </MapContainer>
+        </div>
+      </div>
+
+      {/* ─── Task 3: Analytics Charts ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Chart A: Problem Status Distribution */}
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6">
+          <div className="flex items-center gap-2 mb-6">
+            <PieChartIcon className="text-[#2B164D]" size={20} />
+            <h2 className="text-lg font-bold text-slate-800">Status Distribution</h2>
+          </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={statusData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={90}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {statusData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <RechartsTooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex justify-center gap-6 mt-4">
+            {statusData.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2 text-sm">
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></span>
+                <span className="text-slate-600">{item.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Chart B: Problems by Category */}
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6">
+          <div className="flex items-center gap-2 mb-6">
+            <BarChart3 className="text-[#2B164D]" size={20} />
+            <h2 className="text-lg font-bold text-slate-800">Problems by Category</h2>
+          </div>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={categoryData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <RechartsTooltip cursor={{ fill: '#f1f5f9' }} />
+                <Bar dataKey="count" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Task 4: Recent Activity Table ─── */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6">
+        <div className="flex items-center gap-2 mb-6">
+          <Activity className="text-[#2B164D]" size={20} />
+          <h2 className="text-lg font-bold text-slate-800">Recent Activity Feed</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-gray-50 border-b text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                <th className="px-6 py-3">User</th>
-                <th className="px-6 py-3">Role</th>
-                <th className="px-6 py-3 text-center">Total Posts</th>
-                <th className="px-6 py-3 text-center">Total Upvotes</th>
-                <th className="px-6 py-3 text-center">Ratio</th>
-                <th className="px-6 py-3 text-center">Reputation</th>
+              <tr className="border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400">
+                <th className="pb-3 font-semibold w-16">ID</th>
+                <th className="pb-3 font-semibold">Title</th>
+                <th className="pb-3 font-semibold">Category</th>
+                <th className="pb-3 font-semibold">Time Reported</th>
+                <th className="pb-3 font-semibold text-right">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
-              {reputation.map((user, idx) => (
-                <tr key={user.user_id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs flex-shrink-0">
-                        {(user.display_name || '?')[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{user.display_name}</p>
-                        <p className="text-xs text-gray-400">#{user.user_id}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-gray-500 text-xs">
-                    {ROLE_LABELS[user.role] || 'Unknown'}
-                  </td>
-                  <td className="px-6 py-4 text-center font-semibold text-gray-700">{user.total_posts}</td>
-                  <td className="px-6 py-4 text-center font-semibold text-indigo-600">{user.total_upvotes}</td>
-                  <td className="px-6 py-4 text-center text-gray-500">{Number(user.ratio || 0).toFixed(2)}</td>
-                  <td className="px-6 py-4 text-center">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${reputationStyle[user.reputation_status] || reputationStyle.New}`}>
-                      {user.reputation_status}
+            <tbody className="text-sm">
+              {recentActivity.map((prob) => (
+                <tr key={prob.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                  <td className="py-3 font-medium text-slate-400">#{prob.id}</td>
+                  <td className="py-3 font-medium text-slate-700 pr-4">{prob.title}</td>
+                  <td className="py-3 text-slate-500 pr-4">{prob.category}</td>
+                  <td className="py-3 text-slate-500 pr-4">{prob.time}</td>
+                  <td className="py-3 text-right">
+                    <span className={`px-2.5 py-1 text-[11px] font-bold uppercase rounded-full ${prob.statusColor}`}>
+                      {prob.status}
                     </span>
                   </td>
                 </tr>
               ))}
-              {reputation.length === 0 && (
-                <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-400">
-                    No user data available yet.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>

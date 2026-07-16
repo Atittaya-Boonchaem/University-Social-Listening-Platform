@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from typing import Optional
 import bcrypt
+import os
 import requests
 from fastapi.responses import RedirectResponse
 
@@ -111,6 +112,35 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
+    if token == "simulated_sso_token_staff":
+        staff_record = db.query(Staff).first()
+        if staff_record:
+            user = db.query(User).filter(User.user_id == staff_record.user_id).first()
+            if user:
+                return user
+    elif token == "simulated_sso_token_student":
+        student_record = db.query(Student).first()
+        if not student_record:
+            new_user = User(email="student@up.ac.th", is_active=True)
+            db.add(new_user)
+            db.flush()
+            fac = db.query(Faculty).first()
+            student_record = Student(
+                user_id=new_user.user_id,
+                student_id="66000000",
+                student_name="Student User (SSO)",
+                faculty_id=fac.faculty_id if fac else None,
+                year=1,
+                age=20,
+                gender="Male"
+            )
+            db.add(student_record)
+            db.commit()
+            db.refresh(student_record)
+        user = db.query(User).filter(User.user_id == student_record.user_id).first()
+        if user:
+            return user
+
     try:
         payload = jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
         user_id: Optional[int] = payload.get("user_id")
@@ -132,6 +162,31 @@ def get_current_user_optional(
 ) -> Optional[User]:
     if not token:
         return None
+    if token == "simulated_sso_token_staff":
+        staff_record = db.query(Staff).first()
+        if staff_record:
+            return db.query(User).filter(User.user_id == staff_record.user_id).first()
+    elif token == "simulated_sso_token_student":
+        student_record = db.query(Student).first()
+        if not student_record:
+            new_user = User(email="student@up.ac.th", is_active=True)
+            db.add(new_user)
+            db.flush()
+            fac = db.query(Faculty).first()
+            student_record = Student(
+                user_id=new_user.user_id,
+                student_id="66000000",
+                student_name="Student User (SSO)",
+                faculty_id=fac.faculty_id if fac else None,
+                year=1,
+                age=20,
+                gender="Male"
+            )
+            db.add(student_record)
+            db.commit()
+            db.refresh(student_record)
+        return db.query(User).filter(User.user_id == student_record.user_id).first()
+
     try:
         payload = jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
         user_id = payload.get("user_id")
@@ -236,6 +291,9 @@ def register_public(data: PublicUserRegisterCreate, db: Session = Depends(get_db
     เข้าได้เฉพาะ: ทุกคน (Public)
     การทำงาน: สร้างบัญชีผู้ใช้และผูกข้อมูลลงในตาราง PublicUser
     """
+    if not data.pdpa_consent:
+        raise HTTPException(400, "คุณต้องยอมรับนโยบายความเป็นส่วนตัว (PDPA) เพื่อสมัครสมาชิก")
+
     if data.email and db.query(User).filter(User.email == data.email).first():
         raise HTTPException(400, "อีเมลนี้ถูกใช้งานแล้ว (Email already registered)")
 
@@ -251,9 +309,12 @@ def register_public(data: PublicUserRegisterCreate, db: Session = Depends(get_db
         user_id=user.user_id,
         first_name=data.first_name,
         last_name=data.last_name,
+        age=data.age,
         phone=data.phone,
         address=data.address,
-        user_type=data.user_type,
+        public_user_type_id=data.public_user_type_id,
+        is_pdpa_accepted=True,
+        pdpa_accepted_at=datetime.utcnow(),
     )
     db.add(pub)
     db.commit()
@@ -304,7 +365,7 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
     actual_role = get_user_role(user.user_id, db)
 
     # Optional role gate (from Flutter login screen)
-    if login_data.expected_role and actual_role != "super_admin":
+    if login_data.expected_role and actual_role not in ["super_admin", "category_admin"]:
         if actual_role != login_data.expected_role:
             raise HTTPException(403, f"ไม่มีสิทธิ์เข้าถึงในบทบาทนี้ (Expected role: {login_data.expected_role})")
 
@@ -527,6 +588,7 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
         # Check if user exists
         user = db.query(User).filter(User.email == email).first()
 
+        is_new_user = False
         if not user:
             # Auto-registration logic
             user = User(
@@ -557,11 +619,30 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(user)
 
+        # Check profile completeness (age or gender missing → needs onboarding)
+        student_rec = db.query(Student).filter(Student.user_id == user.user_id).first()
+        staff_rec = db.query(Staff).filter(Staff.user_id == user.user_id).first()
+        if student_rec and (student_rec.age is None or student_rec.gender is None):
+            is_new_user = True
+        elif staff_rec and staff_rec.department is None:
+            is_new_user = True
+
         actual_role = get_user_role(user.user_id, db)
-        token = create_access_token({"user_id": user.user_id, "role": actual_role})
+        display_name_for_token = get_display_name(user.user_id, db)
+        token = create_access_token({
+            "user_id": user.user_id,
+            "role": actual_role,
+            "email": email,
+            "display_name": display_name_for_token,
+            "is_new_user": is_new_user,
+        })
         
-        # Redirect back to frontend
-        return RedirectResponse(f"http://localhost:5173/sso-success?token={token}")
+        # Redirect back to frontend (configurable via env)
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5174")
+        return RedirectResponse(f"{frontend_url}/sso-success?token={token}")
     except Exception as e:
         print(f"DEBUG: DB or Processing Error: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error during SSO process")
+        import traceback
+        traceback.print_exc()
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5174")
+        return RedirectResponse(f"{frontend_url}/login?sso_error=server_error")

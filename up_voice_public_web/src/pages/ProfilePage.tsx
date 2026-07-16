@@ -1,285 +1,316 @@
 /**
  * ProfilePage.tsx
- *
- * Profile screen migrated from profile_screen.dart
- * Now expects authentication state to be handled by ProtectedRoute.
+ * - Fetches full profile from API (not just localStorage)
  */
 
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
-const PROBLEMS_BASE = 'http://127.0.0.1:8000/api/v1/problems';
+const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const PROBLEMS_BASE = `${API_BASE}/problems`;
 
-interface UserFields {
-  access_token: string;
-  role_id: number;
-  role_name: string | null;
-  user_id: number | null;
-  display_name: string;
-  email: string;
-  student_id: string | null;
-  faculty: string | null;
-  education_level: string | null;
-  age: number | null;
-  gender: string | null;
-  phone_number: string | null;
-  relationship: string | null;
-  position: string | null;
-  department: string | null;
-  office_location: string | null;
-}
+const FACULTY_MAP: Record<number, string> = {
+  1:  'คณะเทคโนโลยีสารสนเทศและการสื่อสาร',
+  2:  'คณะวิศวกรรมศาสตร์',
+  3:  'คณะวิทยาศาสตร์',
+  4:  'คณะแพทยศาสตร์',
+  5:  'คณะศิลปศาสตร์',
+  6:  'คณะบริหารธุรกิจและนิเทศศาสตร์',
+  7:  'คณะนิติศาสตร์',
+  8:  'คณะสหเวชศาสตร์และสาธารณสุขศาสตร์',
+  9:  'คณะเกษตรศาสตร์และทรัพยากรธรรมชาติ',
+  10: 'คณะทันตแพทยศาสตร์',
+  11: 'คณะสถาปัตยกรรมศาสตร์และศิลปกรรมศาสตร์',
+  12: 'คณะพยาบาลศาสตร์',
+  13: 'คณะเภสัชศาสตร์',
+  14: 'วิทยาลัยการศึกษา',
+};
+
+const GENDER_MAP: Record<string, string> = {
+  male: 'ชาย', Male: 'ชาย',
+  female: 'หญิง', Female: 'หญิง',
+  other: 'อื่นๆ',
+};
+
+const YEAR_MAP: Record<number, string> = {
+  1: 'ปริญญาตรี',
+  2: 'ปริญญาโท',
+  3: 'ปริญญาเอก',
+};
 
 interface MyProblem {
   id: number;
   status?: string;
+  status_name?: string;
 }
 
-const LS = {
-  get: (k: string) => localStorage.getItem(k),
-  clear: () => localStorage.clear(),
-  readUserFields: (): Partial<UserFields> => ({
-    access_token: localStorage.getItem('access_token') ?? undefined,
-    role_id: localStorage.getItem('role_id') != null ? Number(localStorage.getItem('role_id')) : undefined,
-    role_name: localStorage.getItem('role') ?? null,
-    user_id: localStorage.getItem('user_id') != null ? Number(localStorage.getItem('user_id')) : null,
-    display_name: localStorage.getItem('display_name') ?? '',
-    email: localStorage.getItem('email') ?? '',
-    student_id: localStorage.getItem('student_id'),
-    faculty: localStorage.getItem('faculty'),
-    education_level: localStorage.getItem('education_level'),
-    age: localStorage.getItem('age') != null ? Number(localStorage.getItem('age')) : null,
-    gender: localStorage.getItem('gender'),
-    phone_number: localStorage.getItem('phone_number'),
-    relationship: localStorage.getItem('relationship'),
-    position: localStorage.getItem('position'),
-    department: localStorage.getItem('department'),
-    office_location: localStorage.getItem('office_location'),
-  }),
-};
-
-function getRoleName(roleId: number, studentId?: string | null, roleName?: string | null): string {
-  if (roleName === 'anonymous') return 'ผู้ใช้ไม่ระบุตัวตน';
+function getRoleName(roleId: number): string {
   switch (roleId) {
-    case 1: {
-      const prefix = studentId && studentId.length >= 2 ? ` ${studentId.substring(0, 2)}` : '';
-      return `นิสิต มพ.${prefix}`;
-    }
-    case 2: return 'บุคลากร';
-    case 3: return 'บุคคลทั่วไป';
-    case 4: return 'ผู้ดูแลระบบ';
-    case 5: return 'ผู้ดูแลหมวดหมู่';
-    case 6: return 'ผู้ใช้ไม่ระบุตัวตน';
+    case 1: return 'นิสิตผู้ใช้งาน (Student)';
+    case 2: return 'บุคลากร (Staff)';
+    case 3: return 'บุคคลทั่วไป (Guest)';
+    case 4: return 'ผู้ดูแลระบบ (Admin)';
+    case 5: return 'ผู้ดูแลหมวดหมู่ (Category Admin)';
+    case 6: return 'ผู้ใช้ไม่ระบุตัวตน (Anonymous)';
     default: return 'ผู้ใช้งานทั่วไป';
   }
 }
 
-function getRoleIcon(roleId: number): string {
+function getRoleBadge(roleId: number): string {
   switch (roleId) {
-    case 4: return '👤';
-    case 5: return '👤';
-    case 1: return '🎓';
-    case 2: return '🪪';
-    case 3: return '🌐';
-    default: return '👤';
+    case 1: return 'นิสิต';
+    case 2: return 'บุคลากร';
+    case 3: return 'บุคคลทั่วไป';
+    case 4: return 'แอดมิน';
+    case 5: return 'แอดมินหมวดหมู่';
+    case 6: return 'ไม่ระบุตัวตน';
+    default: return 'ผู้ใช้งาน';
   }
 }
 
-function ProfileInfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ icon, label, value, wide }: { icon: string; label: string; value: string; wide?: boolean }) {
   return (
-    <div className="flex gap-3 py-1.5">
-      <span className="w-28 flex-shrink-0 text-xs font-semibold text-slate-400">{label}</span>
-      <span className="text-xs font-medium text-slate-700 flex-1">{value}</span>
+    <div className={`flex items-start gap-2 ${wide ? 'col-span-2 md:col-span-3' : ''}`}>
+      <span className="material-symbols-outlined text-[#310065] text-sm mt-0.5 flex-shrink-0">{icon}</span>
+      <div>
+        <p className="text-[10px] text-[#7c7483] font-semibold uppercase tracking-wide mb-0.5">{label}</p>
+        <p className="text-sm font-semibold text-[#310065]">{value}</p>
+      </div>
     </div>
   );
 }
 
-// ─── ProfilePage Component ──────────────────────────────────────────────────────
-// หน้าที่: แสดงหน้าโปรไฟล์ส่วนตัวของผู้ใช้งาน
-// การทำงานหลัก:
-// 1. ดึงข้อมูลส่วนตัวจาก localStorage (เช่น ชื่อ, อีเมล, บทบาท, คณะ/สาขา, ตำแหน่ง) มาแสดงผล
-// 2. มีฟังก์ชัน Logout เพื่อออกจากระบบ และเคลียร์ข้อมูลใน localStorage
-// 3. แสดงสถิติการใช้งาน เช่น จำนวนปัญหาที่แจ้ง และจำนวนที่ได้รับการแก้ไขแล้ว (ดึงจาก API)
-// 4. แสดงข้อมูลเพิ่มเติม (Extra Fields) ที่แตกต่างกันตามแต่ละ Role เช่น นิสิตจะมีรหัสนิสิต บุคลากรจะมีตำแหน่ง
 export default function ProfilePage() {
-  const [userFields] = useState<Partial<UserFields>>(LS.readUserFields);
-  const roleId = userFields.role_id ?? 0;
+  const roleId = Number(localStorage.getItem('role_id') ?? 0);
+  const userId = localStorage.getItem('user_id');
+  const displayName = localStorage.getItem('display_name') ?? '';
+  const email = localStorage.getItem('email') ?? '';
 
+  const [profile, setProfile] = useState<any>(null);
   const [totalProblems, setTotalProblems] = useState(0);
   const [resolvedProblems, setResolvedProblems] = useState(0);
+  const [pendingProblems, setPendingProblems] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const navigate = useNavigate();
 
-
-
   useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    // Fetch user profile from API
+    if (userId && token) {
+      axios.get(`${API_BASE}/users/${userId}`, { headers })
+        .then(res => {
+          if (res.data?.success) setProfile(res.data.data?.profile ?? null);
+        })
+        .catch(err => console.error('Profile fetch error:', err));
+    }
+
+    // Fetch my problems
     let cancelled = false;
     async function fetchMyProblems() {
       try {
-        const token = LS.get('access_token');
-        const res = await axios.get(`${PROBLEMS_BASE}/my-problems`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!cancelled && res.data.success) {
-          const items: MyProblem[] = Array.isArray(res.data.data)
-            ? res.data.data
-            : res.data.data?.items ?? [];
+        const url = token ? `${PROBLEMS_BASE}/my-problems` : `${PROBLEMS_BASE}/list`;
+        const res = await axios.get(url, { headers });
+
+        if (!cancelled && res.data) {
+          let items: MyProblem[] = [];
+          if (Array.isArray(res.data)) items = res.data;
+          else if (res.data?.data && Array.isArray(res.data.data)) items = res.data.data;
+          else if (res.data?.data?.items && Array.isArray(res.data.data.items)) items = res.data.data.items;
+          else if (res.data?.items && Array.isArray(res.data.items)) items = res.data.items;
+
           setTotalProblems(items.length);
-          setResolvedProblems(items.filter(p => {
-            const s = (p.status ?? '').toUpperCase();
-            return s === 'RESOLVED' || s === 'CLOSED';
-          }).length);
+          let resolved = 0, pending = 0;
+          items.forEach(p => {
+            const s = (p.status_name || p.status || '').toUpperCase();
+            if (s === 'เสร็จสิ้น' || s === 'RESOLVED' || s === 'CLOSED') resolved++;
+            else pending++;
+          });
+          setResolvedProblems(resolved);
+          setPendingProblems(pending);
         }
-      } catch {
-        // silently fail
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
+      } catch { /* silently fail */ }
+      finally { if (!cancelled) setIsLoading(false); }
     }
     fetchMyProblems();
     return () => { cancelled = true; };
-  }, []);
+  }, [userId]);
 
   function handleLogout() {
-    LS.clear();
+    localStorage.clear();
     setShowLogoutModal(false);
     navigate('/login');
   }
 
-  const displayName = localStorage.getItem('display_name') || userFields.display_name || 'ไม่ระบุตัวตน';
-  const displayEmail = userFields.email || userFields.phone_number || '';
-  const roleName = getRoleName(roleId, userFields.student_id, userFields.role_name);
-  const roleIcon = getRoleIcon(roleId);
+  const roleName = getRoleName(roleId);
+  const roleBadge = getRoleBadge(roleId);
+  const userIdentifier = profile?.student_id
+    ? `Student #${profile.student_id}`
+    : `User #${userId || 'Guest'}`;
 
-  const hasExtraFields = !!(
-    userFields.faculty || userFields.education_level || userFields.age ||
-    userFields.gender || userFields.phone_number || userFields.relationship ||
-    userFields.position || userFields.department || userFields.office_location
-  );
+  const facultyName = profile?.faculty_id
+    ? (FACULTY_MAP[Number(profile.faculty_id)] ?? `คณะ #${profile.faculty_id}`)
+    : null;
+  const genderLabel = profile?.gender ? (GENDER_MAP[profile.gender] ?? profile.gender) : null;
+  const yearLabel = profile?.year ? (YEAR_MAP[Number(profile.year)] ?? `ปีที่ ${profile.year}`) : null;
+
+  const getAvatarContent = () => {
+    switch (roleId) {
+      case 1: return (
+        <div className="w-full h-full flex items-center justify-center bg-indigo-50 text-indigo-600">
+          <span className="material-symbols-outlined text-[64px]" style={{ fontVariationSettings: "'FILL' 1" }}>school</span>
+        </div>
+      );
+      case 2: return (
+        <div className="w-full h-full flex items-center justify-center bg-purple-50 text-purple-600">
+          <span className="material-symbols-outlined text-[64px]" style={{ fontVariationSettings: "'FILL' 1" }}>badge</span>
+        </div>
+      );
+      case 4: case 5: return (
+        <div className="w-full h-full flex items-center justify-center bg-rose-50 text-rose-600">
+          <span className="material-symbols-outlined text-[64px]" style={{ fontVariationSettings: "'FILL' 1" }}>admin_panel_settings</span>
+        </div>
+      );
+      default: return (
+        <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-600">
+          <span className="material-symbols-outlined text-[64px]" style={{ fontVariationSettings: "'FILL' 1" }}>person</span>
+        </div>
+      );
+    }
+  };
+
+  const hasProfileInfo = profile && (facultyName || yearLabel || genderLabel || profile.age || profile.department || profile.position);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#D8B4E2] to-[#F1DFA8] py-8 px-4">
-      <div className="max-w-lg mx-auto">
-        <h1 className="text-xl font-bold text-[#2B164D] text-center mb-5">👤 ข้อมูลส่วนตัว</h1>
-        <div className="bg-white/95 backdrop-blur rounded-3xl shadow-2xl shadow-purple-200/30 p-6 flex flex-col gap-5">
-          <div className="flex flex-col items-center gap-3 pt-2">
-            <div className="w-24 h-24 rounded-full bg-purple-50 border-4 border-white shadow-lg shadow-[#2B164D]/20 flex items-center justify-center">
-              <span className="text-5xl">{roleIcon}</span>
+    <div className="min-h-screen bg-[#f8f9fa] font-sans pb-24">
+      <div className="max-w-[1280px] mx-auto px-5 md:px-16 pt-8">
+        
+        {/* Profile Header */}
+        <section className="mb-10">
+          <div className="flex flex-col md:flex-row items-center gap-6 md:items-start">
+            <div className="relative">
+              <div className="w-32 h-32 rounded-full border-4 border-white shadow-[0_10px_30px_-5px_rgba(49,0,101,0.08)] overflow-hidden bg-[#eddcff]">
+                {getAvatarContent()}
+              </div>
+              <div className="absolute bottom-1 right-1 bg-[#cba72f] p-1.5 rounded-full border-2 border-white">
+                <span className="material-symbols-outlined text-white text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>verified</span>
+              </div>
             </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-slate-800">{displayName}</p>
-              {displayEmail && (
-                <p className="text-sm text-slate-500 mt-0.5">{displayEmail}</p>
+            
+            <div className="text-center md:text-left flex-1 mt-2 md:mt-4">
+              <div className="flex flex-col md:flex-row md:items-center gap-2 mb-2">
+                <h2 className="text-2xl font-bold text-[#310065]">{roleName}</h2>
+                <span className="bg-[#f8d4fe] text-[#75597c] px-3 py-1 rounded-full text-[12px] font-medium inline-block self-center md:self-auto">
+                  {roleBadge}
+                </span>
+              </div>
+              <p className="text-[#4a4452] text-sm font-semibold mb-1 flex items-center justify-center md:justify-start gap-1">
+                <span className="material-symbols-outlined text-sm">id_card</span>{userIdentifier}
+              </p>
+              {displayName && (
+                <p className="text-[#4a4452] text-sm mb-1 flex items-center justify-center md:justify-start gap-1">
+                  <span className="material-symbols-outlined text-sm">person</span>{displayName}
+                </p>
               )}
-            </div>
-            <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-[#2B164D]/10 border border-[#2B164D]/10 text-xs font-bold text-[#2B164D]">
-              {roleName}
-            </span>
-          </div>
-
-          <hr className="border-slate-100" />
-
-          {hasExtraFields && (
-            <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4">
-              <p className="text-sm font-bold text-slate-700 mb-3">ข้อมูลเพิ่มเติม</p>
-              <div className="divide-y divide-slate-100">
-                {userFields.faculty && <ProfileInfoRow label="คณะ" value={userFields.faculty} />}
-                {userFields.education_level && <ProfileInfoRow label="ระดับการศึกษา" value={userFields.education_level} />}
-                {userFields.age != null && <ProfileInfoRow label="อายุ" value={`${userFields.age} ปี`} />}
-                {userFields.gender && <ProfileInfoRow label="เพศ" value={userFields.gender} />}
-                {userFields.phone_number && <ProfileInfoRow label="เบอร์โทรศัพท์" value={userFields.phone_number} />}
-                {userFields.relationship && <ProfileInfoRow label="ความสัมพันธ์" value={userFields.relationship} />}
-                {userFields.position && <ProfileInfoRow label="ตำแหน่ง" value={userFields.position} />}
-                {userFields.department && <ProfileInfoRow label="แผนก/หน่วยงาน" value={userFields.department} />}
-                {userFields.office_location && <ProfileInfoRow label="สถานที่ทำงาน" value={userFields.office_location} />}
+              {email && (
+                <p className="text-[#4a4452] text-xs mb-4 flex items-center justify-center md:justify-start gap-1">
+                  <span className="material-symbols-outlined text-sm">mail</span>{email}
+                </p>
+              )}
+              <div className="flex gap-3 justify-center md:justify-start">
+                <button 
+                  onClick={() => navigate('/tracking')}
+                  className="bg-[#310065] text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition-all flex items-center gap-2 shadow-[0_10px_30px_-5px_rgba(49,0,101,0.08)]"
+                >
+                  <span className="material-symbols-outlined text-sm">history</span>
+                  ดูโพสต์ทั้งหมดของคุณ
+                </button>
               </div>
-            </div>
-          )}
-
-          <div className="bg-slate-50 rounded-2xl border border-slate-100 divide-y divide-slate-100 overflow-hidden">
-            <div className="flex items-center gap-3 px-4 py-3">
-              <div className="w-9 h-9 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0">
-                <span className="text-lg">📋</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-700">ปัญหาที่เคยแจ้งทั้งหมด</p>
-              </div>
-              <div className="flex-shrink-0">
-                {isLoading ? (
-                  <span className="w-4 h-4 border-2 border-[#2B164D] border-t-transparent rounded-full animate-spin inline-block" />
-                ) : (
-                  <span className="text-sm font-bold text-slate-500">{totalProblems} เรื่อง</span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 px-4 py-3">
-              <div className="w-9 h-9 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                <span className="text-lg">✅</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-700">เรื่องที่ได้รับการแก้ไขแล้ว</p>
-              </div>
-              <div className="flex-shrink-0">
-                {isLoading ? (
-                  <span className="w-4 h-4 border-2 border-[#2B164D] border-t-transparent rounded-full animate-spin inline-block" />
-                ) : (
-                  <span className="text-sm font-bold text-slate-500">{resolvedProblems} เรื่อง</span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 px-4 py-3">
-              <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                <span className="text-lg">❓</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-700">ช่วยเหลือ</p>
-              </div>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400 flex-shrink-0">
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
             </div>
           </div>
+        </section>
 
-          <button
-            id="logout-btn"
+        {/* Profile Info Card */}
+        {hasProfileInfo && (
+          <section className="mb-8 bg-white/80 backdrop-blur-[8px] border border-[#cdc3d4]/30 rounded-xl shadow-[0_10px_30px_-5px_rgba(49,0,101,0.08)] p-6">
+            <h3 className="text-sm font-bold text-[#310065] mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-sm">account_circle</span>
+              ข้อมูลส่วนตัว
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {facultyName && <InfoRow icon="school" label="คณะ / วิทยาลัย" value={facultyName} wide />}
+              {yearLabel && <InfoRow icon="workspace_premium" label="ระดับการศึกษา" value={yearLabel} />}
+              {profile?.student_id && <InfoRow icon="badge" label="รหัสนิสิต" value={profile.student_id} />}
+              {profile?.major && <InfoRow icon="menu_book" label="สาขาวิชา" value={profile.major} />}
+              {profile?.department && <InfoRow icon="corporate_fare" label="ภาควิชา / หน่วยงาน" value={profile.department} />}
+              {profile?.position && <InfoRow icon="work" label="ตำแหน่ง" value={profile.position} />}
+              {genderLabel && <InfoRow icon="person" label="เพศ" value={genderLabel} />}
+              {profile?.age && <InfoRow icon="calendar_today" label="อายุ" value={`${profile.age} ปี`} />}
+              {profile?.phone && <InfoRow icon="phone" label="เบอร์โทรศัพท์" value={profile.phone} />}
+            </div>
+          </section>
+        )}
+
+        {/* Stats Bento Grid */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <div className="bg-white/80 backdrop-blur-[8px] border border-[#cdc3d4]/30 p-6 rounded-xl shadow-[0_10px_30px_-5px_rgba(49,0,101,0.08)] flex flex-col items-center justify-center text-center hover:scale-[0.98] transition-transform cursor-pointer">
+            <span className="material-symbols-outlined text-[#310065] text-4xl mb-2" style={{ fontVariationSettings: "'FILL' 1" }}>report_problem</span>
+            <span className="text-2xl font-bold text-[#310065]">{isLoading ? '...' : totalProblems}</span>
+            <span className="text-[12px] font-medium text-[#4a4452]">ปัญหาที่แจ้งทั้งหมด</span>
+          </div>
+          
+          <div className="bg-white/80 backdrop-blur-[8px] border border-[#cdc3d4]/30 p-6 rounded-xl shadow-[0_10px_30px_-5px_rgba(49,0,101,0.08)] flex flex-col items-center justify-center text-center hover:scale-[0.98] transition-transform cursor-pointer">
+            <span className="material-symbols-outlined text-[#cba72f] text-4xl mb-2" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+            <span className="text-2xl font-bold text-[#310065]">{isLoading ? '...' : resolvedProblems}</span>
+            <span className="text-[12px] font-medium text-[#4a4452]">ดำเนินการแก้ไขแล้ว</span>
+          </div>
+          
+          <div className="bg-white/80 backdrop-blur-[8px] border-y border-r border-[#cdc3d4]/30 border-l-4 border-l-[#ffe088] p-6 rounded-xl shadow-[0_10px_30px_-5px_rgba(49,0,101,0.08)] flex flex-col items-center justify-center text-center hover:scale-[0.98] transition-transform cursor-pointer">
+            <span className="material-symbols-outlined text-[#715478] text-4xl mb-2" style={{ fontVariationSettings: "'FILL' 1" }}>pending</span>
+            <span className="text-2xl font-bold text-[#310065]">{isLoading ? '...' : pendingProblems}</span>
+            <span className="text-[12px] font-medium text-[#4a4452]">กำลังรอดำเนินการ</span>
+          </div>
+        </section>
+
+        {/* Logout Action */}
+        <section className="mt-4">
+          <button 
             onClick={() => setShowLogoutModal(true)}
-            className="w-full h-12 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold transition flex items-center justify-center gap-2 border border-red-100"
+            className="w-full flex items-center justify-center gap-2 p-4 rounded-xl border border-[#ba1a1a] text-[#ba1a1a] hover:bg-[#ffdad6]/40 transition-all text-sm font-semibold"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            ออกจากระบบ (Logout)
+            <span className="material-symbols-outlined text-sm">logout</span>
+            ออกจากระบบ
           </button>
-        </div>
+          <p className="text-center mt-6 text-[12px] font-medium text-[#7c7483]">
+            UP Connect v2.4.0 — Smart Campus Solution
+          </p>
+        </section>
+
       </div>
 
+      {/* Logout Modal */}
       {showLogoutModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={() => setShowLogoutModal(false)}>
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div
-            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4"
-            onClick={e => e.stopPropagation()}
-          >
-            <div>
-              <h3 className="font-bold text-slate-800 text-base">ออกจากระบบ</h3>
-              <p className="text-sm text-slate-500 mt-1">คุณต้องการออกจากระบบใช่หรือไม่?</p>
-            </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+            onClick={() => setShowLogoutModal(false)}
+          ></div>
+          <div className="relative bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-800 mb-2">ยืนยันการออกจากระบบ</h3>
+            <p className="text-sm text-slate-600 mb-6">คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบบัญชีผู้ใช้นี้?</p>
             <div className="flex gap-3">
-              <button
+              <button 
                 onClick={() => setShowLogoutModal(false)}
-                className="flex-1 h-10 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
+                className="flex-1 px-4 py-2.5 rounded-xl text-slate-600 font-bold bg-slate-100 hover:bg-slate-200 transition"
               >
                 ยกเลิก
               </button>
-              <button
-                id="confirm-logout-btn"
+              <button 
                 onClick={handleLogout}
-                className="flex-1 h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold transition shadow-md shadow-red-200"
+                className="flex-1 px-4 py-2.5 rounded-xl text-white font-bold bg-red-600 hover:bg-red-700 transition"
               >
                 ออกจากระบบ
               </button>

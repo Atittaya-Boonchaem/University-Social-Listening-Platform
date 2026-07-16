@@ -2,3 +2,6 @@
 venv/
 __pycache__/
 node_modules/
+*.db
+university_social_listening/uploads/
+university_social_listening/app/ai_data/

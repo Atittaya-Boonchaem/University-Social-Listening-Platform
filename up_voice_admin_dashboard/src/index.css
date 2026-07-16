@@ -111,3 +111,18 @@ body {
 }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: #F8FAFC; }
+
+/* ── UP Connect Login Page Custom Styles ────────────────────── */
+.login-body-bg {
+  background-color: #fcf9f8;
+  background-image: radial-gradient(#cdc3d4 0.5px, transparent 0.5px);
+  background-size: 24px 24px;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.login-card-shadow {
+  box-shadow: 0 10px 40px -10px rgba(74, 20, 140, 0.15);
+}

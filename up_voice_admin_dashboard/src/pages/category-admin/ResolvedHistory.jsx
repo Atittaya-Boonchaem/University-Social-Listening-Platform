@@ -2,55 +2,33 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { fetchProblems, updateProblemStatus, fetchAnalytics } from '../../services/problemService';
 
-export default function CategoryAdminDashboard() {
+export default function ResolvedHistory() {
   const [selectedCluster, setSelectedCluster] = useState(null);
   const [expandedPostId, setExpandedPostId] = useState(null);
   const [clusters, setClusters] = useState([]);
-  const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(null);
 
-  // Get Admin Name from token
-  const getAdminName = () => {
-    try {
-      const token = localStorage.getItem('token');
-      if (token) {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        return payload.display_name || payload.email || 'แอดมินปัญหา';
-      }
-    } catch {}
-    return 'แอดมินปัญหา';
-  };
-  const adminName = getAdminName();
-
-  // Format today's date in Thai format
-  const today = new Date().toLocaleDateString('th-TH', { 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
-  });
-
   const loadData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [pubData, internalData, analyticsData] = await Promise.all([
+      const [pubData, internalData] = await Promise.all([
         fetchProblems({ page_size: 150, visibility_name: 'public' }, true),
         fetchProblems({ page_size: 150, visibility_name: 'internal' }, true),
-        fetchAnalytics(),
       ]);
 
       const merged = [...(pubData.items || []), ...(internalData.items || [])];
       const unique = Array.from(new Map(merged.map(p => [p.problem_id, p])).values());
 
-      // Filter out RESOLVED / CLOSED problems for active dashboard
-      const activeProblems = unique.filter(p => p.status_name !== 'RESOLVED' && p.status_name !== 'CLOSED');
+      // Filter only RESOLVED / CLOSED problems
+      const resolvedProblems = unique.filter(p => p.status_name === 'RESOLVED' || p.status_name === 'CLOSED');
 
       // Separate parents and children
-      const parents = activeProblems.filter(p => !p.parent_problem_id);
+      const parents = resolvedProblems.filter(p => !p.parent_problem_id);
       const children = unique.filter(p => p.parent_problem_id);
 
       const constructedClusters = parents.map(parent => {
@@ -88,7 +66,6 @@ export default function CategoryAdminDashboard() {
       });
 
       setClusters(constructedClusters);
-      setAnalytics(analyticsData);
     } catch (e) {
       console.error(e);
       setError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่');
@@ -105,11 +82,14 @@ export default function CategoryAdminDashboard() {
     setIsUpdatingStatus(problemId);
     try {
       await updateProblemStatus(problemId, newStatus);
-      setClusters(prev => prev.map(c => 
-        c.problem_id === problemId ? { ...c, status: newStatus } : c
-      ));
-      const newAnalytics = await fetchAnalytics();
-      setAnalytics(newAnalytics);
+      // Remove it from the resolved list if it is no longer resolved
+      if (newStatus !== 'RESOLVED' && newStatus !== 'CLOSED') {
+        setClusters(prev => prev.filter(c => c.problem_id !== problemId));
+      } else {
+        setClusters(prev => prev.map(c => 
+          c.problem_id === problemId ? { ...c, status: newStatus } : c
+        ));
+      }
     } catch (err) {
       alert("ไม่สามารถเปลี่ยนสถานะได้: " + err.message);
     } finally {
@@ -129,10 +109,6 @@ export default function CategoryAdminDashboard() {
     return matchSearch && matchDate;
   });
 
-  const openCount = analytics?.by_status?.OPEN ?? clusters.filter(c => c.status === 'OPEN').length;
-  const progressCount = analytics?.by_status?.IN_PROGRESS ?? clusters.filter(c => c.status === 'IN_PROGRESS').length;
-  const resolvedCount = analytics?.by_status?.RESOLVED ?? 0;
-
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
@@ -148,51 +124,17 @@ export default function CategoryAdminDashboard() {
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Category Admin Dashboard</h1>
-            <p className="text-sm text-slate-500 mt-1">บริหารจัดการกลุ่มปัญหา (AI Clustered Reports)</p>
-          </div>
-          <div className="text-left md:text-right">
-            <p className="font-bold text-[#2B164D] flex items-center md:justify-end gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              {adminName}
-            </p>
-            <p className="text-sm text-slate-500 mt-1">{today}</p>
+            <h1 className="text-2xl font-bold text-slate-800">ประวัติการแก้ไข (Resolved History)</h1>
+            <p className="text-sm text-slate-500 mt-1">ประวัติกลุ่มปัญหาที่ดำเนินการเสร็จสิ้นแล้ว</p>
           </div>
         </div>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
-            <div>
-              <p className="text-sm font-bold text-slate-400 mb-1">ยังไม่รับเรื่อง</p>
-              <h3 className="text-3xl font-black text-amber-500">{openCount}</h3>
-            </div>
-            <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 text-xl">⏳</div>
-          </div>
-          
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
-            <div>
-              <p className="text-sm font-bold text-slate-400 mb-1">กำลังดำเนินการ</p>
-              <h3 className="text-3xl font-black text-sky-500">{progressCount}</h3>
-            </div>
-            <div className="w-12 h-12 rounded-full bg-sky-50 flex items-center justify-center text-sky-500 text-xl">⚙️</div>
-          </div>
-          
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
-            <div>
-              <p className="text-sm font-bold text-slate-400 mb-1">เสร็จสิ้น</p>
-              <h3 className="text-3xl font-black text-emerald-500">{resolvedCount}</h3>
-            </div>
-            <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 text-xl">✅</div>
-          </div>
-        </div>
-
-        {/* Smart Clustered Table */}
+        {/* Smart Table Container */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           
           {/* Search Bar & Date Filter UI */}
-          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-bold text-slate-800">รายการกลุ่มปัญหาล่าสุด (Clustered Topics)</h2>
+          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/30">
+            <h2 className="text-lg font-bold text-slate-800">รายการที่แก้ไขเรียบร้อยแล้ว</h2>
             
             <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
               <div className="relative w-full sm:w-64">
@@ -206,14 +148,14 @@ export default function CategoryAdminDashboard() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="ค้นหาเนื้อหาหรือรหัส..." 
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2B164D]/20 focus:border-[#2B164D] transition-all placeholder:text-slate-400"
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2B164D]/20 focus:border-[#2B164D] transition-all placeholder:text-slate-400"
                 />
               </div>
               <input 
                 type="date" 
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full sm:w-auto px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2B164D]/20 focus:border-[#2B164D] transition-all text-slate-600"
+                className="w-full sm:w-auto px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2B164D]/20 focus:border-[#2B164D] transition-all text-slate-600"
               />
               <button onClick={loadData} className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors text-slate-600" title="รีเฟรชข้อมูล">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -223,6 +165,7 @@ export default function CategoryAdminDashboard() {
             </div>
           </div>
 
+          {/* Data Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
@@ -238,7 +181,7 @@ export default function CategoryAdminDashboard() {
               <tbody className="divide-y divide-slate-100 text-sm">
                 {filteredClusters.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="p-12 text-center text-slate-400 font-medium">ไม่พบข้อมูลปัญหาระบบ</td>
+                    <td colSpan="6" className="p-12 text-center text-slate-400 font-medium">ไม่พบประวัติปัญหาที่แก้ไขเสร็จสิ้น</td>
                   </tr>
                 ) : filteredClusters.map((cluster) => (
                   <tr key={cluster.id} className="hover:bg-slate-50/70 transition-colors group">
@@ -253,12 +196,6 @@ export default function CategoryAdminDashboard() {
                     <td className="px-6 py-5">
                       <div className="flex items-start gap-2">
                         <span className="font-semibold text-slate-700 leading-relaxed line-clamp-2">{cluster.topic}</span>
-                        {cluster.reportCount >= 5 && (
-                          <span className="shrink-0 px-2.5 py-1 bg-red-50 text-red-600 border border-red-100 text-[10px] font-black rounded-full flex items-center gap-1.5 mt-0.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-                            ด่วนมาก
-                          </span>
-                        )}
                       </div>
                     </td>
                     <td className="px-6 py-5 text-slate-500 whitespace-nowrap">{cluster.date}</td>

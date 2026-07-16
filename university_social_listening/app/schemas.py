@@ -50,9 +50,11 @@ class PublicUserRegisterCreate(BaseModel):
     password: str = Field(..., min_length=6)
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
+    age: int
     phone: Optional[str] = None
     address: Optional[str] = None
-    user_type: Optional[str] = None
+    public_user_type_id: Optional[int] = None
+    pdpa_consent: bool = Field(..., description="Must be true to register")
 
 
 class UserInviteCreate(BaseModel):
@@ -110,7 +112,7 @@ class PublicUserProfile(BaseModel):
     first_name: str
     last_name: str
     phone: Optional[str] = None
-    user_type: Optional[str] = None
+    public_user_type_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -135,6 +137,8 @@ class UserListItem(BaseModel):
     is_active: bool
     role: str
     display_name: str
+    category_name: Optional[str] = None
+    category_id: Optional[int] = None
 
 
 # ──────────────────────────────────────────────
@@ -156,10 +160,28 @@ class FacultyResponse(BaseModel):
 
 
 # ──────────────────────────────────────────────
+# Public User Types
+# ──────────────────────────────────────────────
+class PublicUserTypeCreate(BaseModel):
+    name: str = Field(..., max_length=100)
+    is_active: bool = True
+
+class PublicUserTypeResponse(BaseModel):
+    id: int
+    name: str
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+# ──────────────────────────────────────────────
 # Category
 # ──────────────────────────────────────────────
 class CategoryCreate(BaseModel):
     category_name: str = Field(..., max_length=100)
+    ticket_prefix: Optional[str] = Field(None, max_length=10)
+    color_code: Optional[str] = Field(None, max_length=20)
     description: Optional[str] = None
     icon_url: Optional[str] = None
     requires_location_privacy: bool = False
@@ -167,6 +189,8 @@ class CategoryCreate(BaseModel):
 
 class CategoryUpdate(BaseModel):
     category_name: Optional[str] = None
+    ticket_prefix: Optional[str] = None
+    color_code: Optional[str] = None
     description: Optional[str] = None
     icon_url: Optional[str] = None
     requires_location_privacy: Optional[bool] = None
@@ -176,6 +200,8 @@ class CategoryUpdate(BaseModel):
 class CategoryResponse(BaseModel):
     category_id: int
     category_name: str
+    ticket_prefix: Optional[str] = None
+    color_code: Optional[str] = None
     description: Optional[str] = None
     icon_url: Optional[str] = None
     requires_location_privacy: bool
@@ -252,6 +278,8 @@ class ProblemUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     building_name: Optional[str] = None
+    category_id: Optional[int] = None
+    is_hidden: Optional[bool] = None
 
 
 class AuthorInfo(BaseModel):
@@ -269,6 +297,8 @@ class AttachmentInfo(BaseModel):
 
 class ProblemResponse(BaseModel):
     problem_id: int
+    ticket_id: Optional[str] = None
+    parent_problem_id: Optional[int] = None
     user_id: int
     category_id: int
     category_name: Optional[str] = None
@@ -283,9 +313,11 @@ class ProblemResponse(BaseModel):
     longitude: Optional[float] = None
     building_name: Optional[str] = None
     is_deleted: bool = False
+    is_hidden: bool = False
     is_flagged: bool = False
     flagged_reason: Optional[str] = None
     llm_analysis: Optional[Any] = None
+    sla_due_date: Optional[datetime] = None
     created_at: datetime
     like_count: int = 0
     is_liked_by_me: bool = False

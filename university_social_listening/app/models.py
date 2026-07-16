@@ -104,16 +104,27 @@ class Staff(Base):
     faculty = relationship("Faculty", back_populates="staff")
 
 
+class PublicUserType(Base):
+    __tablename__ = "public_user_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False)
+    is_active = Column(Boolean, default=True)
+
+
 class PublicUser(Base):
     __tablename__ = "public_users"
 
     user_id = Column(Integer, ForeignKey("users.user_id"), primary_key=True)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
+    age = Column(Integer, nullable=False)
     phone = Column(String(20), nullable=True)
     address = Column(Text, nullable=True)
-    user_type = Column(String(50), nullable=True)
+    public_user_type_id = Column(Integer, ForeignKey("public_user_types.id"), nullable=True)
     id_card_number = Column(String(20), nullable=True)
+    is_pdpa_accepted = Column(Boolean, default=False, nullable=False)
+    pdpa_accepted_at = Column(DateTime, nullable=True)
     registration_date = Column(DateTime, default=datetime.utcnow)
     email_verified = Column(Boolean, default=False)
     phone_verified = Column(Boolean, default=False)
@@ -121,6 +132,7 @@ class PublicUser(Base):
 
     # Relationships
     user = relationship("User", back_populates="public_user")
+    type = relationship("PublicUserType")
 
 
 class AnonymousUser(Base):
@@ -193,9 +205,11 @@ class Category(Base):
 
     category_id = Column(Integer, primary_key=True, index=True)
     category_name = Column(String(100), unique=True, nullable=False)
+    ticket_prefix = Column(String(10), unique=True, nullable=True)
     description = Column(Text, nullable=True)
     icon_url = Column(String(500), nullable=True)
     requires_location_privacy = Column(Boolean, default=False)
+    color_code = Column(String(20), nullable=True, default="#2B164D")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -252,10 +266,37 @@ class VisibilityType(Base):
 # 📁 Group 4: Problems & Interactions
 # ==========================================
 
+# ==========================================
+# 📁 Group 3b: Problem Clusters (AI Grouping)
+# ==========================================
+
+class ProblemCluster(Base):
+    __tablename__ = "problem_clusters"
+
+    cluster_id     = Column(Integer, primary_key=True, index=True)
+    category_id    = Column(Integer, ForeignKey("categories.category_id"), nullable=True)
+    status_id      = Column(Integer, ForeignKey("statuses.status_id"), nullable=True)
+    ai_summary     = Column(Text, nullable=True)       # AI-generated summary text
+    location_label = Column(String(500), nullable=True) # Building / location name
+    post_count     = Column(Integer, default=1)
+    first_posted_at = Column(DateTime, nullable=True)
+    last_posted_at  = Column(DateTime, nullable=True)
+    created_at     = Column(DateTime, default=datetime.utcnow)
+    updated_at     = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    category = relationship("Category")
+    status   = relationship("Status")
+    problems = relationship("Problem", back_populates="cluster")
+
+
 class Problem(Base):
     __tablename__ = "problems"
 
     problem_id = Column(Integer, primary_key=True, index=True)
+    ticket_id = Column(String(50), unique=True, index=True, nullable=True)
+    parent_problem_id = Column(Integer, ForeignKey("problems.problem_id"), nullable=True)
+    cluster_id = Column(Integer, ForeignKey("problem_clusters.cluster_id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.category_id"), nullable=False)
     visibility_id = Column(Integer, ForeignKey("visibility_types.visibility_id"), nullable=False)
@@ -266,13 +307,17 @@ class Problem(Base):
     longitude = Column(DECIMAL(11, 8), nullable=True)
     building_name = Column(String(255), nullable=True)
     is_deleted = Column(Boolean, default=False)
+    is_hidden = Column(Boolean, default=False)
     is_flagged = Column(Boolean, default=False)
     flagged_reason = Column(String(255), nullable=True)
     llm_analysis = Column(JSON, nullable=True)
+    sla_due_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
 
     # Relationships
+    parent_problem = relationship("Problem", remote_side=[problem_id], backref="merged_duplicates")
+    cluster = relationship("ProblemCluster", back_populates="problems")
     author = relationship("User", back_populates="problems", foreign_keys="[Problem.user_id]")
     category = relationship("Category", back_populates="problems")
     status = relationship("Status", back_populates="problems")
@@ -282,6 +327,7 @@ class Problem(Base):
     attachments = relationship("ProblemAttachment", back_populates="problem", cascade="all, delete-orphan")
     status_histories = relationship("ProblemStatusHistory", back_populates="problem", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="problem")
+
 
 
 class ProblemLike(Base):

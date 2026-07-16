@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Select from 'react-select';
 import api from '../services/api';
-import { Trash2, RefreshCw, Filter, Eye, X } from 'lucide-react';
+import { Trash2, RefreshCw, Filter, Eye, X, Download } from 'lucide-react';
 
 // Role options are static — matches the roles table in the DB
 const ROLE_OPTIONS = [
@@ -71,13 +71,16 @@ const ManageProblems = () => {
   const [selectedRoles,      setSelectedRoles]      = useState([]);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedStatuses,   setSelectedStatuses]   = useState([]);
+  const [searchTerm,         setSearchTerm]         = useState('');
+  const [startDate,          setStartDate]          = useState('');
+  const [endDate,            setEndDate]            = useState('');
 
   // ── Fetch categories for the filter dropdown ──────────────────────────────
   useEffect(() => {
     api.get('/problems/categories')
       .then(res => {
         const cats = res.data?.data?.items || [];
-        setCategoryOptions(cats.map(c => ({ value: c.id, label: c.name })));
+        setCategoryOptions(cats.map(c => ({ value: c.category_id || c.id, label: c.category_name || c.name })));
       })
       .catch(() => {});
   }, []);
@@ -144,8 +147,27 @@ const ManageProblems = () => {
       filtered = filtered.filter(p => statuses.includes(p.status));
     }
 
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(p =>
+        (p.title && p.title.toLowerCase().includes(term)) ||
+        (p.id && String(p.id).includes(term))
+      );
+    }
+
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      filtered = filtered.filter(p => new Date(p.created_at) >= start);
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(p => new Date(p.created_at) <= end);
+    }
+
     setProblems(filtered);
-  }, [selectedRoles, selectedCategories, selectedStatuses, allProblems]);
+  }, [selectedRoles, selectedCategories, selectedStatuses, searchTerm, startDate, endDate, allProblems]);
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleStatusChange = async (problemId, newStatus) => {
@@ -176,9 +198,39 @@ const ManageProblems = () => {
     setSelectedRoles([]);
     setSelectedCategories([]);
     setSelectedStatuses([]);
+    setSearchTerm('');
+    setStartDate('');
+    setEndDate('');
   };
 
-  const isFiltered = selectedRoles.length > 0 || selectedCategories.length > 0 || selectedStatuses.length > 0;
+  const isFiltered = selectedRoles.length > 0 || selectedCategories.length > 0 || selectedStatuses.length > 0 || searchTerm !== '' || startDate !== '' || endDate !== '';
+
+  const exportToCSV = () => {
+    const headers = ['ID', 'Category', 'Description', 'Author / Role', 'Location', 'Status', 'Date'];
+    const rows = problems.map(p => {
+      const roleLabel = ROLE_OPTIONS.find(r => r.value === p.author?.role_id)?.label.split(' ')[0] || 'N/A';
+      return [
+        p.id,
+        `"${(p.category_name || 'N/A').replace(/"/g, '""')}"`,
+        `"${(p.description || '').replace(/"/g, '""')}"`,
+        `"${(p.author?.display_name || 'ไม่ระบุตัวตน...')} (${roleLabel})"`.replace(/"/g, '""'),
+        `"${(p.building_name || 'ไม่ระบุสถานที่').replace(/"/g, '""')}"`,
+        p.status,
+        new Date(p.created_at).toLocaleDateString()
+      ];
+    });
+    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    
+    // BOM for Excel UTF-8
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "problems_report.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const getStatusBadgeClass = (status) => {
     switch (status) {
@@ -209,13 +261,22 @@ const ManageProblems = () => {
             <span className="font-semibold">{allProblems.length}</span> total problems
           </p>
         </div>
-        <button
-          onClick={fetchProblems}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 border rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <RefreshCw size={16} />
-          Refresh
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={exportToCSV}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+          >
+            <Download size={16} />
+            Export to CSV
+          </button>
+          <button
+            onClick={fetchProblems}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 border rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* ── Filter Panel ── */}
@@ -233,8 +294,40 @@ const ManageProblems = () => {
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
+        <div className="mb-4">
+          <input
+            type="text"
+            placeholder="Search by title or ID..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#2B164D]/20 focus:border-[#2B164D] outline-none text-sm transition-all"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="md:col-span-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wider">
+              From Date
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-sm text-gray-700 focus:ring-2 focus:ring-[#2B164D]/20 outline-none"
+            />
+          </div>
+          <div className="md:col-span-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wider">
+              To Date
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-sm text-gray-700 focus:ring-2 focus:ring-[#2B164D]/20 outline-none"
+            />
+          </div>
+          <div className="md:col-span-1">
             <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wider">
               User Roles
             </label>
@@ -249,7 +342,7 @@ const ManageProblems = () => {
             />
           </div>
 
-          <div>
+          <div className="md:col-span-1">
             <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wider">
               Problem Categories
             </label>
@@ -264,7 +357,7 @@ const ManageProblems = () => {
             />
           </div>
 
-          <div>
+          <div className="md:col-span-1">
             <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wider">
               Status
             </label>
@@ -288,10 +381,9 @@ const ManageProblems = () => {
             <thead>
               <tr className="bg-gray-50 border-b text-xs font-semibold text-gray-500 uppercase tracking-wider">
                 <th className="p-4 w-16">ID</th>
-                <th className="p-4">Title</th>
                 <th className="p-4">Category</th>
-                <th className="p-4">Author</th>
-                <th className="p-4">Role</th>
+                <th className="p-4">รายละเอียด</th>
+                <th className="p-4">Author / Role</th>
                 <th className="p-4">LOCATION (สถานที่)</th>
                 <th className="p-4">Date</th>
                 <th className="p-4 w-40">Status</th>
@@ -304,23 +396,22 @@ const ManageProblems = () => {
                 <tr key={problem.id} className="hover:bg-gray-50 transition-colors">
                   <td className="p-4 font-medium text-gray-400 text-xs">#{problem.id}</td>
                   <td className="p-4">
-                    <p className="text-gray-900 font-medium truncate max-w-xs" title={problem.title}>
-                      {problem.title}
-                    </p>
-                    <p className="text-gray-400 text-xs truncate max-w-xs mt-0.5" title={problem.description}>
-                      {problem.description}
-                    </p>
-                  </td>
-                  <td className="p-4">
                     <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs rounded-md font-medium">
                       {problem.category_name || 'N/A'}
                     </span>
                   </td>
-                  <td className="p-4 text-gray-700 font-medium">{problem.author?.display_name || 'Unknown'}</td>
                   <td className="p-4">
-                    <span className="text-xs text-gray-500">
+                    <div className="max-w-[200px] truncate text-sm text-gray-700" title={problem.description}>
+                      {problem.description}
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <div className="text-sm font-medium text-gray-900">
+                      {problem.author?.display_name || 'ไม่ระบุตัวตน...'}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
                       {ROLE_OPTIONS.find(r => r.value === problem.author?.role_id)?.label.split(' ')[0] || 'N/A'}
-                    </span>
+                    </div>
                   </td>
                   <td className="p-4 text-gray-700 text-xs">{problem.building_name || 'ไม่ระบุสถานที่'}</td>
                   <td className="p-4 text-gray-500 text-xs">{new Date(problem.created_at).toLocaleDateString()}</td>
@@ -385,13 +476,8 @@ const ManageProblems = () => {
             
             <div className="p-6 space-y-6">
               <div>
-                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Title</h4>
-                <p className="text-gray-900 font-medium text-lg">{selectedProblem.title}</p>
-              </div>
-
-              <div>
                 <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Description</h4>
-                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{selectedProblem.description}</p>
+                <p className="text-gray-900 font-medium text-lg whitespace-pre-wrap leading-relaxed">{selectedProblem.description}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-6">
@@ -417,6 +503,12 @@ const ManageProblems = () => {
                 <div>
                   <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Reporter</h4>
                   <p className="text-gray-700 font-medium">{selectedProblem.author?.display_name || 'Unknown'}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Status</h4>
+                  <span className={`px-2 py-1 text-xs rounded-md font-bold ${getStatusBadgeClass(selectedProblem.status)}`}>
+                    {selectedProblem.status}
+                  </span>
                 </div>
                 <div>
                   <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Date Submitted</h4>

@@ -1,9 +1,11 @@
 // src/pages/super-admin/UserManagement.jsx
 import React, { useEffect, useState, useCallback } from 'react';
 import { fetchUsers, banUser, unbanUser } from '../../services/userService';
+import api from '../../services/api';
 import {
   Search, Users, Shield, Ban, CheckCircle2, RefreshCw,
   GraduationCap, Briefcase, Globe, Ghost, ChevronDown,
+  MoreVertical, Eye, Edit, Trash2, ShieldAlert, X,
 } from 'lucide-react';
 
 // ── Role badge ─────────────────────────────────────────────────
@@ -106,10 +108,33 @@ const SAUserManagement = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast]     = useState('');
 
+  const [activeMenuUserId, setActiveMenuUserId] = useState(null);
+  const [editUser, setEditUser] = useState(null);
+  const [editRole, setEditRole] = useState('');
+  const [editStatus, setEditStatus] = useState(true);
+  const [editCategory, setEditCategory] = useState(null);
+  const [availableCategories, setAvailableCategories] = useState([]);
+  const [showResetPwdModal, setShowResetPwdModal] = useState(false);
+  const [resetPwdUser, setResetPwdUser] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
   };
+
+  const loadCategories = useCallback(async () => {
+    try {
+      const res = await api.get('/problems/categories');
+      setAvailableCategories(res.data?.data?.items || []);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -124,7 +149,10 @@ const SAUserManagement = () => {
     }
   }, []);
 
-  useEffect(() => { loadUsers(); }, [loadUsers]);
+  useEffect(() => { 
+    loadUsers(); 
+    loadCategories();
+  }, [loadUsers, loadCategories]);
 
   const handleToggleBan = async () => {
     if (!dialog) return;
@@ -322,18 +350,62 @@ const SAUserManagement = () => {
                       </td>
                       <td><RoleBadge role={u.role} /></td>
                       <td><StatusBadge isActive={u.is_active} /></td>
-                      <td className="text-right">
+                      <td className="text-right p-4 relative">
                         <button
-                          id={`user-action-btn-${u.user_id}`}
-                          onClick={() => setDialog({ user: u, action: u.is_active ? 'ban' : 'unban' })}
-                          className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border shadow-sm ${
-                            u.is_active
-                              ? 'bg-white border-rose-200 text-rose-600 hover:bg-rose-50'
-                              : 'bg-white border-emerald-200 text-emerald-600 hover:bg-emerald-50'
-                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMenuUserId(activeMenuUserId === u.user_id ? null : u.user_id);
+                          }}
+                          className="inline-flex items-center text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                          title="เมนูเพิ่มเติม"
                         >
-                          {u.is_active ? 'Ban' : 'Unban'}
+                          <MoreVertical size={16} />
                         </button>
+                        {activeMenuUserId === u.user_id && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setActiveMenuUserId(null)} />
+                            <div className="absolute right-4 top-10 bg-white border border-slate-100 rounded-lg shadow-lg z-20 py-1.5 min-w-[150px] text-left">
+                              <button
+                                onClick={() => {
+                                  setActiveMenuUserId(null);
+                                  setEditUser(u);
+                                  setEditRole(u.role);
+                                  setEditStatus(u.is_active);
+                                  setEditCategory(u.category_id || (u.categories && u.categories[0]?.id) || null);
+                                }}
+                                className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 text-xs font-medium flex items-center gap-2"
+                              >
+                                <Edit className="w-3.5 h-3.5 text-emerald-500" />
+                                แก้ไข (บทบาท/สถานะ)
+                              </button>
+                              {u.role === 'category_admin' && (
+                                <button
+                                  onClick={() => {
+                                    setActiveMenuUserId(null);
+                                    setResetPwdUser(u);
+                                    setNewPassword('');
+                                    setShowResetPwdModal(true);
+                                  }}
+                                  className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 text-xs font-medium flex items-center gap-2"
+                                >
+                                  <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                                  รีเซ็ตรหัสผ่าน
+                                </button>
+                              )}
+                              <button
+                                onClick={() => {
+                                  setActiveMenuUserId(null);
+                                  setShowDeleteConfirm(u);
+                                  setIsDeleting(false);
+                                }}
+                                className="w-full text-left px-4 py-2 hover:bg-slate-50 text-red-600 text-xs font-medium flex items-center gap-2"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                                ลบผู้ใช้งาน
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </td>
                     </tr>
                   );
@@ -349,6 +421,208 @@ const SAUserManagement = () => {
           </div>
         )}
       </div>
+
+      {/* Edit User Modal */}
+      {editUser && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden text-left">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">แก้ไขบทบาทและสถานะ</h3>
+                  <p className="text-xs text-slate-500 mt-1">แก้ไขข้อมูลผู้ใช้: {editUser.display_name || editUser.email || editUser.ip_address}</p>
+                </div>
+                <button onClick={() => setEditUser(null)} className="text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 p-1.5 rounded-lg">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">บทบาท (Role)</label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm bg-white"
+                  >
+                    <option value="student">Student</option>
+                    <option value="staff">Staff</option>
+                    <option value="public">Public</option>
+                    <option value="category_admin">Category Admin (แอดมินปัญหา)</option>
+                    <option value="super_admin">Super Admin</option>
+                  </select>
+                </div>
+
+                {editRole === 'category_admin' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">หมวดหมู่ที่ดูแล (Category)</label>
+                    <select
+                      value={editCategory || ''}
+                      onChange={(e) => setEditCategory(Number(e.target.value) || null)}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm bg-white"
+                    >
+                      <option value="">เลือกหมวดหมู่...</option>
+                      {availableCategories.map((c) => (
+                        <option key={c.category_id || c.id} value={c.category_id || c.id}>
+                          {c.category_name || c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">สถานะการใช้งาน (Status)</label>
+                  <select
+                    value={editStatus ? 'active' : 'suspended'}
+                    onChange={(e) => setEditStatus(e.target.value === 'active')}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm bg-white"
+                  >
+                    <option value="active">Active (ปกติ)</option>
+                    <option value="suspended">Suspended / Banned (ระงับการใช้งาน)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t flex gap-3 justify-end">
+              <button
+                onClick={() => setEditUser(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+                disabled={isUpdating}
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={async () => {
+                  setIsUpdating(true);
+                  try {
+                    await api.put(`/users/${editUser.user_id}`, {
+                      role: editRole,
+                      is_active: editStatus,
+                      category_id: editCategory,
+                    });
+                    showToast("อัปเดตข้อมูลผู้ใช้สำเร็จ!");
+                    setEditUser(null);
+                    loadUsers();
+                  } catch (err) {
+                    showToast("อัปเดตล้มเหลว: " + (err.response?.data?.detail || err.message));
+                  } finally {
+                    setIsUpdating(false);
+                  }
+                }}
+                disabled={isUpdating}
+                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 animate-pulse"
+              >
+                {isUpdating ? 'กำลังบันทึก...' : 'บันทึก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {showResetPwdModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden text-left">
+            <div className="p-6">
+              <h3 className="text-lg font-bold text-slate-800 mb-2">รีเซ็ตรหัสผ่าน</h3>
+              <p className="text-xs text-slate-500 mb-4">
+                ตั้งค่ารหัสผ่านใหม่สำหรับแอดมินปัญหานี้: <span className="font-semibold text-slate-700">{resetPwdUser?.display_name || resetPwdUser?.email}</span>
+              </p>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">รหัสผ่านใหม่ *</label>
+                <input 
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm transition-all"
+                  placeholder="อย่างน้อย 6 ตัวอักษร"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex gap-3 justify-end border-t">
+              <button
+                onClick={() => setShowResetPwdModal(false)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+                disabled={isResetting}
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={async () => {
+                  if (!newPassword.trim() || newPassword.length < 6) {
+                    alert("กรุณากรอกรหัสผ่านอย่างน้อย 6 ตัวอักษร");
+                    return;
+                  }
+                  setIsResetting(true);
+                  try {
+                    await api.post(`/users/${resetPwdUser.user_id}/reset-password`, { password: newPassword });
+                    showToast("รีเซ็ตรหัสผ่านสำเร็จ!");
+                    setShowResetPwdModal(false);
+                    setNewPassword('');
+                  } catch (err) {
+                    alert("รีเซ็ตรหัสผ่านล้มเหลว: " + (err.response?.data?.detail || err.message));
+                  } finally {
+                    setIsResetting(false);
+                  }
+                }}
+                disabled={isResetting}
+                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {isResetting ? 'กำลังเปลี่ยน...' : 'บันทึกรหัสผ่านใหม่'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden text-left">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">ลบผู้ใช้งาน?</h3>
+              <p className="text-slate-500 text-sm">
+                คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้งาน{' '}
+                <span className="font-semibold text-gray-800">{showDeleteConfirm.display_name || showDeleteConfirm.email}</span>?
+                การดำเนินการนี้ไม่สามารถย้อนกลับได้
+              </p>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex gap-3 justify-end border-t">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+                disabled={isDeleting}
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={async () => {
+                  setIsDeleting(true);
+                  try {
+                    await api.delete(`/users/${showDeleteConfirm.user_id}`);
+                    showToast("ลบผู้ใช้งานสำเร็จ!");
+                    setShowDeleteConfirm(null);
+                    loadUsers();
+                  } catch (err) {
+                    showToast("ลบผู้ใช้งานล้มเหลว: " + (err.response?.data?.detail || err.message));
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {isDeleting ? 'กำลังลบ...' : 'ยืนยันลบ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

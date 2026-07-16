@@ -80,15 +80,28 @@ def list_users(
     users = query.all()
 
     result = []
-    from app.models import AnonymousUser
+    from app.models import AnonymousUser, CategoryAdmin, Category
     for u in users:
         role = get_user_role(u.user_id, db)
         display_name = get_display_name(u.user_id, db)
         ip_address = None
+        category_name = None
+        category_id = None
+        
         if role == "anonymous":
             anon = db.query(AnonymousUser).filter(AnonymousUser.user_id == u.user_id).first()
             if anon:
                 ip_address = anon.raw_ip or anon.hashed_ip
+        elif role == "category_admin":
+            cat_admin = db.query(CategoryAdmin).filter(
+                CategoryAdmin.user_id == u.user_id,
+                CategoryAdmin.is_active == True
+            ).first()
+            if cat_admin and cat_admin.category_id:
+                category_id = cat_admin.category_id
+                cat = db.query(Category).filter(Category.category_id == category_id).first()
+                if cat:
+                    category_name = cat.category_name
                 
         result.append({
             "user_id": u.user_id,
@@ -97,6 +110,8 @@ def list_users(
             "role": role,
             "display_name": display_name,
             "ip_address": ip_address,
+            "category_name": category_name,
+            "category_id": category_id,
         })
 
     return StandardResponse(
@@ -282,7 +297,7 @@ def register_invite(
 ):
     print(f"--- DEBUG /register-invite ---")
     print(f"Received Token: {payload.token}")
-    print(f"Payload: {payload.dict()}")
+    print(f"Payload: {payload.model_dump()}")
     
     # 1. Look up token
     invite = db.query(UserInvite).filter(UserInvite.token == payload.token).first()
@@ -680,4 +695,142 @@ def delete_user(
         message=f"User #{user_id} has been deleted",
         data={"user_id": user_id},
     )
+
+
+
+# ──────────────────────────────────────────────
+# Onboarding – save first-time SSO profile data
+# ──────────────────────────────────────────────
+@router.post("/me/onboarding", response_model=StandardResponse)
+def complete_onboarding(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Called once after SSO login for new users.
+    Student:  faculty_id, education_level (year), age, gender, student_prefix (2-char)
+    Staff:    age, gender
+    """
+    student = db.query(Student).filter(Student.user_id == current_user.user_id).first()
+    if student:
+        if "faculty_id" in payload and payload["faculty_id"]:
+            student.faculty_id = int(payload["faculty_id"])
+        if "education_level" in payload and payload["education_level"]:
+            try:
+                student.year = int(payload["education_level"])
+            except (ValueError, TypeError):
+                pass
+        if "age" in payload and payload["age"]:
+            try:
+                student.age = int(payload["age"])
+            except (ValueError, TypeError):
+                pass
+        if "gender" in payload and payload["gender"]:
+            student.gender = payload["gender"]
+        # Update student_id prefix if provided
+        if "student_prefix" in payload and payload["student_prefix"]:
+            prefix = str(payload["student_prefix"])[:2]
+            existing_id = student.student_id or ""
+            if len(existing_id) >= 2:
+                student.student_id = prefix + existing_id[2:]
+            else:
+                student.student_id = prefix + existing_id
+        db.commit()
+        return StandardResponse(success=True, message="Onboarding complete", data={"role": "student"})
+
+    stf = db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
+    if stf:
+        if "age" in payload and payload["age"]:
+            pass  # Staff model has no age column — store in a note or skip
+        if "gender" in payload and payload["gender"]:
+            pass  # Staff model has no gender column — extend model later if needed
+        db.commit()
+        return StandardResponse(success=True, message="Onboarding complete", data={"role": "staff"})
+
+    raise HTTPException(404, "User profile not found")
+
+
+@router.put("/{user_id}", response_model=StandardResponse)
+def update_user(
+    user_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_super_admin(current_user, db)
+    
+    target = db.query(User).filter(User.user_id == user_id, User.is_deleted == False).first()
+    if not target:
+        raise HTTPException(404, "User not found")
+        
+    if "is_active" in payload:
+        target.is_active = bool(payload["is_active"])
+        
+    new_role = payload.get("role")
+    if new_role:
+        db.query(SuperAdmin).filter(SuperAdmin.user_id == user_id).delete()
+        db.query(CategoryAdmin).filter(CategoryAdmin.user_id == user_id).delete()
+        db.query(Student).filter(Student.user_id == user_id).delete()
+        db.query(Staff).filter(Staff.user_id == user_id).delete()
+        db.query(PublicUser).filter(PublicUser.user_id == user_id).delete()
+        
+        if new_role == "super_admin":
+            db.add(SuperAdmin(user_id=user_id, is_active=True))
+            db.add(Staff(user_id=user_id, employee_id=f"EMP-{user_id}", staff_name="System Administrator", staff_role="Super Admin"))
+        elif new_role == "category_admin":
+            cat_id = payload.get("category_id")
+            if not cat_id and payload.get("categories"):
+                cat_id = payload["categories"][0]
+            db.add(CategoryAdmin(user_id=user_id, category_id=cat_id, is_active=True))
+            db.add(Staff(user_id=user_id, employee_id=f"EMP-{user_id}", staff_name="Category Admin", staff_role="Category Admin"))
+        elif new_role == "staff":
+            db.add(Staff(user_id=user_id, employee_id=f"EMP-{user_id}", staff_name="Staff User", staff_role="Staff"))
+        elif new_role == "student":
+            db.add(Student(user_id=user_id, student_id=f"6600{user_id:04d}", student_name="Student User", year=1, age=20, gender="Male"))
+        elif new_role == "public":
+            db.add(PublicUser(user_id=user_id, first_name="Public", last_name="User"))
+            
+    if new_role == "category_admin" or (get_user_role(user_id, db) == "category_admin"):
+        cat_id = payload.get("category_id")
+        if not cat_id and payload.get("categories"):
+            cat_id = payload["categories"][0]
+        if cat_id:
+            cat_adm = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == user_id).first()
+            if cat_adm:
+                cat_adm.category_id = cat_id
+                cat_adm.is_active = True
+                
+    db.commit()
+    return StandardResponse(success=True, message="User updated successfully")
+
+
+@router.post("/{user_id}/reset-password", response_model=StandardResponse)
+def reset_password(
+    user_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_super_admin(current_user, db)
+    target = db.query(User).filter(User.user_id == user_id, User.is_deleted == False).first()
+    if not target:
+        raise HTTPException(404, "User not found")
+        
+    new_password = payload.get("password")
+    if not new_password or len(new_password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters long")
+        
+    target.password_hash = hash_password(new_password)
+    
+    audit = AuditLog(
+        admin_id=current_user.user_id,
+        action_type="RESET_PASSWORD",
+        table_name="users",
+        record_id=user_id,
+        new_value={"message": "Password reset successfully"}
+    )
+    db.add(audit)
+    db.commit()
+    return StandardResponse(success=True, message="Password reset successfully")
 

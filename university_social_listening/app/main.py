@@ -57,7 +57,7 @@ app.add_middleware(
 # ──────────────────────────────────────────────
 # Routers
 # ──────────────────────────────────────────────
-from app.routers import problems, auth, users, settings, audit, buildings  # noqa: E402
+from app.routers import problems, auth, users, settings, audit, buildings, public_user_types, clusters  # noqa: E402
 
 app.include_router(auth.router,      prefix="/api/v1/auth",      tags=["Authentication"])
 app.include_router(problems.router,  prefix="/api/v1/problems",  tags=["Problems"])
@@ -65,6 +65,8 @@ app.include_router(users.router,     prefix="/api/v1/users",     tags=["Users"])
 app.include_router(settings.router,  prefix="/api/v1/settings",  tags=["Settings"])
 app.include_router(audit.router,     prefix="/api/v1/audit",     tags=["Audit"])
 app.include_router(buildings.router, prefix="/api/v1/buildings", tags=["Buildings"])
+app.include_router(public_user_types.router, prefix="/api/v1",  tags=["Public User Types"])
+app.include_router(clusters.router,  prefix="/api/v1/clusters",  tags=["AI Clusters"])
 
 # ──────────────────────────────────────────────
 # Health check

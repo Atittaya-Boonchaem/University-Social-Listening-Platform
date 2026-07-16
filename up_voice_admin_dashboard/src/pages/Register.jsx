@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 
 const Register = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get('token');
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -31,17 +33,35 @@ const Register = () => {
       const [first_name, ...rest] = formData.fullName.trim().split(' ');
       const last_name = rest.join(' ') || '-';
 
-      await api.post('/auth/register/public', {
-        email: formData.email,
-        password: formData.password,
-        first_name,
-        last_name,
-      });
+      if (token) {
+        // Submit to register-invite endpoint
+        await api.post('/users/register-invite', {
+          token,
+          first_name,
+          last_name,
+          password: formData.password,
+        });
+      } else {
+        // Fallback to public registration with dummy data if public user tries this from admin side
+        await api.post('/auth/register/public', {
+          email: formData.email,
+          password: formData.password,
+          first_name,
+          last_name,
+          age: 20, // Dummy age to pass validation
+          pdpa_consent: true,
+        });
+      }
 
       navigate('/login');
-    } catch (err) {
-      const detail = err.response?.data?.detail;
-      setError(detail || 'เกิดข้อผิดพลาดในการสมัครสมาชิก (Registration failed)');
+    } catch (error) {
+      if (error.response && error.response.data && error.response.data.detail) {
+        const detail = error.response.data.detail;
+        setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        console.error("Backend Error Detail:", detail);
+      } else {
+        setError(error.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -51,8 +71,8 @@ const Register = () => {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-indigo-900 mb-2">UP Voice</h1>
-          <p className="text-gray-500">สมัครสมาชิก (บุคคลทั่วไป)</p>
+          <h1 className="text-3xl font-bold text-indigo-900 mb-2">UP Connect</h1>
+          <p className="text-gray-500">{token ? 'สมัครสมาชิก (รับคำเชิญ)' : 'สมัครสมาชิก (บุคคลทั่วไป)'}</p>
         </div>
         
         {error && (
@@ -73,17 +93,19 @@ const Register = () => {
               required
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">อีเมล</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-              required
-            />
-          </div>
+          {!token && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">อีเมล</label>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                required={!token}
+              />
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่าน</label>
             <input

@@ -18,11 +18,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const API_BASE = 'http://127.0.0.1:8000/api/v1';
-const UP_PURPLE = '#2B164D';
+
 
 // ─── TypeScript Interfaces ────────────────────────────────────────────────────
 export interface Problem {
@@ -30,7 +31,10 @@ export interface Problem {
   problem_id?: number;
   title: string;
   description: string | null;
-  image_url: string | null;
+  image_url?: string | null;
+  image?: string | null;
+  photo?: string | null;
+  attachments?: { file_url: string }[];
   visibility: 'public' | 'internal';
   visibility_name?: 'public' | 'internal';
   is_staff_only: boolean;
@@ -50,6 +54,10 @@ export interface Problem {
   category: Category | null;
   building: Building | null;
   location: string | null;
+  building_name?: string | null;
+  category_name?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface Category {
@@ -193,7 +201,6 @@ function DeleteModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
 function ProblemCard({
   problem,
   userId,
-  onUpvote,
   onDeleteRequest,
 }: {
   problem: Problem;
@@ -201,109 +208,113 @@ function ProblemCard({
   onUpvote: (id: number) => void;
   onDeleteRequest: (id: number) => void;
 }) {
+  const navigate = useNavigate();
   const isOwn = userId !== null && problem.author_id === userId;
   const isInternal = problem.visibility === 'internal' || problem.visibility_name === 'internal';
-  const accentColor = isInternal ? '#E11D48' : '#10B981';
   
   const problemId = problem.problem_id ?? problem.id;
-  const authorName = problem.author?.display_name || problem.author_name || "ไม่ระบุตัวตน";
-  const imageUrl = resolveImageUrl(problem.image_url);
-  const [imgError, setImgError] = useState(false);
+  
+  // Use exact author name or fallback to generic role for the tag
+  let authorTag = 'ไม่ระบุตัวตน';
+  if (problem.author?.role === 'student' || problem.author_name?.includes('นิสิต')) authorTag = 'นิสิต';
+  else if (problem.author?.role === 'staff' || problem.author_name?.includes('บุคลากร')) authorTag = 'บุคลากร';
+
+  let rawImages: string[] = [];
+  if ((problem as any).images) rawImages = (problem as any).images;
+  else if ((problem as any).imageUrls) rawImages = (problem as any).imageUrls;
+  else if (problem.attachments && problem.attachments.length > 0) rawImages = problem.attachments.map(a => a.file_url);
+  else {
+    const single = problem.image_url || problem.image || problem.photo;
+    if (single) rawImages = [single];
+  }
+  const images = rawImages.map(url => resolveImageUrl(url)).filter(Boolean) as string[];
+
+  const [isExpanded, setIsExpanded] = useState(false);
 
   return (
     <article
-      className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden mb-4 hover:shadow-md transition-shadow duration-200"
-      style={{ borderLeft: `6px solid ${accentColor}` }}
+      onClick={() => navigate(`/issue/${problemId}`, { state: { problem } })}
+      className="glass-card ambient-shadow rounded-xl p-5 relative group overflow-hidden transition-all duration-300 hover:translate-y-[-2px] mb-stack-sm cursor-pointer"
     >
-      <div className="p-4">
-        <div className="flex items-center justify-between gap-2 mb-2.5">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-50 border border-purple-100 text-xs font-bold text-[#2B164D] max-w-[200px] truncate">
-            👁️ <span className="truncate">{authorName}</span>
-          </span>
-          <div className="flex gap-2">
-            {isInternal ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700">🔒 ภายใน</span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-700">🌐 สาธารณะ</span>
-            )}
+      {/* Profile Badge (Top Left) */}
+      <div className="absolute top-0 left-0">
+        <span className={`${isInternal ? 'bg-secondary' : 'bg-primary'} text-white text-[10px] font-bold px-3 py-1 rounded-br-lg tracking-wider uppercase`}>
+          {authorTag}
+        </span>
+      </div>
+
+      {/* Delete Action */}
+      {isOwn && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDeleteRequest(problemId); }}
+          className="absolute top-4 right-4 p-2 text-outline-variant hover:text-error hover:bg-error-container/20 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+        >
+          <span className="material-symbols-outlined text-[20px]">delete</span>
+        </button>
+      )}
+
+      <div className="mt-6 flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <div className={`px-2 py-0.5 ${isInternal ? 'bg-secondary-container/30 text-on-secondary-fixed-variant' : 'bg-tertiary-container/20 text-on-tertiary-container'} rounded text-[11px] font-bold`}>
+            {problem.category_name || (problem.category as any)?.category_name || problem.category?.name || 'หมวดหมู่ทั่วไป'}
           </div>
+          <span className="text-[12px] text-outline italic">{formatDateTime(problem.created_at)}</span>
+        </div>
+        
+        <div className="mt-1">
+          <p className={`font-body-md text-body-md text-on-surface leading-relaxed whitespace-pre-wrap ${!isExpanded ? 'line-clamp-3' : ''}`}>
+            {problem.description || problem.title || 'ไม่มีรายละเอียด'}
+          </p>
+          {(problem.description || problem.title || '').length > 100 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+              className="text-primary hover:underline cursor-pointer text-sm font-medium mt-1 inline-block"
+            >
+              {isExpanded ? 'ย่อความ...' : 'อ่านเพิ่มเติม...'}
+            </button>
+          )}
         </div>
 
-        <p className="text-[11px] text-slate-400 mb-2.5">
-          โพสต์เมื่อ: {formatDateTime(problem.created_at)}
-        </p>
-
-        <h3 className="font-bold text-slate-800 text-sm mb-1 leading-snug">
-          {problem.title}
-        </h3>
-
-        {(problem.building?.name || problem.location) && (
-          <div className="flex items-start gap-1 text-[11px] text-[#2B164D]/70 font-medium mb-3 mt-2 bg-purple-50/50 p-2 rounded-lg">
-            <span>📍</span>
-            <span className="flex-1 break-words">{problem.building?.name || problem.location}</span>
+        {/* Mock Image for now, or actual image */}
+        {images.length > 0 && (
+          <div className="w-full h-48 rounded-lg overflow-hidden bg-surface-container-highest mt-2">
+            <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url('${images[0]}')` }}></div>
           </div>
         )}
 
-        {imageUrl && !imgError && (
-          <div className="mt-3 rounded-xl overflow-hidden bg-slate-100 max-h-[280px] w-full border border-slate-200">
-            <img
-              src={imageUrl}
-              alt="Problem"
-              loading="lazy"
-              onError={() => setImgError(true)}
-              className="w-full h-full object-cover"
-            />
+        {/* Footer */}
+        <div className="mt-4 pt-4 border-t border-outline-variant/30 flex justify-between items-center">
+          <div className="flex items-center gap-2 text-primary">
+            <span className="material-symbols-outlined text-[18px]">location_on</span>
+            <span className="text-label-sm font-label-sm">{problem.building_name || problem.building?.name || problem.location || 'พิกัดมหาวิทยาลัยพะเยา'}</span>
           </div>
-        )}
-
-        {problem.description && (
-          <p className="mt-3 text-sm text-slate-600 line-clamp-3 leading-relaxed break-words whitespace-pre-wrap">
-            {problem.description}
-          </p>
-        )}
-
-        <hr className="border-slate-100 my-4" />
-
-        <div className="flex items-center justify-between h-9">
-          <button
-            onClick={() => onUpvote(problemId!)}
-            className={`
-              inline-flex items-center gap-1.5 h-full px-3.5 rounded-full text-sm font-semibold transition-all duration-200 shadow-sm
-              ${
-                problem.is_upvoted_by_me || problem.is_liked_by_me
-                  ? 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100'
-                  : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700'
+          
+          <div className="flex items-center gap-1">
+            {(() => {
+              const s = (problem as any).status_name || (problem as any).status?.status_name || 'OPEN';
+              if (s === 'IN_PROGRESS') {
+                return (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                    <span className="text-label-sm font-label-sm text-primary">กำลังดำเนินการ</span>
+                  </>
+                );
               }
-            `}
-          >
-            <span className={`transform transition-transform ${problem.is_upvoted_by_me || problem.is_liked_by_me ? 'scale-110' : ''}`}>
-              {problem.is_upvoted_by_me || problem.is_liked_by_me ? '❤️' : '🤍'}
-            </span>
-            <span>{(problem.upvote_count ?? 0) + (problem.like_count ?? 0)}</span>
-          </button>
-
-          <div className="flex gap-2 h-full">
-            {isOwn && (
-              <button
-                onClick={() => onDeleteRequest(problemId!)}
-                className="h-full px-3.5 rounded-full border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors shadow-sm flex items-center justify-center"
-                title="ลบโพสต์"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                  <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  <line x1="10" y1="11" x2="10" y2="17" />
-                  <line x1="14" y1="11" x2="14" y2="17" />
-                </svg>
-              </button>
-            )}
-            
-            <button
-              className="h-full px-3.5 rounded-full border border-slate-200 bg-slate-50 text-slate-500 text-xs font-semibold hover:bg-slate-100 transition-colors shadow-sm"
-              onClick={() => alert('ฟีเจอร์แชร์กำลังอยู่ในระหว่างพัฒนา')}
-            >
-              แชร์
-            </button>
+              if (s === 'RESOLVED' || s === 'CLOSED') {
+                return (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                    <span className="text-label-sm font-label-sm text-green-600">แก้ไขสำเร็จ</span>
+                  </>
+                );
+              }
+              return (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
+                  <span className="text-label-sm font-label-sm text-tertiary">รอดำเนินการ</span>
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -495,30 +506,42 @@ export default function HomeFeed() {
 
   return (
     <>
-      <div className="min-h-screen bg-slate-50 py-8 px-4">
-        <div className="max-w-[550px] mx-auto pb-20 md:pb-0">
+      {/* TopAppBar */}
+      <header className="md:hidden fixed top-0 left-0 w-full z-50 flex justify-between items-center px-4 h-16 bg-surface-container-low shadow-sm transition-colors duration-200 ease-in-out">
+        <div className="flex items-center gap-3">
+          <span className="material-symbols-outlined text-primary">hub</span>
+          <h1 className="font-headline-lg-mobile text-headline-lg-mobile font-bold text-primary">UP Connect</h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <button className="p-2 rounded-full hover:bg-surface-variant/50 transition-colors">
+            <span className="material-symbols-outlined text-on-surface-variant">search</span>
+          </button>
+          <div className="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-xs">
+            {localStorage.getItem('display_name')?.substring(0, 2).toUpperCase() || 'UP'}
+          </div>
+        </div>
+      </header>
+
+      <div className="min-h-screen bg-surface pt-24 md:pt-8 pb-8 px-4">
+        <div className="max-w-[600px] mx-auto pb-20 md:pb-0">
           
           {/* ── Page header ── */}
-          <header className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-[#2B164D]">
-              📣 UP Voice Feed
-            </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              กระดานรับฟังเสียงและปัญหาของชุมชนมหาวิทยาลัยพะเยา
-            </p>
-          </header>
+          <section className="mb-stack-lg">
+            <h2 className="font-headline-lg text-headline-lg text-primary mb-2">รายการปัญหาล่าสุด</h2>
+            <p className="font-body-md text-body-md text-on-surface-variant">รายงานปัญหาและการปรับปรุงภายในมหาวิทยาลัยพะเยา</p>
+          </section>
 
           {/* ── Tabs (Logged in users only) ── */}
           {isPrivileged && (
             <div className="mb-4">
-              <div className="flex items-end gap-1 border-b border-slate-200">
+              <div className="flex items-end gap-1 border-b border-outline-variant/30">
                 <button
                   id="tab-public"
                   onClick={() => { setActiveTab(0); }}
-                  className={`px-4 pb-2.5 text-sm font-bold border-b-2 transition-colors -mb-px ${
+                  className={`px-4 pb-2.5 text-label-md font-label-md border-b-2 transition-colors -mb-px ${
                     activeTab === 0
-                      ? 'border-emerald-500 text-emerald-600'
-                      : 'border-transparent text-slate-400 hover:text-slate-600'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-on-surface-variant hover:text-primary'
                   }`}
                 >
                   🌐 ฟีดสาธารณะ
@@ -526,10 +549,10 @@ export default function HomeFeed() {
               <button
                 id="tab-internal"
                 onClick={() => { setActiveTab(1); }}
-                className={`px-4 pb-2.5 text-sm font-bold border-b-2 transition-colors -mb-px ${
+                className={`px-4 pb-2.5 text-label-md font-label-md border-b-2 transition-colors -mb-px ${
                   activeTab === 1
-                    ? 'border-rose-500 text-rose-600'
-                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                    ? 'border-secondary text-secondary'
+                    : 'border-transparent text-on-surface-variant hover:text-secondary'
                 }`}
               >
                 🔒 ข่าวสารภายใน
@@ -584,10 +607,10 @@ export default function HomeFeed() {
                   id={`cat-chip-${cat.id}`}
                   onClick={() => setSelectedCategoryId(cat.id)}
                   className={`
-                    flex-shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-150
+                    flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-label-md font-label-md transition-all duration-200
                     ${isSelected
-                      ? 'bg-[#2B164D]/10 border-[#2B164D] text-[#2B164D]'
-                      : 'bg-white border-slate-300 text-slate-600 hover:border-[#2B164D]/40 hover:text-[#2B164D]'
+                      ? 'bg-primary text-white shadow-md'
+                      : 'bg-white border border-outline-variant/50 text-on-surface-variant hover:border-primary hover:text-primary'
                     }
                   `}
                 >
