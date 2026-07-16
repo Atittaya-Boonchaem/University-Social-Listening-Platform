@@ -2,7 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1/auth';
+const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1/auth';
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 const LS = {
@@ -411,7 +411,7 @@ export default function LoginPage() {
                 {/* SSO Primary Action */}
                 {activePanel === 'none' ? (
                   <button
-                    onClick={() => { window.location.href = 'http://localhost:8000/api/v1/auth/sso/login'; }}
+                    onClick={() => { window.location.href = 'https://university-social-listening-platform.onrender.com/api/v1/auth/sso/login'; }}
                     className="w-full py-4 px-6 bg-primary-container text-white rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-primary transition-all active:scale-[0.98] shadow-lg shadow-primary/10"
                   >
                     <svg className="w-5 h-5" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
 
 // Map faculty name → faculty_id (must match backend data)
 const FACULTY_OPTIONS = [

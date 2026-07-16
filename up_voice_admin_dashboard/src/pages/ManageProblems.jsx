@@ -57,7 +57,7 @@ const ManageProblems = () => {
   const getImageUrl = (url) => {
     if (!url) return '';
     if (url.startsWith('http')) return url;
-    const baseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1').replace(/\/api\/v1\/?$/, '');
+    const baseUrl = (import.meta.env.VITE_API_URL || 'https://university-social-listening-platform.onrender.com/api/v1').replace(/\/api\/v1\/?$/, '');
     return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
   };
 

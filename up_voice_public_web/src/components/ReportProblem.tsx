@@ -37,7 +37,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
 
 // University of Phayao default map centre
 const UP_CENTER: [number, number] = [19.0289, 99.8973];

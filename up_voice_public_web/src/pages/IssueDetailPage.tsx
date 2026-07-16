@@ -16,7 +16,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
 
 function resolveImageUrl(raw: string | null | undefined): string | null {
   if (!raw || raw.trim() === '') return null;

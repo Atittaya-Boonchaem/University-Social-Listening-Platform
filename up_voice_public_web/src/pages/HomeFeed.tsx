@@ -22,7 +22,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
 
 
 // ─── TypeScript Interfaces ────────────────────────────────────────────────────

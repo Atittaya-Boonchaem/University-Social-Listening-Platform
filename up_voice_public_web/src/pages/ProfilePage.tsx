@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
 const PROBLEMS_BASE = `${API_BASE}/problems`;
 
 const FACULTY_MAP: Record<number, string> = {

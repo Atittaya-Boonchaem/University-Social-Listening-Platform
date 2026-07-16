@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1/auth';
+const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1/auth';
 
 function parseError(data: unknown): string {
   if (!data || typeof data !== 'object') return 'เกิดข้อผิดพลาด';
@@ -51,7 +51,7 @@ export default function RegisterPage() {
   };
 
   useEffect(() => {
-    axios.get('http://127.0.0.1:8000/api/v1/public-user-types')
+    axios.get('https://university-social-listening-platform.onrender.com/api/v1/public-user-types')
       .then(res => {
         if (res.data?.success) {
           setTypes(res.data.data);
@@ -119,7 +119,7 @@ export default function RegisterPage() {
           password: formData.password,
           phone: formData.phone.trim() === '' ? null : formData.phone.trim(),
         };
-        res = await axios.post(`http://127.0.0.1:8000/api/v1/users/register-invite`, payload);
+        res = await axios.post(`https://university-social-listening-platform.onrender.com/api/v1/users/register-invite`, payload);
       } else {
         // Explicitly construct payload to perfectly match PublicUserRegisterCreate
         const payload = {

@@ -11,7 +11,7 @@ import {
   MapPin, Calendar, Hash, Tag, Loader2, CheckCircle2, Clock, AlertCircle
 } from 'lucide-react';
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
 
 const STATUS_OPTIONS = [
   { value: 'OPEN',        label: '🟠 รอดำเนินการ',   color: '#F97316' },
