@@ -214,10 +214,7 @@ export default function ReportProblem({
     };
   }, [selectedCategory, categories]);
 
-  const selectedCategoryName = React.useMemo(() => {
-    const cat = categories.find((c) => String(c.id) === selectedCategory);
-    return cat ? cat.name : 'ทั่วไป';
-  }, [selectedCategory, categories]);
+
 
   // ─── Toast helpers ────────────────────────────────────────────────────────────
   const showToast = useCallback((message: string, variant: ToastVariant = 'error') => {
@@ -523,17 +520,7 @@ export default function ReportProblem({
                   {categories.map((cat) => {
                     const isSelected = selectedCategory === String(cat.id);
                     
-                    // Map category name to icon
-                    const icons: Record<string, string> = {
-                      'อาคารและสถานที่': 'apartment',
-                      'ไฟฟ้าและแสงสว่าง': 'lightbulb',
-                      'ประปาและสุขาภิบาล': 'water_drop',
-                      'ความปลอดภัย': 'shield',
-                      'ไอทีและเครือข่าย': 'router',
-                      'ความสะอาด': 'cleaning_services',
-                      'อื่นๆ': 'more_horiz',
-                    };
-                    const iconName = icons[cat.name] || 'category';
+
 
                     return (
                       <button
