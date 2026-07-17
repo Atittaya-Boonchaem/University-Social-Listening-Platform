@@ -174,64 +174,6 @@ export default function IssueDetailPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-primary-container/10 p-4 rounded-xl border border-primary-fixed-dim flex flex-col justify-between">
-            <span className="text-on-primary-fixed-variant text-label-sm font-label-sm">ปัญหาที่คล้ายกัน</span>
-            <div className="flex items-baseline gap-2 mt-2">
-              {isAiLoading ? (
-                <span className="text-body-md text-primary animate-pulse">กำลังสแกน...</span>
-              ) : (
-                <>
-                  <span className="text-headline-xl font-headline-xl text-primary">{aiAnalysis?.similar_posts_count || 0}</span>
-                  <span className="text-body-md text-on-primary-fixed-variant">โพสต์</span>
-                </>
-              )}
-            </div>
-            <p className="text-label-sm text-primary/70 mt-2">
-              {aiAnalysis?.similar_posts_count > 0 ? 'พบปัญหาลักษณะนี้ในระบบ' : 'ยังไม่มีปัญหาซ้ำซ้อน'}
-            </p>
-          </div>
-          
-          <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant/20 flex flex-col justify-between">
-            <span className="text-on-surface-variant text-label-sm font-label-sm">การประเมินจาก AI</span>
-            <div className="flex items-center gap-2 mt-2">
-              {isAiLoading ? (
-                <span className="text-body-md text-on-surface-variant animate-pulse">กำลังประเมิน...</span>
-              ) : (
-                <span className="text-label-sm font-bold text-secondary">
-                  วิเคราะห์เสร็จสิ้น ✨
-                </span>
-              )}
-            </div>
-            <p className="text-label-sm text-on-surface-variant mt-2">ข้อมูลนี้อัปเดตแบบเรียลไทม์</p>
-          </div>
-        </div>
-
-        {/* Similar Problems Section */}
-        {!isAiLoading && aiAnalysis?.similar_posts && aiAnalysis.similar_posts.length > 0 && (
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-outline-variant/30 space-y-4">
-            <div className="flex items-center gap-2 border-b border-surface-variant pb-3">
-              <span className="material-symbols-outlined text-amber-500" style={{ fontVariationSettings: "'FILL' 1" }}>warning</span>
-              <h3 className="font-headline-md text-[18px] text-on-surface">ปัญหาที่คล้ายกันในระบบ ({aiAnalysis.similar_posts.length})</h3>
-            </div>
-            <div className="flex flex-col gap-3">
-              {aiAnalysis.similar_posts.map((prob: any, idx: number) => (
-                <div key={idx} className="bg-surface-container-low p-4 rounded-xl border border-outline-variant/50 flex items-center justify-between">
-                  <div className="flex-1 min-w-0 pr-3">
-                    <p className="text-sm font-bold text-slate-800 truncate">{prob.title || 'ไม่มีหัวข้อ'}</p>
-                    <p className="text-xs text-slate-500 truncate mt-1">{prob.description || 'ไม่มีรายละเอียด'}</p>
-                  </div>
-                  <button 
-                    onClick={() => navigate(`/issue/${prob.id || prob.problem_id}`)}
-                    className="flex-shrink-0 px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/95 transition-colors"
-                  >
-                    ดูรายละเอียด
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {problem.category_name !== 'ปัญหาเกี่ยวกับการเรียน' && problem.category?.name !== 'การเรียนการสอน' && (
           <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-outline-variant/30">
