@@ -396,9 +396,9 @@ const BuildingManagement = () => {
   }, [loadBuildings]);
 
   // ── Filtered list ────────────────────────────────────────────
-  const filtered = buildings.filter((b) =>
-    b.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = buildings
+    .filter((b) => b.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.building_id - b.building_id);
 
   // ── Stats ────────────────────────────────────────────────────
   const withCoords = buildings.filter(
