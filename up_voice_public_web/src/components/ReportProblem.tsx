@@ -533,9 +533,6 @@ export default function ReportProblem({
                             ? 'border-primary bg-primary/5 ring-1 ring-primary'
                             : 'border-outline-variant bg-surface hover:border-primary hover:bg-primary/5'
                         }`}
-                        style={{
-                          gridColumn: cat.name === 'อื่นๆ' ? '1 / -1' : 'auto'
-                        }}
                       >
                         <span className={`font-label-sm text-label-sm text-center ${isSelected ? 'text-primary font-bold' : 'text-on-surface'}`}>
                           {cat.name}
