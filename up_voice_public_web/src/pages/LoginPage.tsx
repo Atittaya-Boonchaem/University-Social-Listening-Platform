@@ -10,6 +10,7 @@ const LS = {
   set: (k: string, v: string) => localStorage.setItem(k, v),
   clear: () => localStorage.clear(),
   saveUser: (data: Record<string, unknown>, token: string) => {
+    localStorage.clear();
     localStorage.setItem('access_token', token);
     const u = data['user'] as Record<string, unknown>;
     if (!u) return;
