@@ -1,5 +1,8 @@
 // src/pages/super-admin/BuildingManagement.jsx
 import React, { useState, useEffect, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 import {
   fetchBuildings,
   createBuilding,
@@ -119,10 +122,45 @@ const ConfirmDeleteDialog = ({ building, onConfirm, onCancel, isLoading }) => (
   </div>
 );
 
-// ── Building Modal (Create / Edit) ─────────────────────────────
-const EMPTY_FORM = { name: '', latitude: '', longitude: '' };
+// ── Map Selector Component ──────────────────────────────────────
+const MapSelector = ({ lat, lng, onChange }) => {
+  const defaultCenter = [19.028600, 99.895800];
+  const center = (lat && lng && !isNaN(lat) && !isNaN(lng)) ? [lat, lng] : defaultCenter;
+  
+  const MapEvents = () => {
+    useMapEvents({
+      click(e) {
+        onChange(e.latlng.lat, e.latlng.lng);
+      },
+    });
+    return null;
+  };
 
-const BuildingModal = ({ mode, initial, onClose, onSave }) => {
+  const customIcon = new L.DivIcon({
+    html: `<div style="color: #4f46e5; transform: translate(-50%, -100%); width: 24px; height: 24px;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3" fill="white"></circle></svg></div>`,
+    className: '',
+    iconSize: [0, 0],
+    iconAnchor: [0, 0]
+  });
+
+  return (
+    <div className="h-48 w-full rounded-xl overflow-hidden border border-slate-200 mt-3 z-0 relative">
+      <MapContainer center={center} zoom={15} style={{ height: '100%', width: '100%' }}>
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+        />
+        <MapEvents />
+        {lat && lng && !isNaN(lat) && !isNaN(lng) && (
+          <Marker position={[lat, lng]} icon={customIcon} />
+        )}
+      </MapContainer>
+    </div>
+  );
+};
+
+// ── Building Modal (Create / Edit) ─────────────────────────────
+const EMPTY_FORM = { name: '', latitude: '', longitude: '' };const BuildingModal = ({ mode, initial, onClose, onSave }) => {
   const [form, setForm] = useState(
     initial
       ? {
@@ -253,6 +291,12 @@ const BuildingModal = ({ mode, initial, onClose, onSave }) => {
               />
             </div>
           </div>
+
+          <MapSelector
+            lat={parseFloat(form.latitude)}
+            lng={parseFloat(form.longitude)}
+            onChange={(lat, lng) => setForm(f => ({ ...f, latitude: String(lat), longitude: String(lng) }))}
+          />
 
           {/* Hint */}
           <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-indigo-50 border border-indigo-100">
