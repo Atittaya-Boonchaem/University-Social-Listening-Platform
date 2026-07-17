@@ -352,7 +352,7 @@ export default function LoginPage() {
 
   function onLoggedIn(roleId: number, token: string) {
     if (roleId === 4 || roleId === 5) {
-      window.location.href = `http://localhost:5173/sso?token=${token}`;
+      window.location.href = `https://university-social-listening-platfor-olive.vercel.app/sso?token=${token}`;
     } else {
       navigate('/');
     }

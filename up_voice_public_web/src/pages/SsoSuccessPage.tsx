@@ -64,8 +64,8 @@ export default function SsoSuccessPage() {
 
     // Redirect based on role
     if (roleId === 4 || roleId === 5) {
-      // Super Admin / Category Admin → Admin Dashboard (port 5173)
-      window.location.href = `http://localhost:5173/sso?token=${token}`;
+      // Super Admin      // Redirect to the Admin Dashboard
+      window.location.href = `https://university-social-listening-platfor-olive.vercel.app/sso?token=${token}`;
     } else if (isNewUser) {
       // New user → onboarding page to collect extra profile info
       const type = role === 'staff' ? 'staff' : 'student';
