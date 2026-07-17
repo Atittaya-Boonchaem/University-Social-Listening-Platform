@@ -19,7 +19,8 @@ def send_invitation_email(email: str, role: str, category_name: str, token: str)
         msg['From'] = SMTP_EMAIL
         msg['To'] = email
 
-        invite_link = f"http://localhost:5174/register?token={token}"
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5174")
+        invite_link = f"{frontend_url}/register?token={token}"
         
         display_role = role.replace("_", " ").title()
         category_text = f"manage the <strong>{category_name}</strong> category" if category_name else "access the platform"
