@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 const Login = () => {
   useEffect(() => {
     // Redirect to the centralized Public Web Login page
-    window.location.href = 'http://localhost:5174/login';
+    window.location.href = 'https://university-social-listening-platfor.vercel.app/login';
   }, []);
 
   return (

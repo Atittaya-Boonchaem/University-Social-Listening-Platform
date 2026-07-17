@@ -102,7 +102,7 @@ const PrivateRoute = () => {
           </div>
           <h1 className="text-3xl font-bold text-slate-800 mb-2">403 Forbidden</h1>
           <p className="text-slate-500 mb-6">คุณไม่มีสิทธิ์เข้าถึงส่วนผู้ดูแลระบบ (Admin Dashboard)</p>
-          <a href="http://localhost:5174/" className="px-6 py-2 bg-[#2B164D] text-white rounded-lg hover:bg-[#3d2268] transition">
+          <a href="https://university-social-listening-platfor.vercel.app/" className="px-6 py-2 bg-[#2B164D] text-white rounded-lg hover:bg-[#3d2268] transition">
             กลับสู่หน้าหลัก
           </a>
         </div>
