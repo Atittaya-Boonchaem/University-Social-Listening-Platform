@@ -11,7 +11,10 @@ import { useNavigate, useLocation } from 'react-router-dom';
 
 function parseJwt(token: string): Record<string, unknown> | null {
   try {
-    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    let base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
     return JSON.parse(decodeURIComponent(window.atob(base64).split('').map(c =>
       '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
     ).join('')));
