@@ -292,8 +292,6 @@ export default function ReportProblem({
       const token = localStorage.getItem('access_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       
-      let finalCategories: any[] = [];
-      let finalBuildings: any[] = [];
 
       // 1. Fetch Categories
       try {

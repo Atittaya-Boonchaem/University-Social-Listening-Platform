@@ -217,7 +217,7 @@ function ProblemCard({
   // Use exact author name or fallback to generic role for the tag
   let authorTag = 'ไม่ระบุตัวตน';
   if (problem.author?.role === 'student' || problem.author_name?.includes('นิสิต')) {
-    const studentId = problem.author?.student_id;
+    const studentId = (problem.author as any)?.student_id;
     if (studentId && typeof studentId === 'string' && studentId.length >= 2) {
       authorTag = `นิสิตมพ${studentId.substring(0, 2)}`;
     } else {

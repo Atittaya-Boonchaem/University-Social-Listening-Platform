@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import dayjs, { Dayjs } from 'dayjs';
+import { Dayjs } from 'dayjs';
 
 const API_BASE = import.meta.env.VITE_API_AUTH_URL || 'http://localhost:8000/api/v1/auth';
 
