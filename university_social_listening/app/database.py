@@ -66,7 +66,7 @@ engine = create_engine(
     config.DATABASE_URL,
     echo=config.DEBUG,
     pool_pre_ping=True,
-    pool_recycle=3600,
+    pool_recycle=300,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
