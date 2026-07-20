@@ -3,7 +3,7 @@
 26-Table SQLAlchemy ORM Schema — University Social Listening Platform v2
 """
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime,
+    Column, Integer, String, Boolean, DateTime, Date,
     ForeignKey, Text, JSON, DECIMAL, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -73,7 +73,7 @@ class Student(Base):
     faculty_id = Column(Integer, ForeignKey("faculties.faculty_id"), nullable=True)
     major = Column(String(100), nullable=True)
     year = Column(Integer, nullable=True)
-    age = Column(Integer, nullable=True)
+    birthdate = Column(Date, nullable=True)
     gender = Column(String(20), nullable=True)
     phone = Column(String(20), nullable=True)
     enrolled_date = Column(DateTime, nullable=True)
@@ -118,7 +118,7 @@ class PublicUser(Base):
     user_id = Column(Integer, ForeignKey("users.user_id"), primary_key=True)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
-    age = Column(Integer, nullable=False)
+    birthdate = Column(Date, nullable=False)
     phone = Column(String(20), nullable=True)
     address = Column(Text, nullable=True)
     public_user_type_id = Column(Integer, ForeignKey("public_user_types.id"), nullable=True)

@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import dayjs, { Dayjs } from 'dayjs';
 
 const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1/auth';
 
@@ -31,7 +35,7 @@ export default function RegisterPage() {
     password: '',
     first_name: '',
     last_name: '',
-    age: '',
+    birthdate: null as Dayjs | null,
     phone: '',
     public_user_type_id: '',
   });
@@ -78,7 +82,7 @@ export default function RegisterPage() {
     
     if (!isInviteMode) {
       if (!formData.email) missing.push('email');
-      if (!formData.age) missing.push('age');
+      if (!formData.birthdate) missing.push('birthdate');
       if (!formData.public_user_type_id) missing.push('public_user_type_id');
       if (!pdpaConsent) missing.push('pdpaConsent');
     }
@@ -127,7 +131,7 @@ export default function RegisterPage() {
           password: formData.password,
           first_name: formData.first_name,
           last_name: formData.last_name,
-          age: Number(formData.age),
+          birthdate: formData.birthdate ? formData.birthdate.format('YYYY-MM-DD') : null,
           phone: formData.phone.trim() === '' ? null : formData.phone.trim(),
           public_user_type_id: Number(formData.public_user_type_id),
           pdpa_consent: pdpaConsent,
@@ -258,17 +262,38 @@ export default function RegisterPage() {
               disabled={isLoading || !!successMsg}
             />
             {!isInviteMode && (
-              <input
-                type="number"
-                name="age"
-                placeholder="อายุ *"
-                value={formData.age}
-                onChange={handleChange}
-                className={getInputCls('age')}
-                min="1"
-                max="120"
-                disabled={isLoading || !!successMsg}
-              />
+              <div className="relative z-50">
+                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                  <DatePicker
+                    label="วันเกิดของคุณ *"
+                    disableFuture
+                    openTo="year"
+                    views={['year', 'month', 'day']}
+                    format="DD/MM/YYYY"
+                    value={formData.birthdate}
+                    onChange={(newValue) => {
+                      setFormData(prev => ({ ...prev, birthdate: newValue }));
+                      setMissingFields(prev => prev.filter(f => f !== 'birthdate'));
+                    }}
+                    slotProps={{
+                      textField: {
+                        required: true,
+                        className: getInputCls('birthdate'),
+                        sx: {
+                          '& .MuiOutlinedInput-root': {
+                            backgroundColor: 'transparent',
+                            '& fieldset': { border: 'none' },
+                          },
+                          '& .MuiInputBase-input': {
+                            padding: '0',
+                            fontFamily: 'inherit',
+                          }
+                        }
+                      }
+                    }}
+                  />
+                </LocalizationProvider>
+              </div>
             )}
           </div>
 

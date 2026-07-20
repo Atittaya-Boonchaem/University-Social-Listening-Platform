@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 
 const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
 const PROBLEMS_BASE = `${API_BASE}/problems`;
@@ -182,7 +183,7 @@ export default function ProfilePage() {
     }
   };
 
-  const hasProfileInfo = profile && (facultyName || yearLabel || genderLabel || profile.age || profile.department || profile.position);
+  const hasProfileInfo = profile && (facultyName || yearLabel || genderLabel || profile.birthdate || profile.department || profile.position);
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] font-sans pb-24">
@@ -248,7 +249,7 @@ export default function ProfilePage() {
               {profile?.department && <InfoRow icon="corporate_fare" label="ภาควิชา / หน่วยงาน" value={profile.department} />}
               {profile?.position && <InfoRow icon="work" label="ตำแหน่ง" value={profile.position} />}
               {genderLabel && <InfoRow icon="person" label="เพศ" value={genderLabel} />}
-              {profile?.age && <InfoRow icon="calendar_today" label="อายุ" value={`${profile.age} ปี`} />}
+              {profile?.birthdate && <InfoRow icon="calendar_today" label="วันเกิด" value={dayjs(profile.birthdate).format('DD/MM/YYYY')} />}
               {profile?.phone && <InfoRow icon="phone" label="เบอร์โทรศัพท์" value={profile.phone} />}
             </div>
           </section>

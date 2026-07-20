@@ -4,7 +4,7 @@ Pydantic v2 schemas for the 26-table University Social Listening Platform.
 """
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List, Any
-from datetime import datetime
+from datetime import datetime, date
 
 
 # ──────────────────────────────────────────────
@@ -28,7 +28,7 @@ class StudentRegisterCreate(BaseModel):
     faculty_name: Optional[str] = None
     major: Optional[str] = None
     year: Optional[int] = None
-    age: Optional[int] = None
+    birthdate: Optional[date] = None
     gender: Optional[str] = None
     phone: Optional[str] = None
 
@@ -50,7 +50,7 @@ class PublicUserRegisterCreate(BaseModel):
     password: str = Field(..., min_length=6)
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
-    age: int
+    birthdate: date
     phone: Optional[str] = None
     address: Optional[str] = None
     public_user_type_id: Optional[int] = None
@@ -86,7 +86,7 @@ class StudentProfile(BaseModel):
     faculty_id: Optional[int] = None
     major: Optional[str] = None
     year: Optional[int] = None
-    age: Optional[int] = None
+    birthdate: Optional[date] = None
     gender: Optional[str] = None
     phone: Optional[str] = None
 

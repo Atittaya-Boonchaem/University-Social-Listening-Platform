@@ -385,7 +385,7 @@ def get_user(
             "faculty_id": student.faculty_id,
             "major": student.major,
             "year": student.year,
-            "age": student.age,
+            "birthdate": student.birthdate,
             "gender": student.gender,
             "phone": student.phone,
         }
@@ -709,8 +709,8 @@ def complete_onboarding(
 ):
     """
     Called once after SSO login for new users.
-    Student:  faculty_id, education_level (year), age, gender, student_prefix (2-char)
-    Staff:    age, gender
+    Student:  faculty_id, education_level (year), birthdate, gender, student_prefix (2-char)
+    Staff:    gender
     """
     student = db.query(Student).filter(Student.user_id == current_user.user_id).first()
     if student:
@@ -721,9 +721,10 @@ def complete_onboarding(
                 student.year = int(payload["education_level"])
             except (ValueError, TypeError):
                 pass
-        if "age" in payload and payload["age"]:
+        if "birthdate" in payload and payload["birthdate"]:
             try:
-                student.age = int(payload["age"])
+                from datetime import datetime
+                student.birthdate = datetime.strptime(payload["birthdate"], "%Y-%m-%d").date()
             except (ValueError, TypeError):
                 pass
         if "gender" in payload and payload["gender"]:
@@ -741,8 +742,8 @@ def complete_onboarding(
 
     stf = db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
     if stf:
-        if "age" in payload and payload["age"]:
-            pass  # Staff model has no age column — store in a note or skip
+        if "birthdate" in payload and payload["birthdate"]:
+            pass  # Staff model has no birthdate column — store in a note or skip
         if "gender" in payload and payload["gender"]:
             pass  # Staff model has no gender column — extend model later if needed
         db.commit()
@@ -787,7 +788,8 @@ def update_user(
         elif new_role == "staff":
             db.add(Staff(user_id=user_id, employee_id=f"EMP-{user_id}", staff_name="Staff User", staff_role="Staff"))
         elif new_role == "student":
-            db.add(Student(user_id=user_id, student_id=f"6600{user_id:04d}", student_name="Student User", year=1, age=20, gender="Male"))
+            from datetime import date
+            db.add(Student(user_id=user_id, student_id=f"6600{user_id:04d}", student_name="Student User", year=1, birthdate=date(2000, 1, 1), gender="Male"))
         elif new_role == "public":
             db.add(PublicUser(user_id=user_id, first_name="Public", last_name="User"))
             

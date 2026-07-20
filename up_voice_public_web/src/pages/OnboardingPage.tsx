@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import dayjs from 'dayjs';
 
 const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
 
@@ -38,11 +42,12 @@ export default function OnboardingPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   
   const [formData, setFormData] = useState({
     faculty_id: '',
     degree: '',
-    age: '',
+    birthdate: null as dayjs.Dayjs | null,
     gender: '',
     student_prefix: '',
     privacy: false
@@ -56,7 +61,7 @@ export default function OnboardingPage() {
     try {
       const token = localStorage.getItem('access_token');
       const payload: Record<string, any> = {
-        age: formData.age,
+        birthdate: formData.birthdate ? formData.birthdate.format('YYYY-MM-DD') : null,
         gender: formData.gender,
       };
       if (!isStaff) {
@@ -75,7 +80,7 @@ export default function OnboardingPage() {
         localStorage.setItem('education_level', formData.degree);
         localStorage.setItem('student_prefix', formData.student_prefix.slice(0, 2));
       }
-      localStorage.setItem('age', formData.age);
+      localStorage.setItem('birthdate', formData.birthdate ? formData.birthdate.format('YYYY-MM-DD') : '');
       localStorage.setItem('gender', formData.gender);
 
       setShowToast(true);
@@ -184,7 +189,7 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {/* Row: Education Level & Age */}
+              {/* Row: Education Level & Birthdate */}
               <div className={`grid grid-cols-1 gap-gutter ${isStaff ? '' : 'sm:grid-cols-2'}`}>
                 {!isStaff && (
                   <div className="flex flex-col gap-2">
@@ -209,21 +214,35 @@ export default function OnboardingPage() {
                   </div>
                 )}
                 
-                <div className="flex flex-col gap-2">
-                  <label className="font-label-sm text-label-sm text-primary flex items-center gap-2" htmlFor="age">
-                    <span className="material-symbols-outlined text-sm">calendar_today</span> อายุ
-                  </label>
-                  <input 
-                    id="age" 
-                    type="number" 
-                    min="15" 
-                    max="99" 
-                    required 
-                    placeholder="เช่น 18"
-                    value={formData.age}
-                    onChange={(e) => setFormData({...formData, age: e.target.value})}
-                    className="w-full bg-surface-container-low border-0 rounded-lg p-4 font-body-md text-on-surface focus:ring-4 focus:ring-primary/10 transition-all outline-none"
-                  />
+                <div className="flex flex-col gap-2 relative z-50 justify-end">
+                  <LocalizationProvider dateAdapter={AdapterDayjs}>
+                    <DatePicker
+                      label="วันเกิดของคุณ"
+                      disableFuture // ห้ามเลือกวันที่ในอนาคต
+                      openTo="year" // เปิดหน้าต่างมาให้เลือก "ปี" ก่อนเป็นอันดับแรก (สะดวกต่อคนเกิดนานแล้ว)
+                      views={['year', 'month', 'day']} // เรียงลำดับการเลือก ปี -> เดือน -> วัน
+                      format="DD/MM/YYYY"
+                      value={formData.birthdate}
+                      onChange={(newValue) => setFormData({...formData, birthdate: newValue})}
+                      slotProps={{
+                        textField: {
+                          required: true,
+                          className: "w-full bg-surface-container-low rounded-lg font-body-md text-on-surface",
+                          sx: {
+                            '& .MuiOutlinedInput-root': {
+                              backgroundColor: 'transparent',
+                              borderRadius: '0.5rem',
+                              '& fieldset': { border: 'none' },
+                            },
+                            '& .MuiInputBase-input': {
+                              padding: '1rem',
+                              fontFamily: 'inherit',
+                            }
+                          }
+                        }
+                      }}
+                    />
+                  </LocalizationProvider>
                 </div>
               </div>
 
@@ -289,10 +308,21 @@ export default function OnboardingPage() {
                   required 
                   checked={formData.privacy}
                   onChange={(e) => setFormData({...formData, privacy: e.target.checked})}
-                  className="mt-1 rounded-sm border-outline text-primary focus:ring-primary" 
+                  className="mt-1 rounded-sm border-outline text-primary focus:ring-primary cursor-pointer" 
                 />
-                <label htmlFor="privacy" className="font-label-sm text-on-surface-variant leading-tight cursor-pointer">
-                  ฉันยอมรับนโยบายความเป็นส่วนตัวและอนุญาตให้ระบบบันทึกข้อมูลเพื่อใช้ในการแสดงผลส่วนบุคคล
+                <label htmlFor="privacy" className="font-label-sm text-on-surface-variant leading-tight select-none">
+                  ฉันยอมรับ
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault(); // Prevent checking the checkbox when clicking the link
+                      setShowPrivacyModal(true);
+                    }}
+                    className="text-primary underline mx-1 hover:text-primary/80 focus:outline-none"
+                  >
+                    นโยบายความเป็นส่วนตัว
+                  </button>
+                  และอนุญาตให้ระบบบันทึกข้อมูลเพื่อใช้ในการแสดงผลส่วนบุคคล
                 </label>
               </div>
 
@@ -307,8 +337,8 @@ export default function OnboardingPage() {
               <div className="pt-4">
                 <button 
                   type="submit" 
-                  disabled={isLoading}
-                  className="w-full bg-primary text-on-primary py-4 rounded-xl font-headline-md text-headline-md shadow-md hover:opacity-90 active:scale-[0.98] disabled:opacity-70 transition-all flex items-center justify-center gap-2"
+                  disabled={isLoading || !formData.privacy}
+                  className="w-full bg-primary text-on-primary py-4 rounded-xl font-headline-md text-headline-md shadow-md hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all flex items-center justify-center gap-2"
                 >
                   {isLoading ? (
                     <>
@@ -336,6 +366,48 @@ export default function OnboardingPage() {
           <span className="material-symbols-outlined text-[#e9c349]">check_circle</span>
           <span className="font-body-md">บันทึกข้อมูลเรียบร้อยแล้ว กำลังนำท่านสู่หน้าหลัก</span>
         </div>
+
+        {/* Privacy Policy Modal */}
+        {showPrivacyModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity">
+            <div className="bg-surface rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col transform transition-all">
+              <div className="p-6 border-b border-outline-variant flex justify-between items-center">
+                <h3 className="font-headline-md text-headline-md text-primary font-bold">นโยบายความเป็นส่วนตัว</h3>
+                <button 
+                  onClick={() => setShowPrivacyModal(false)}
+                  className="text-on-surface-variant hover:bg-surface-variant/50 p-2 rounded-full transition-colors flex items-center justify-center"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto font-body-md text-on-surface-variant space-y-4">
+                {/* <ol className="list-decimal list-outside ml-4 space-y-4">
+                  <li><strong>การเก็บรวบรวมข้อมูลส่วนบุคคล:</strong> ระบบจะเก็บรวบรวมข้อมูลพื้นฐาน เช่น คณะ สาขาวิชา ชั้นปี เพศ และวันเกิด เพื่อใช้ในการแสดงผลและแนะนำกิจกรรมที่เหมาะสมกับท่าน</li>
+                  <li><strong>การใช้ข้อมูล:</strong> ข้อมูลของท่านจะถูกนำไปใช้วิเคราะห์เพื่อปรับปรุงการให้บริการ และนำเสนอเนื้อหาที่ตรงกับความสนใจของท่านภายในระบบ UP Connect เท่านั้น</li>
+                  <li><strong>การรักษาความปลอดภัย:</strong> เรามีมาตรการรักษาความปลอดภัยที่เหมาะสมเพื่อป้องกันการเข้าถึง การใช้ หรือการเปิดเผยข้อมูลส่วนบุคคลของท่านโดยไม่ได้รับอนุญาต</li>
+                  <li><strong>ระยะเวลาในการเก็บรักษา:</strong> ข้อมูลของท่านจะถูกเก็บรักษาไว้ตลอดระยะเวลาที่ท่านยังเป็นนิสิตหรือใช้งานระบบ และจะถูกลบหรือทำลายเมื่อหมดความจำเป็น</li>
+                </ol> */}
+
+                <ol className="list-decimal list-outside ml-4 space-y-4">
+                  <li><strong>ข้อมูลที่เก็บรวบรวม:</strong> ระบบจะเก็บรวบรวมข้อมูลพื้นฐานจากบัญชีมหาวิทยาลัย (เช่น ชื่อ, อีเมล, รหัสนิสิต) และข้อมูลที่คุณให้เพิ่มเติม เช่น คณะ ระดับการศึกษา เพศ และวันเกิด</li>
+                  <li><strong>วัตถุประสงค์การใช้งาน:</strong> ข้อมูลของท่านจะถูกนำไปใช้วิเคราะห์เพื่อปรับปรุงการให้บริการ การรายงานปัญหา และนำเสนอเนื้อหาที่ตรงกับความสนใจภายในระบบ UP Connect เท่านั้น เราจะไม่มีการเปิดเผยข้อมูลให้กับบุคคลที่สามเพื่อจุดประสงค์ทางการค้า</li>
+                  <li><strong>การรักษาความปลอดภัย:</strong> เรามีมาตรการรักษาความปลอดภัยทางเทคนิคที่เหมาะสม เพื่อป้องกันการเข้าถึง การเปลี่ยนแปลง หรือการเปิดเผยข้อมูลส่วนบุคคลของท่านโดยไม่ได้รับอนุญาต</li>
+                  <li><strong>ระยะเวลาในการเก็บรักษา:</strong> ข้อมูลของท่านจะถูกเก็บรักษาไว้ตลอดระยะเวลาที่ท่านยังคงมีสถานะในระบบ และจะถูกลบหรือทำลายเมื่อหมดความจำเป็นหรือเมื่อท่านร้องขอ</li>
+  <li><strong>สิทธิของท่าน:</strong> ท่านมีสิทธิในการขอเข้าถึง แก้ไขให้ถูกต้อง ขอระงับการใช้ หรือขอลบข้อมูลส่วนบุคคลของท่านได้ตลอดเวลา โดยสามารถติดต่อผู้ดูแลระบบผ่านช่องทางที่มหาวิทยาลัยกำหนด</li>
+</ol>
+
+              </div>
+              <div className="p-6 border-t border-outline-variant flex justify-end">
+                <button 
+                  onClick={() => setShowPrivacyModal(false)}
+                  className="px-6 py-2.5 bg-primary text-on-primary rounded-xl font-label-lg hover:opacity-90 active:scale-[0.98] transition-all"
+                >
+                  เข้าใจแล้ว
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

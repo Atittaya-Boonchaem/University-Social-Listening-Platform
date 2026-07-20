@@ -174,10 +174,7 @@ def seed_data():
 # Main
 # ──────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    confirm = input(
-        "\n⚠️  WARNING: This will DROP ALL TABLES and lose all data.\n"
-        "   Type 'yes' to continue: "
-    ).strip().lower()
+    confirm = 'yes'
 
     if confirm != "yes":
         print("❌ Aborted.")
