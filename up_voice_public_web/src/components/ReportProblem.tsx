@@ -13,7 +13,9 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import axios from 'axios';
+import AIChatWidget from './AIChatWidget';
 import {
   MapContainer,
   TileLayer,
@@ -37,7 +39,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 // University of Phayao default map centre
 const UP_CENTER: [number, number] = [19.0289, 99.8973];
@@ -149,8 +151,12 @@ export default function ReportProblem({
   onSuccess,
   onUnauthorized,
 }: ReportProblemProps) {
-  // ── Form state ──────────────────────────────────────────────────────────────
-  const [description, setDescription] = useState('');
+  const location = useLocation();
+  const prefillData = location.state?.prefillData;
+
+  // ── Form state ─────────────────────────────────────────────────────────────
+  const [description, setDescription] = useState(prefillData?.description || '');
+  const [title, setTitle] = useState(prefillData?.title || '');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedBuilding, setSelectedBuilding] = useState<string>('');
   const [visibility, setVisibility] = useState<'public' | 'internal'>('public');
@@ -161,6 +167,27 @@ export default function ReportProblem({
   const [isFetchingData, setIsFetchingData] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAiSuggesting, setIsAiSuggesting] = useState(false);
+  const [isAiExpanding, setIsAiExpanding] = useState(false);
+  const [customBuildingName, setCustomBuildingName] = useState('');
+
+  const handleAiChatComplete = (data: any) => {
+    if (data.description) setDescription(data.description);
+    if (data.title) setTitle(data.title);
+    if (data.category_name) {
+      const matchedCat = categories.find(c => c.name.includes(data.category_name) || data.category_name.includes(c.name));
+      if (matchedCat) setSelectedCategory(String(matchedCat.id));
+    }
+    if (data.location) {
+      const matchedBuilding = buildings.find(b => data.location.includes(b.name) || b.name.includes(data.location));
+      if (matchedBuilding) {
+        setSelectedBuilding(String(matchedBuilding.id));
+      } else {
+        setSelectedBuilding('other');
+        setCustomBuildingName(data.location);
+      }
+    }
+    showToast('AI ช่วยดึงข้อมูลและกรอกฟอร์มให้เรียบร้อยแล้วครับ!', 'success');
+  };
 
   const handleAiSuggest = async () => {
     if (description.trim().length < 10) {
@@ -185,6 +212,31 @@ export default function ReportProblem({
       showToast('เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI', 'error');
     } finally {
       setIsAiSuggesting(false);
+    }
+  };
+
+  const handleAiExpand = async () => {
+    if (description.trim().length < 5) {
+      showToast('โปรดพิมพ์รายละเอียดปัญหาเบื้องต้นก่อนให้ AI ช่วยเขียน', 'warning');
+      return;
+    }
+    
+    setIsAiExpanding(true);
+    try {
+      const response = await axios.post(`${API_BASE}/problems/ai/expand-description`, {
+        description: description.trim()
+      });
+      if (response.data?.success && response.data?.data?.expanded_text) {
+        setDescription(response.data.data.expanded_text);
+        showToast('🪄 AI ช่วยขยายความรายละเอียดปัญหาให้แล้ว!', 'success');
+      } else {
+        showToast('AI ไม่สามารถขยายความได้ในขณะนี้', 'warning');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI', 'error');
+    } finally {
+      setIsAiExpanding(false);
     }
   };
 
@@ -239,6 +291,9 @@ export default function ReportProblem({
 
       const token = localStorage.getItem('access_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      
+      let finalCategories: any[] = [];
+      let finalBuildings: any[] = [];
 
       // 1. Fetch Categories
       try {
@@ -337,6 +392,10 @@ export default function ReportProblem({
   // ─── Building selection → auto-pan map ───────────────────────────────────────
   function handleBuildingChange(buildingId: string) {
     setSelectedBuilding(buildingId);
+    if (buildingId === 'other') {
+      setMapFlyTarget(null);
+      return;
+    }
     const b = buildings.find((bld) => String(bld.id) === buildingId);
     if (b?.latitude != null && b?.longitude != null) {
       const lat = parseFloat(String(b.latitude));
@@ -372,13 +431,22 @@ export default function ReportProblem({
 
       const formData = new FormData();
       formData.append('category_id', selectedCategory);
-      formData.append('building_id', selectedBuilding);
+      if (selectedBuilding === 'other') {
+        if (!customBuildingName.trim()) {
+          showToast('กรุณาระบุชื่อสถานที่', 'warning');
+          setIsSubmitting(false);
+          return;
+        }
+        formData.append('building_name', customBuildingName.trim());
+      } else {
+        formData.append('building_id', selectedBuilding);
+      }
       
       // Auto-generate title from the first 50 characters of description
       const generatedTitle = description.trim().length > 50 
         ? description.trim().substring(0, 50) + '...' 
         : description.trim();
-      formData.append('title', generatedTitle);
+      formData.append('title', title || generatedTitle);
       formData.append('description', description.trim());
       formData.append('visibility_name', visibility);
       if (selectedLocation && requiresMap) {
@@ -410,6 +478,7 @@ export default function ReportProblem({
         setDescription('');
         setSelectedCategory('');
         setSelectedBuilding('');
+        setCustomBuildingName('');
         setSelectedLocation(null);
         setMapFlyTarget(null);
         setVisibility('public');
@@ -543,9 +612,20 @@ export default function ReportProblem({
                 </div>
               </div>
 
+              {/* AI Chat Widget */}
+              <div className="mb-6">
+                <AIChatWidget onComplete={handleAiChatComplete} />
+              </div>
+
               {/* Description */}
               <div className="space-y-2">
-                <label className="block font-label-md text-label-md text-on-surface-variant font-bold">รายละเอียดปัญหา <span className="text-error">*</span></label>
+                <div className="flex justify-between items-end">
+                  <label className="block font-label-md text-label-md text-on-surface-variant font-bold">รายละเอียดปัญหา <span className="text-error">*</span></label>
+                  <button type="button" onClick={handleAiExpand} disabled={isAiExpanding} className="text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-full transition-colors flex items-center gap-1 disabled:opacity-50">
+                    {isAiExpanding ? <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span> : '🪄'}
+                    {isAiExpanding ? 'กำลังเขียน...' : 'ให้ AI ช่วยเขียน'}
+                  </button>
+                </div>
                 <textarea
                   className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-xl font-body-md text-body-md p-4 transition-all min-h-[140px] resize-none outline-none focus:ring-2 focus:ring-primary/20"
                   placeholder="ระบุรายละเอียดเพิ่มเติมเพื่อช่วยให้เจ้าหน้าที่เข้าใจสถานการณ์ได้ดีขึ้น... (อย่างน้อย 10 ตัวอักษร)"
@@ -633,8 +713,21 @@ export default function ReportProblem({
                       {buildings.map((bld, idx) => (
                         <option key={bld.id || `bld-${idx}`} value={String(bld.id)}>{bld.name}</option>
                       ))}
+                      <option value="other">อื่นๆ (ระบุเอง)</option>
                     </select>
                   </div>
+
+                  {selectedBuilding === 'other' && (
+                    <div className="animate-[slideUp_0.2s_ease-out_forwards]">
+                      <input
+                        type="text"
+                        placeholder="กรุณาระบุชื่อสถานที่..."
+                        value={customBuildingName}
+                        onChange={(e) => setCustomBuildingName(e.target.value)}
+                        className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-xl font-body-md text-body-md p-3 transition-all outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  )}
 
                   <div className="h-48 rounded-xl border border-outline-variant overflow-hidden relative bg-surface-container-low">
                     <MapContainer center={UP_CENTER} zoom={14} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>

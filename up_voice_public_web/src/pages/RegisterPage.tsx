@@ -6,7 +6,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs, { Dayjs } from 'dayjs';
 
-const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1/auth';
+const API_BASE = import.meta.env.VITE_API_AUTH_URL || 'http://localhost:8000/api/v1/auth';
 
 function parseError(data: unknown): string {
   if (!data || typeof data !== 'object') return 'เกิดข้อผิดพลาด';
@@ -55,7 +55,7 @@ export default function RegisterPage() {
   };
 
   useEffect(() => {
-    axios.get('https://university-social-listening-platform.onrender.com/api/v1/public-user-types')
+    axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/public-user-types`)
       .then(res => {
         if (res.data?.success) {
           setTypes(res.data.data);
@@ -123,7 +123,7 @@ export default function RegisterPage() {
           password: formData.password,
           phone: formData.phone.trim() === '' ? null : formData.phone.trim(),
         };
-        res = await axios.post(`https://university-social-listening-platform.onrender.com/api/v1/users/register-invite`, payload);
+        res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/users/register-invite`, payload);
       } else {
         // Explicitly construct payload to perfectly match PublicUserRegisterCreate
         const payload = {

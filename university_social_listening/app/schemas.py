@@ -445,3 +445,10 @@ class LLMSettingResponse(BaseModel):
 # ──────────────────────────────────────────────
 class OnboardingUpdate(BaseModel):
     display_name: Optional[str] = None
+
+class ChatAssistMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatAssistRequest(BaseModel):
+    messages: List[ChatAssistMessage]

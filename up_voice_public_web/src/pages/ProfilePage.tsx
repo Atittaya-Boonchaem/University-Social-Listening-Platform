@@ -8,7 +8,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 
-const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const PROBLEMS_BASE = `${API_BASE}/problems`;
 
 const FACULTY_MAP: Record<number, string> = {

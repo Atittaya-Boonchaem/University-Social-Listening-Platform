@@ -31,6 +31,7 @@ from app.models import (
     SuperAdmin, CategoryAdmin, Building,
 )
 from app.schemas import (
+    ChatAssistRequest,
     ProblemCreate, ProblemUpdate, ProblemResponse,
     BulkStatusUpdate, StandardResponse,
     CategoryCreate, CategoryUpdate, CategoryResponse,
@@ -72,7 +73,7 @@ def get_author_info(user_id: int, db: Session) -> Optional[dict]:
         return None
     student = db.query(Student).filter(Student.user_id == user_id).first()
     if student:
-        return {"user_id": user_id, "display_name": student.student_name, "role": "student"}
+        return {"user_id": user_id, "display_name": student.student_name, "role": "student", "student_id": student.student_id}
     stf = db.query(Staff).filter(Staff.user_id == user_id).first()
     if stf:
         return {"user_id": user_id, "display_name": stf.staff_name, "role": "staff"}
@@ -1325,6 +1326,25 @@ class AIGenerateCategoryDescRequest(BaseModel):
     category_name: str
     existing_description: Optional[str] = None
 
+class AIExpandDescriptionRequest(BaseModel):
+    description: str
+
+@router.post("/ai/expand-description", response_model=StandardResponse)
+async def ai_expand_description(
+    payload: AIExpandDescriptionRequest
+):
+    """
+    Expands a brief problem description using AI.
+    """
+    from app.services.ai_service import expand_description
+    
+    expanded_text = expand_description(payload.description)
+    return StandardResponse(
+        success=True, 
+        message="Expanded successfully", 
+        data={"expanded_text": expanded_text}
+    )
+
 @router.post("/ai/suggest-category", response_model=StandardResponse)
 async def ai_suggest_category(
     payload: AISuggestCategoryRequest,
@@ -1483,3 +1503,12 @@ async def get_problem_ai_analysis(
             "similar_posts": similar_problems
         }
     )
+@router.post("/ai/chat-assist")
+async def ai_chat_assist(req: ChatAssistRequest, current_user: Optional[User] = Depends(get_current_user_optional)):
+    """
+    Provides AI chat assistance for reporting problems.
+    """
+    from app.services.ai_service import handle_chat_report
+    messages = [{"role": m.role, "content": m.content} for m in req.messages]
+    result = handle_chat_report(messages)
+    return {"success": True, "data": result}

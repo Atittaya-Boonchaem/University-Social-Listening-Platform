@@ -16,7 +16,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
-const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 function resolveImageUrl(raw: string | null | undefined): string | null {
   if (!raw || raw.trim() === '') return null;
@@ -141,8 +141,8 @@ export default function IssueDetailPage() {
 
       <main className="pt-20 px-4 max-w-2xl mx-auto space-y-6">
         {images.length > 0 && (
-          <div className="relative rounded-xl overflow-hidden shadow-sm aspect-video group bg-surface-container-highest">
-            <img className="w-full h-full object-cover" src={coverImage} alt={problem.title} />
+          <div className="relative rounded-xl overflow-hidden shadow-sm flex justify-center bg-surface-container-highest max-h-[60vh]">
+            <img className="w-full h-full object-contain" src={coverImage} alt={problem.title} />
             <div className="absolute top-4 right-4">
               <span className="bg-primary text-white px-3 py-1 rounded-full text-label-sm font-label-sm shadow-lg">
                 {isInternal ? 'ภายใน' : 'สาธารณะ'}

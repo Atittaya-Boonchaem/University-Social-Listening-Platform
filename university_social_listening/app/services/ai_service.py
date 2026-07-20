@@ -465,3 +465,132 @@ def auto_cluster_problem(problem_id: int, db) -> int | None:
     except Exception as e:
         logger.error(f"auto_cluster_problem error: {e}")
         return None
+
+def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
+    """
+    Analyzes a chat conversation for reporting a problem.
+    Determines if enough information is gathered, asks follow-up questions if not,
+    or extracts the problem data if complete.
+    """
+    api_key = get_typhoon_api_key()
+    
+    # Fallback/Mock mode
+    if not api_key:
+        if len(messages) < 3:
+            return {
+                "is_complete": False,
+                "reply": "รบกวนขอทราบตึกและห้องเกิดเหตุเพิ่มเติมด้วยครับ",
+                "extracted_data": None
+            }
+        else:
+            return {
+                "is_complete": True,
+                "reply": "ขอบคุณครับ ระบบกำลังเตรียมข้อมูลให้ครับ",
+                "extracted_data": {
+                    "title": "ปัญหาที่รายงานผ่านแชท",
+                    "description": "รายละเอียดจากการคุย...",
+                    "category_name": "อื่นๆ",
+                    "location": "ไม่ระบุ"
+                }
+            }
+
+    system_prompt = """You are a helpful and polite university staff assistant. Your goal is to gather information about a problem or issue the user wants to report.
+To submit a report, we need:
+1. The exact problem details (What happened? What is broken?)
+2. The location (Which building? Which room or area?)
+
+Analyze the conversation history.
+If the information is INCOMPLETE, reply with a natural, polite follow-up question in Thai to ask for the missing details. Keep it short and conversational.
+If the information is COMPLETE, summarize the gathered information into a JSON format and set the conversation as complete.
+
+Respond STRICTLY with a valid JSON object in the following format, and nothing else:
+{
+  "is_complete": boolean,
+  "reply": "string (your polite follow-up question, or a brief confirmation like 'ขอบคุณครับ ระบบกำลังเตรียมส่งข้อมูล' if complete)",
+  "extracted_data": {
+    "title": "string (a short, clear title for the problem)",
+    "description": "string (a detailed, formal description of the problem based on the chat)",
+    "category_name": "string (guess the category, e.g. 'ปัญหาอาคาร/สถานที่', 'ระบบเครือข่าย/IT', 'ความสะอาด', 'อื่นๆ')",
+    "location": "string (the building and room/area)"
+  } // extracted_data should be null if is_complete is false
+}"""
+
+    api_messages = [{"role": "system", "content": system_prompt}]
+    for msg in messages:
+        api_messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+
+    url = "https://api.opentyphoon.ai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "typhoon-v2.5-30b-a3b-instruct",
+        "messages": api_messages,
+        "temperature": 0.3,
+        "max_tokens": 1024,
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=15)
+        if response.status_code != 200:
+            logger.error(f"Typhoon API error: {response.text}")
+        response.raise_for_status()
+        result = response.json()
+        content = result['choices'][0]['message']['content']
+        import json
+        
+        # Clean markdown code block if present
+        content = content.strip()
+        if content.startswith('```json'):
+            content = content[7:]
+        if content.startswith('```'):
+            content = content[3:]
+        if content.endswith('```'):
+            content = content[:-3]
+        content = content.strip()
+            
+        parsed_data = json.loads(content)
+        return parsed_data
+        
+    except Exception as e:
+        logger.error(f"Error in handle_chat_report: {e}")
+        return {
+            "is_complete": False,
+            "reply": "ขออภัยครับ ระบบ AI เกิดข้อผิดพลาด ไม่สามารถประมวลผลได้ในขณะนี้",
+            "extracted_data": None
+        }
+
+def expand_description(text: str) -> str:
+    """
+    Expands a brief problem description using AI.
+    """
+    api_key = get_typhoon_api_key()
+    if not api_key:
+        return text + " (รายละเอียดเพิ่มเติมจาก AI... ระบบไม่สามารถเข้าถึง API ได้)"
+
+    prompt = f"Please expand the following short problem description into a more formal, polite, and detailed report suitable for a university issue tracking system. Output ONLY the expanded Thai text.\n\nShort text: {text}"
+
+    url = "https://api.opentyphoon.ai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "typhoon-v2.5-30b-a3b-instruct",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.4,
+        "max_tokens": 1024,
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=15)
+        if response.status_code != 200:
+            logger.error(f"Typhoon API error: {response.text}")
+        response.raise_for_status()
+        result = response.json()
+        content = result['choices'][0]['message']['content']
+        return content.strip()
+    except Exception as e:
+        logger.error(f"expand_description error: {e}")
+        return text

@@ -22,7 +22,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 
 // ─── TypeScript Interfaces ────────────────────────────────────────────────────
@@ -216,7 +216,14 @@ function ProblemCard({
   
   // Use exact author name or fallback to generic role for the tag
   let authorTag = 'ไม่ระบุตัวตน';
-  if (problem.author?.role === 'student' || problem.author_name?.includes('นิสิต')) authorTag = 'นิสิต';
+  if (problem.author?.role === 'student' || problem.author_name?.includes('นิสิต')) {
+    const studentId = problem.author?.student_id;
+    if (studentId && typeof studentId === 'string' && studentId.length >= 2) {
+      authorTag = `นิสิตมพ${studentId.substring(0, 2)}`;
+    } else {
+      authorTag = 'นิสิต';
+    }
+  }
   else if (problem.author?.role === 'staff' || problem.author_name?.includes('บุคลากร')) authorTag = 'บุคลากร';
 
   let rawImages: string[] = [];
@@ -277,8 +284,8 @@ function ProblemCard({
 
         {/* Mock Image for now, or actual image */}
         {images.length > 0 && (
-          <div className="w-full h-48 rounded-lg overflow-hidden bg-surface-container-highest mt-2">
-            <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url('${images[0]}')` }}></div>
+          <div className="w-full rounded-lg overflow-hidden bg-surface-container-highest mt-2 flex justify-center max-h-80">
+            <img src={images[0]} alt="Problem attachment" className="w-full h-full object-contain" />
           </div>
         )}
 

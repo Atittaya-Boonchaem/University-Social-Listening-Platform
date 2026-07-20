@@ -179,7 +179,7 @@ def get_current_user_optional(
                 student_name="Student User (SSO)",
                 faculty_id=fac.faculty_id if fac else None,
                 year=1,
-                age=20,
+                birthdate=None,
                 gender="Male"
             )
             db.add(student_record)
@@ -230,7 +230,7 @@ def register_student(data: StudentRegisterCreate, db: Session = Depends(get_db))
         faculty_id=get_faculty_id(data.faculty_name, db),
         major=data.major,
         year=data.year,
-        age=data.age,
+        birthdate=data.birthdate,
         gender=data.gender,
         phone=data.phone,
     )
@@ -619,10 +619,10 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(user)
 
-        # Check profile completeness (age or gender missing → needs onboarding)
+        # Check profile completeness (birthdate or gender missing → needs onboarding)
         student_rec = db.query(Student).filter(Student.user_id == user.user_id).first()
         staff_rec = db.query(Staff).filter(Staff.user_id == user.user_id).first()
-        if student_rec and (student_rec.age is None or student_rec.gender is None):
+        if student_rec and (student_rec.birthdate is None or student_rec.gender is None):
             is_new_user = True
         elif staff_rec and staff_rec.department is None:
             is_new_user = True

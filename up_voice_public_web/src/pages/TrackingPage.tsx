@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_BASE = 'https://university-social-listening-platform.onrender.com/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 export default function TrackingPage() {
   const [reports, setReports] = useState<any[]>([]);
@@ -91,7 +91,7 @@ export default function TrackingPage() {
               const parseUrl = (u: string) => {
                 if (!u) return '';
                 if (u.startsWith('http')) return u;
-                return `https://university-social-listening-platform.onrender.com${u.startsWith('/') ? '' : '/'}${u}`;
+                return `${import.meta.env.VITE_BASE_URL || 'http://localhost:8000'}${u.startsWith('/') ? '' : '/'}${u}`;
               };
               if (p.attachments && p.attachments.length > 0) {
                 return p.attachments.map((att: any) => parseUrl(att.file_url || att.url));
@@ -183,7 +183,7 @@ function ReportCard({ report, getCategoryColor, onDelete }: any) {
     setIsDeleting(true);
     try {
       const token = localStorage.getItem('access_token');
-      const res = await axios.delete(`https://university-social-listening-platform.onrender.com/api/v1/problems/${report.realId}`, {
+      const res = await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/problems/${report.realId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.data.success) {
@@ -202,7 +202,7 @@ function ReportCard({ report, getCategoryColor, onDelete }: any) {
   useEffect(() => {
     if (isExpanded && !aiAnalysis && !isAiLoading) {
       setIsAiLoading(true);
-      axios.get(`https://university-social-listening-platform.onrender.com/api/v1/problems/${report.realId}/ai-analysis`)
+      axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/problems/${report.realId}/ai-analysis`)
         .then(res => {
            if(res.data?.success) setAiAnalysis(res.data.data);
         })
