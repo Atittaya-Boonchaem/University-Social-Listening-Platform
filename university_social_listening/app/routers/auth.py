@@ -715,12 +715,12 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
             "is_new_user": is_new_user,
         })
         
-        # Redirect back to frontend (configurable via env)
-        frontend_url = os.getenv("FRONTEND_URL", "https://university-social-listening-platfor.vercel.app").rstrip("/")
+        # Redirect back to Public Web frontend
+        frontend_url = os.getenv("PUBLIC_WEB_URL", "https://university-social-listening-platfor.vercel.app").rstrip("/")
         return RedirectResponse(f"{frontend_url}/sso-success?token={token}")
     except Exception as e:
         print(f"DEBUG: DB or Processing Error: {e}")
         import traceback
         traceback.print_exc()
-        frontend_url = os.getenv("FRONTEND_URL", "https://university-social-listening-platfor.vercel.app").rstrip("/")
+        frontend_url = os.getenv("PUBLIC_WEB_URL", "https://university-social-listening-platfor.vercel.app").rstrip("/")
         return RedirectResponse(f"{frontend_url}/login?sso_error=server_error")
