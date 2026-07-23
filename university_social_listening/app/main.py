@@ -41,15 +41,8 @@ app.mount("/uploads", StaticFiles(directory="./uploads"), name="uploads")
 # ──────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost",
-        "http://127.0.0.1",
-        "https://up-social-listening.netlify.app",
-        os.getenv("FRONTEND_URL", "http://localhost:5174"),
-    ],
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?|https://.*\.vercel\.app",
+    allow_origins=["*"],
+    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
