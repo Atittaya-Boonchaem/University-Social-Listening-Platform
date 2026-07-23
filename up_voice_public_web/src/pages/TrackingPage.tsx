@@ -391,9 +391,11 @@ function ReportCard({ report, getCategoryColor, onDelete }: any) {
             {report.images && report.images.length > 0 && (
               <div>
                 <h3 className="text-xs font-bold text-slate-600 mb-2">รูปภาพ</h3>
-                <div className={`grid gap-2 ${report.images.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <div className="flex flex-col gap-3">
                   {report.images.map((img: any, idx: number) => (
-                    <img key={idx} src={img} alt="report attachment" className="w-full h-32 object-cover rounded-lg border border-slate-200" />
+                    <a key={idx} href={img} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-slate-200 bg-slate-50 hover:shadow-md transition-all">
+                      <img src={img} alt="report attachment" className="w-full max-h-[480px] object-contain rounded-xl" />
+                    </a>
                   ))}
                 </div>
               </div>
