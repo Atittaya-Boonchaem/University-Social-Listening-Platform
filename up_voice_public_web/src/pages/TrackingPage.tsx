@@ -124,6 +124,45 @@ export default function TrackingPage() {
     }
     fetchData();
   }, []);
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'category'>('newest');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isSortOpen, setIsSortOpen] = useState(false);
+
+  const isFilterActive = selectedCategory !== 'ALL' || selectedStatus !== 'ALL';
+
+  // Compute filtered & sorted reports
+  const displayedReports = React.useMemo(() => {
+    let list = [...reports];
+
+    // Filter by Category
+    if (selectedCategory !== 'ALL') {
+      list = list.filter(r => r.category === selectedCategory || String(r.categoryId) === selectedCategory);
+    }
+
+    // Filter by Status Step
+    if (selectedStatus !== 'ALL') {
+      if (selectedStatus === 'OPEN') {
+        list = list.filter(r => r.statusStep === 1);
+      } else if (selectedStatus === 'IN_PROGRESS') {
+        list = list.filter(r => r.statusStep === 3);
+      } else if (selectedStatus === 'RESOLVED') {
+        list = list.filter(r => r.statusStep === 4);
+      }
+    }
+
+    // Sort Order
+    if (sortOrder === 'newest') {
+      list.sort((a, b) => b.realId - a.realId);
+    } else if (sortOrder === 'oldest') {
+      list.sort((a, b) => a.realId - b.realId);
+    } else if (sortOrder === 'category') {
+      list.sort((a, b) => (a.category || '').localeCompare(b.category || '', 'th'));
+    }
+
+    return list;
+  }, [reports, selectedCategory, selectedStatus, sortOrder]);
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
@@ -134,15 +173,155 @@ export default function TrackingPage() {
             <h1 className="text-2xl font-bold text-[#2B164D] mb-1">รายงานของฉัน</h1>
             <p className="text-sm text-slate-500">ติดตามและจัดการการแจ้งความเห็นและรายงานปัญหาที่คุณส่งเข้าระบบ</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
-              กรอง
-            </button>
-            <button className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
-              เรียงลำดับ
-            </button>
+
+          <div className="flex items-center gap-3 relative">
+            {/* ── Filter Button & Popover ── */}
+            <div className="relative">
+              <button 
+                onClick={() => { setIsFilterOpen(!isFilterOpen); setIsSortOpen(false); }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 border ${
+                  isFilterActive || isFilterOpen 
+                    ? 'bg-[#310065] text-white border-[#310065] shadow-sm' 
+                    : 'bg-slate-100 text-slate-700 border-transparent hover:bg-slate-200'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                </svg>
+                กรอง
+                {isFilterActive && (
+                  <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
+                )}
+              </button>
+
+              {/* Filter Popover Dropdown */}
+              {isFilterOpen && (
+                <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-100 p-4 z-50 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+                    <span className="font-bold text-xs text-slate-800 uppercase tracking-wider">ตัวกรองปัญหารายการ</span>
+                    {isFilterActive && (
+                      <button 
+                        onClick={() => { setSelectedCategory('ALL'); setSelectedStatus('ALL'); }}
+                        className="text-[11px] font-semibold text-rose-600 hover:underline"
+                      >
+                        ล้างตัวกรอง
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Status Section */}
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold text-slate-500 mb-2">สถานะปัญหา</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { id: 'ALL', label: 'ทั้งหมด' },
+                        { id: 'OPEN', label: 'รอดำเนินการ' },
+                        { id: 'IN_PROGRESS', label: 'กำลังดำเนินการ' },
+                        { id: 'RESOLVED', label: 'เสร็จสิ้น' },
+                      ].map(st => (
+                        <button
+                          key={st.id}
+                          onClick={() => setSelectedStatus(st.id)}
+                          className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                            selectedStatus === st.id
+                              ? 'bg-[#310065] text-white'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {st.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Category Section */}
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 mb-2">หมวดหมู่ปัญหา</p>
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                      <button
+                        onClick={() => setSelectedCategory('ALL')}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                          selectedCategory === 'ALL'
+                            ? 'bg-[#310065] text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        ทั้งหมด
+                      </button>
+                      {categories.map((cat: any) => {
+                        const name = cat.category_name || cat.name;
+                        return (
+                          <button
+                            key={cat.id || cat.category_id || name}
+                            onClick={() => setSelectedCategory(name)}
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                              selectedCategory === name
+                                ? 'bg-[#310065] text-white'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+                    <button
+                      onClick={() => setIsFilterOpen(false)}
+                      className="w-full py-1.5 bg-[#310065] text-white rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      เสร็จสิ้น
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Sort Button & Popover ── */}
+            <div className="relative">
+              <button 
+                onClick={() => { setIsSortOpen(!isSortOpen); setIsFilterOpen(false); }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 border ${
+                  isSortOpen || sortOrder !== 'newest'
+                    ? 'bg-[#310065] text-white border-[#310065] shadow-sm'
+                    : 'bg-slate-100 text-slate-700 border-transparent hover:bg-slate-200'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path>
+                </svg>
+                เรียงลำดับ
+              </button>
+
+              {/* Sort Popover Dropdown */}
+              {isSortOpen && (
+                <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-xl border border-slate-100 p-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+                  <p className="px-3 py-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">การเรียงลำดับ</p>
+                  {[
+                    { id: 'newest', label: '🕒 ล่าสุด ➔ เก่าสุด' },
+                    { id: 'oldest', label: '⏳ เก่าสุด ➔ ล่าสุด' },
+                    { id: 'category', label: '🏷️ ตามหมวดหมู่ (A-Z)' },
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => { setSortOrder(opt.id as any); setIsSortOpen(false); }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors ${
+                        sortOrder === opt.id
+                          ? 'bg-[#310065]/10 text-[#310065]'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {sortOrder === opt.id && (
+                        <span className="material-symbols-outlined text-sm text-[#310065]">check</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -151,9 +330,21 @@ export default function TrackingPage() {
       <div className="max-w-3xl mx-auto p-6 space-y-6">
         {isLoading ? (
           <div className="text-center text-slate-500 py-10">กำลังโหลดข้อมูล...</div>
-        ) : reports.length === 0 ? (
-          <div className="text-center text-slate-500 py-10">ยังไม่มีรายงานปัญหาของคุณ</div>
-        ) : reports.map((report: any) => (
+        ) : displayedReports.length === 0 ? (
+          <div className="bg-white rounded-2xl p-10 text-center border border-slate-100 shadow-sm">
+            <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">filter_alt_off</span>
+            <p className="text-sm font-semibold text-slate-700 mb-1">ไม่พบรายการปัญหาตามเงื่อนไขที่เลือก</p>
+            <p className="text-xs text-slate-400 mb-4">ลองปรับตัวกรองหรือล้างการกรองเพื่อดูรายการทั้งหมด</p>
+            {isFilterActive && (
+              <button 
+                onClick={() => { setSelectedCategory('ALL'); setSelectedStatus('ALL'); }}
+                className="px-4 py-2 bg-[#310065] text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-opacity"
+              >
+                ล้างตัวกรองทั้งหมด
+              </button>
+            )}
+          </div>
+        ) : displayedReports.map((report: any) => (
           <ReportCard 
             key={report.id} 
             report={report} 
