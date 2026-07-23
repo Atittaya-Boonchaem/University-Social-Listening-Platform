@@ -28,7 +28,7 @@ import BuildingManagement      from './pages/super-admin/BuildingManagement';
 import CategoryAdminLayout     from './layouts/CategoryAdminLayout';
 import CategoryAdminDashboard  from './pages/category-admin/CategoryAdminDashboard';
 import ResolvedHistory         from './pages/category-admin/ResolvedHistory';
-import AnalyticsReports        from './pages/category-admin/AnalyticsReports';
+// import AnalyticsReports     from './pages/category-admin/AnalyticsReports'; // ปิดชั่วคราว
 import ProfileSettings         from './pages/category-admin/ProfileSettings';
 import KanbanBoard             from './pages/category-admin/KanbanBoard';
 import GlobalDashboard         from './pages/super-admin/GlobalDashboard';
@@ -216,7 +216,8 @@ function App() {
           <Route index element={<CategoryAdminDashboard />} />
           <Route path="kanban"   element={<KanbanBoard />} />
           <Route path="history"  element={<ResolvedHistory />} />
-          <Route path="analytics" element={<AnalyticsReports />} />
+          {/* analytics ปิดชั่วคราว — redirect กลับไปหน้าหลัก */}
+          <Route path="analytics" element={<Navigate to="/category-admin" replace />} />
           <Route path="settings" element={<ProfileSettings />} />
         </Route>
 
