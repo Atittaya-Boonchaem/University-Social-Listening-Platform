@@ -156,14 +156,17 @@ export default function ProfilePage() {
 
   const roleName = getRoleName(roleId);
   const roleBadge = getRoleBadge(roleId);
+  const isAnonymous = roleId === 6;
   const userIdentifier = profile?.student_id
     ? `Student #${profile.student_id}`
     : `User #${userId || 'Guest'}`;
 
-  const facultyId = profile?.faculty_id || localStorage.getItem('faculty_id') || 1;
-  const facultyName = profile?.faculty_name || (FACULTY_MAP[Number(facultyId)] ?? 'คณะเทคโนโลยีสารสนเทศและการสื่อสาร');
-  const genderLabel = (profile?.gender || localStorage.getItem('gender')) ? (GENDER_MAP[profile?.gender || localStorage.getItem('gender') || ''] ?? 'ชาย') : 'ชาย';
-  const yearLabel = profile?.year_name || (YEAR_MAP[Number(profile?.year || localStorage.getItem('education_level') || 1)] ?? 'ระดับปริญญาตรี');
+  const facultyId = profile?.faculty_id || localStorage.getItem('faculty_id');
+  const facultyName = profile?.faculty_name || (facultyId ? (FACULTY_MAP[Number(facultyId)] ?? null) : null);
+  const rawGender = profile?.gender || localStorage.getItem('gender');
+  const genderLabel = rawGender ? (GENDER_MAP[rawGender] ?? rawGender) : null;
+  const rawYear = profile?.year || localStorage.getItem('education_level');
+  const yearLabel = profile?.year_name || (rawYear ? (YEAR_MAP[Number(rawYear)] ?? null) : null);
 
   const getAvatarContent = () => {
     switch (roleId) {
@@ -190,7 +193,7 @@ export default function ProfilePage() {
     }
   };
 
-  const hasProfileInfo = profile && (facultyName || yearLabel || genderLabel || profile.birthdate || profile.department || profile.position);
+  const hasProfileInfo = !isAnonymous && (facultyName || yearLabel || genderLabel || profile?.birthdate || profile?.department || profile?.position || profile?.student_id || profile?.major);
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] font-sans pb-24">
