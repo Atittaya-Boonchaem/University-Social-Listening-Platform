@@ -92,8 +92,8 @@ export default function GlobalDashboard() {
 
   const maxCatCount = Math.max(...byCategory.map((c) => c.count), 1);
 
-  // Aggregate problem counts by building across ALL problems in DB
-  const buildingCounts = {};
+  // Aggregate problem counts + dominant category color per building
+  const buildingMap = {}; // { name: { count, categoryCounts: { catName: { count, color } } } }
   const problemSource = allProblems.length > 0 ? allProblems : geoPoints;
   
   problemSource.forEach(p => {
@@ -115,16 +115,33 @@ export default function GlobalDashboard() {
                (clean.includes('นิติ') && mName.includes('นิติศาสตร์'));
       });
 
-      if (matchedMaster) {
-        matchedName = matchedMaster.name;
-      }
+      if (matchedMaster) matchedName = matchedMaster.name;
 
-      buildingCounts[matchedName] = (buildingCounts[matchedName] || 0) + 1;
+      if (!buildingMap[matchedName]) buildingMap[matchedName] = { count: 0, categoryCounts: {} };
+      buildingMap[matchedName].count += 1;
+
+      // Track category counts for dominant color
+      const catName = p.category_name || 'อื่นๆ';
+      const catColor = p.color_code ||
+        geoPoints.find(g => g.category_name === catName)?.color_code ||
+        byCategory.find(c => c.category_name === catName)?.color_code ||
+        '#6366f1';
+      if (!buildingMap[matchedName].categoryCounts[catName]) {
+        buildingMap[matchedName].categoryCounts[catName] = { count: 0, color: catColor };
+      }
+      buildingMap[matchedName].categoryCounts[catName].count += 1;
     }
   });
 
-  const topBuildings = Object.entries(buildingCounts)
-    .map(([name, count]) => ({ name, count }))
+  const topBuildings = Object.entries(buildingMap)
+    .map(([name, data]) => {
+      // Pick dominant category color
+      const dominantCat = Object.entries(data.categoryCounts)
+        .sort((a, b) => b[1].count - a[1].count)[0];
+      const dominantColor = dominantCat ? dominantCat[1].color : '#6366f1';
+      const dominantCatName = dominantCat ? dominantCat[0] : '';
+      return { name, count: data.count, color: dominantColor, category: dominantCatName };
+    })
     .sort((a, b) => b.count - a.count)
     .slice(0, 6);
 
@@ -296,7 +313,8 @@ export default function GlobalDashboard() {
                     <tr className="bg-slate-50/80 text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-slate-100">
                       <th className="px-5 py-3.5 w-16 text-center">อันดับ</th>
                       <th className="px-5 py-3.5">ชื่ออาคารสถานที่ (Master Building)</th>
-                      <th className="px-5 py-3.5 w-48">สัดส่วนเคสปัญหา</th>
+                      <th className="px-5 py-3.5">หมวดหมู่หลัก</th>
+                      <th className="px-5 py-3.5 w-52">สัดส่วนเคสปัญหา</th>
                       <th className="px-5 py-3.5 w-32 text-right">จำนวนเคส</th>
                     </tr>
                   </thead>
@@ -304,34 +322,52 @@ export default function GlobalDashboard() {
                     {topBuildings.map((b, idx) => {
                       const totalCount = topBuildings.reduce((sum, item) => sum + item.count, 0);
                       const pct = totalCount > 0 ? Math.round((b.count / totalCount) * 100) : 0;
+                      const barColor = b.color || '#6366f1';
+                      // Lighten the bar color for background badge
                       return (
-                        <tr key={b.name} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="px-5 py-3.5 text-center">
+                        <tr key={b.name} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="px-5 py-4 text-center">
                             <span className={`inline-flex items-center justify-center w-7 h-7 rounded-xl text-xs font-black shadow-xs ${
-                              idx === 0 ? 'bg-amber-500 text-white' :
-                              idx === 1 ? 'bg-slate-400 text-white' :
-                              idx === 2 ? 'bg-amber-700 text-white' :
-                              'bg-indigo-100 text-indigo-700'
+                              idx === 0 ? 'bg-amber-400 text-white' :
+                              idx === 1 ? 'bg-slate-300 text-slate-700' :
+                              idx === 2 ? 'bg-amber-600 text-white' :
+                              'bg-slate-100 text-slate-500'
                             }`}>
                               #{idx + 1}
                             </span>
                           </td>
-                          <td className="px-5 py-3.5 font-bold text-slate-800 text-xs md:text-sm">
+                          <td className="px-5 py-4 font-bold text-slate-800 text-xs md:text-sm">
                             {b.name}
                           </td>
-                          <td className="px-5 py-3.5">
+                          <td className="px-5 py-4">
+                            {b.category ? (
+                              <span
+                                className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full"
+                                style={{ backgroundColor: barColor + '22', color: barColor, border: `1px solid ${barColor}44` }}
+                              >
+                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: barColor }} />
+                                {b.category}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-4">
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-gradient-to-r from-indigo-500 to-violet-600 rounded-full transition-all duration-500" 
-                                  style={{ width: `${pct}%` }} 
+                                <div
+                                  className="h-full rounded-full transition-all duration-700 ease-out"
+                                  style={{ width: `${pct}%`, backgroundColor: barColor }}
                                 />
                               </div>
                               <span className="text-xs font-semibold text-slate-500 w-9 text-right">{pct}%</span>
                             </div>
                           </td>
-                          <td className="px-5 py-3.5 text-right">
-                            <span className="inline-block px-3 py-1 bg-indigo-50 border border-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl shadow-2xs">
+                          <td className="px-5 py-4 text-right">
+                            <span
+                              className="inline-block px-3 py-1 font-extrabold text-xs rounded-xl"
+                              style={{ backgroundColor: barColor + '18', color: barColor, border: `1px solid ${barColor}33` }}
+                            >
                               {b.count} เคส
                             </span>
                           </td>
