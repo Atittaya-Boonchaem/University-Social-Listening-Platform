@@ -73,12 +73,12 @@ function SSOPanel({ onSuccess, onClose }: { onSuccess: (roleId: number, token: s
     try {
       let email = id.trim();
       if (!email.includes('@')) email += '@up.ac.th';
-      const expectedRoleId = selectedRole === 0 ? 1 : 2;
+      const expectedRole = selectedRole === 0 ? 'student' : 'staff';
 
       const res = await axios.post(`${API_BASE}/login`, {
         email,
         password,
-        expected_role_id: expectedRoleId,
+        expected_role: expectedRole,
       });
 
       const data = res.data;
