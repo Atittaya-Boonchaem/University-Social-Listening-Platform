@@ -673,7 +673,7 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
                 existing_st = db.query(Student).filter(Student.student_id == prefix).first()
                 if existing_st:
                     existing_st.user_id = user.user_id
-                    if not existing_st.student_name or existing_st.student_name == "Unknown":
+                    if display_name and "Demo" not in display_name:
                         existing_st.student_name = display_name
                 else:
                     student = Student(
