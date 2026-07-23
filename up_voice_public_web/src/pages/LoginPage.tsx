@@ -413,12 +413,9 @@ export default function LoginPage() {
               <div className="space-y-stack-md">
                 {/* SSO Primary Action */}
                 {activePanel === 'none' ? (
-                  <button
-                    onClick={() => { 
-                      const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '');
-                      window.location.href = `${apiBase}/auth/sso/login`; 
-                    }}
-                    className="w-full py-4 px-6 bg-primary-container text-white rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-primary transition-all active:scale-[0.98] shadow-lg shadow-primary/10"
+                  <a
+                    href={`${(import.meta.env.VITE_API_URL || 'https://university-social-listening-platform.onrender.com/api/v1').replace(/\/$/, '')}/auth/sso/login`}
+                    className="w-full py-4 px-6 bg-primary-container text-white rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-primary transition-all active:scale-[0.98] shadow-lg shadow-primary/10 cursor-pointer text-center"
                   >
                     <svg className="w-5 h-5" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
@@ -427,7 +424,7 @@ export default function LoginPage() {
                       <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
                     </svg>
                     เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัย (@up.ac.th)
-                  </button>
+                  </a>
                 ) : null}
                 
                 <div className="flex items-center gap-4 py-2">
