@@ -11,7 +11,8 @@ const resolveImageUrl = (img) => {
     return urlStr;
   }
   const cleanPath = urlStr.startsWith('/') ? urlStr : `/${urlStr}`;
-  return `http://localhost:8000${cleanPath}`;
+  const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '');
+  return `${apiBase}${cleanPath}`;
 };
 
 export default function TicketDetailModal({ ticket, onClose, onStatusChange, onForward, onQuarantine, onMerge }) {

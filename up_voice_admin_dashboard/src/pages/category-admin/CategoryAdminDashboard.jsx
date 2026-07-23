@@ -543,7 +543,8 @@ export default function CategoryAdminDashboard() {
                           {post.images && post.images.length > 0 && (
                             <div className="flex gap-2 overflow-x-auto pt-2">
                               {post.images.map((img, i) => {
-                                const srcUrl = !img ? '' : (img.startsWith('http') ? img : `http://localhost:8000${img.startsWith('/') ? '' : '/'}${img}`);
+                                const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '');
+                                const srcUrl = !img ? '' : (img.startsWith('http') ? img : `${apiBase}${img.startsWith('/') ? '' : '/'}${img}`);
                                 return (
                                   <img key={i} src={srcUrl} alt="attachment" className="h-24 w-24 object-cover rounded-lg border border-slate-200" />
                                 );
