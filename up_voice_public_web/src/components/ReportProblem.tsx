@@ -190,8 +190,10 @@ export default function ReportProblem({
       if (matchedBuilding) {
         setSelectedBuilding(String(matchedBuilding.id));
         if (matchedBuilding.latitude && matchedBuilding.longitude) {
-          setSelectedLocation({ lat: matchedBuilding.latitude, lng: matchedBuilding.longitude });
-          setMapFlyTarget([matchedBuilding.latitude, matchedBuilding.longitude]);
+          const lat = Number(matchedBuilding.latitude);
+          const lng = Number(matchedBuilding.longitude);
+          setSelectedLocation({ lat, lng });
+          setMapFlyTarget([lat, lng]);
         }
       } else {
         setSelectedBuilding('other');
@@ -403,7 +405,7 @@ export default function ReportProblem({
     setImagePreviews(prev => prev.filter((_, i) => i !== index));
   }
 
-  function clearAllImages() {
+  function _clearAllImages() {
     setImages([]);
     setImagePreviews([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -511,6 +513,7 @@ export default function ReportProblem({
         setSelectedLocation(null);
         setMapFlyTarget(null);
         setVisibility('public');
+        _clearAllImages();
         const ticketId = data?.data?.item?.ticket_id;
         const msg = ticketId ? `ส่งรายงานปัญหาสำเร็จ! 🎉 (รหัสติดตามปัญหา: ${ticketId})` : 'ส่งรายงานปัญหาสำเร็จ! 🎉';
         showToast(msg, 'success');

@@ -16,17 +16,7 @@ import LoginPage from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import RegisterPage from './pages/RegisterPage';
 import IssueDetailPage from './pages/IssueDetailPage';
-import AdminDashboard from './pages/AdminDashboard';
-import SettingsLayout from './components/SettingsLayout';
 import SsoSuccessPage from './pages/SsoSuccessPage';
-
-// ─── Admin Boilerplate Components ──────────────────────────────────────────────
-const AdminProblems = () => <div className="p-8"><h1 className="text-2xl font-bold text-[#2B164D] mb-4">Manage All Problems</h1><p>จัดการปัญหาและข้อร้องเรียนทั้งหมดในระบบ</p></div>;
-const AdminUsers = () => <div className="p-8"><h1 className="text-2xl font-bold text-[#2B164D] mb-4">User Management</h1><p>จัดการผู้ใช้งาน กำหนดสิทธิ์ และระงับบัญชี</p></div>;
-
-const MasterDataSettings = () => <div className="p-4"><h2 className="text-xl font-bold text-[#2B164D] mb-2">Master Data</h2><p className="text-slate-500">Configure buildings, categories, etc.</p></div>;
-const AISystemSettings = () => <div className="p-4"><h2 className="text-xl font-bold text-[#2B164D] mb-2">AI & System</h2><p className="text-slate-500">Configure LLM prompts and models.</p></div>;
-const SecurityLogsSettings = () => <div className="p-4"><h2 className="text-xl font-bold text-[#2B164D] mb-2">Security & Logs</h2><p className="text-slate-500">View audit logs and security events.</p></div>;
 
 function parseJwt(token: string) {
   try {
