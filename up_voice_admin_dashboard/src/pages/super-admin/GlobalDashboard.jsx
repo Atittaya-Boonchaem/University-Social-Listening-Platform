@@ -2,28 +2,23 @@
 /**
  * Super Admin Global Dashboard
  * Features:
- *  - Real KPI cards with live data
- *  - Heatmap/Pin Map with Category Colors + Legend
- *  - Bar chart: Issues by Category
- *  - SLA Breached Tickets table (Top 5)
- *  - AI Control Center: Interactive Donut Chart with Category & Accuracy / Sentiment Breakdown
+ *  - 4 Clean & Balanced KPI Cards (Total Users, Total Problems, Open, Resolved)
+ *  - Category Map (Heatmap/Pin Map with Category Colors + Legend)
+ *  - Problems by Category (Heatmap View style horizontal progress bars)
+ *  - Top Problem Buildings (Normalized to master building list, replacing SLA table)
+ *  - AI Control Center (Interactive Donut Chart + Knowledge Base Re-index)
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie, Cell as PieCell, Legend
-} from 'recharts';
+import { PieChart, Pie, Cell as PieCell } from 'recharts';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
-  AlertTriangle, BarChart3, Bot, MapPin, ShieldAlert,
-  Users, CheckCircle, Clock, RefreshCw, Zap, ShieldCheck, Sparkles, Filter
+  AlertTriangle, BarChart3, Bot, MapPin, Users, CheckCircle, Clock,
+  RefreshCw, Zap, Building2, Layers
 } from 'lucide-react';
-import SLABadge from '../../components/SLABadge';
 import { fetchAnalytics } from '../../services/problemService';
-import { fetchSlaBreached } from '../../services/ticketService';
 import { fetchUsers } from '../../services/userService';
-import api from '../../services/api';
+import { fetchBuildings } from '../../services/buildingService';
 
 const PHAYAO_CENTER = [19.0289, 99.8967];
 const BAR_COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#c084fc', '#d8b4fe', '#ec4899', '#3b82f6'];
@@ -41,11 +36,34 @@ const AI_SENTIMENT_BREAKDOWN = [
   { name: 'ข้อเสนอแนะ (Positive)', value: 10, color: '#10b981' },
 ];
 
+// ── Category bar component from Heatmap View ───────────────────
+const CategoryBar = ({ name, count, max, color }) => {
+  const pct = max > 0 ? (count / max) * 100 : 0;
+  const barColor = color || '#6366f1';
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-xs text-slate-700 font-semibold truncate flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: barColor }} />
+          {name}
+        </span>
+        <span className="text-xs text-slate-500 font-bold ml-2 flex-shrink-0">{count}</span>
+      </div>
+      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-700 ease-out"
+          style={{ width: `${pct}%`, backgroundColor: barColor }}
+        />
+      </div>
+    </div>
+  );
+};
+
 export default function GlobalDashboard() {
   const [analytics, setAnalytics] = useState(null);
-  const [slaItems, setSlaItems] = useState([]);
   const [totalUsers, setTotalUsers] = useState(0);
   const [geoPoints, setGeoPoints] = useState([]);
+  const [masterBuildings, setMasterBuildings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reindexing, setReindexing] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
@@ -61,15 +79,15 @@ export default function GlobalDashboard() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [analyticsData, slaData, usersData] = await Promise.all([
+      const [analyticsData, usersData, bldData] = await Promise.all([
         fetchAnalytics(),
-        fetchSlaBreached(5),
         fetchUsers(),
+        fetchBuildings().catch(() => []),
       ]);
       setAnalytics(analyticsData);
-      setSlaItems(slaData || []);
       setTotalUsers(usersData.length || 0);
       setGeoPoints(analyticsData?.geo_points ?? []);
+      setMasterBuildings(Array.isArray(bldData) ? bldData : bldData?.data || []);
     } catch (e) {
       console.error('GlobalDashboard load error:', e);
     } finally {
@@ -87,20 +105,53 @@ export default function GlobalDashboard() {
   };
 
   const byStatus = analytics?.by_status ?? {};
-  const byCategory = (analytics?.by_category ?? []).slice(0, 7);
+  const byCategory = analytics?.by_category ?? [];
   const total = analytics?.total ?? 0;
   const resolved = (byStatus['RESOLVED'] ?? 0) + (byStatus['CLOSED'] ?? 0);
   const pending = (byStatus['OPEN'] ?? 0) + (byStatus['IN_PROGRESS'] ?? 0);
-  const resolutionRate = total > 0 ? ((resolved / total) * 100).toFixed(1) : 0;
 
+  // Revamped 4 KPI cards (Removed SLA Overdue & Resolution Rate Cards)
   const kpis = [
     { label: 'ผู้ใช้ทั้งหมด', value: totalUsers, icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-100' },
     { label: 'ปัญหาทั้งหมด', value: total, icon: BarChart3, color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
-    { label: 'รอแก้ไข', value: pending, icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
-    { label: 'แก้ไขสำเร็จ', value: resolved, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
-    { label: 'อัตราแก้ไข', value: `${resolutionRate}%`, icon: Zap, color: 'text-sky-600', bg: 'bg-sky-50', border: 'border-sky-100' },
-    { label: 'SLA เกินกำหนด', value: slaItems.filter(s => s.sla_status?.level === 'red').length, icon: ShieldAlert, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
+    { label: 'รอแก้ไข', value: pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
+    { label: 'แก้ไขแล้วเสร็จ', value: resolved, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
   ];
+
+  const maxCatCount = Math.max(...byCategory.map((c) => c.count), 1);
+
+  // Normalize building names to main master building list
+  const buildingCounts = {};
+  geoPoints.forEach(p => {
+    const rawName = p.building_name || p.location;
+    if (rawName && rawName.trim()) {
+      const clean = rawName.trim();
+      let matchedName = clean;
+      
+      // Match against master buildings list
+      const matchedMaster = masterBuildings.find(b => {
+        const mName = b.name || '';
+        return clean.toLowerCase().includes(mName.toLowerCase()) ||
+               mName.toLowerCase().includes(clean.toLowerCase()) ||
+               (clean.toUpperCase().includes('ICT') && mName.includes('สารสนเทศ')) ||
+               (clean.includes('อธิการ') && mName.includes('อธิการบดี')) ||
+               (clean.includes('วิศว') && mName.includes('วิศวกรรม')) ||
+               (clean.includes('พยาบาล') && mName.includes('พยาบาล')) ||
+               (clean.includes('นิติ') && mName.includes('นิติศาสตร์'));
+      });
+
+      if (matchedMaster) {
+        matchedName = matchedMaster.name;
+      }
+
+      buildingCounts[matchedName] = (buildingCounts[matchedName] || 0) + 1;
+    }
+  });
+
+  const topBuildings = Object.entries(buildingCounts)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
 
   const currentDonutData = donutMode === 'accuracy' ? AI_ACCURACY_BREAKDOWN : AI_SENTIMENT_BREAKDOWN;
 
@@ -114,7 +165,7 @@ export default function GlobalDashboard() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto font-sans">
       {/* ─── Header ─── */}
       <div className="flex items-center justify-between">
         <div>
@@ -132,29 +183,29 @@ export default function GlobalDashboard() {
         </button>
       </div>
 
-      {/* ─── KPI Cards ─── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* ─── 4 Clean Balanced KPI Cards ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         {kpis.map((kpi, i) => {
           const Icon = kpi.icon;
           return (
-            <div key={i} className={`bg-white rounded-2xl border ${kpi.border} shadow-sm p-4 flex flex-col gap-2 hover:shadow-md transition-shadow`}>
-              <div className={`w-9 h-9 rounded-xl ${kpi.bg} flex items-center justify-center`}>
-                <Icon size={18} className={kpi.color} />
+            <div key={i} className={`bg-white rounded-2xl border ${kpi.border} shadow-sm p-5 flex items-center gap-4 hover:shadow-md transition-shadow`}>
+              <div className={`w-12 h-12 rounded-2xl ${kpi.bg} flex items-center justify-center flex-shrink-0`}>
+                <Icon size={24} className={kpi.color} />
               </div>
               <div>
-                <p className="text-xs text-slate-400 font-medium">{kpi.label}</p>
-                <p className={`text-2xl font-black ${kpi.color}`}>{kpi.value}</p>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{kpi.label}</p>
+                <p className={`text-2xl font-black ${kpi.color} mt-0.5`}>{kpi.value}</p>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* ─── Row 2: Map with Category Colors + Bar Chart ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Heatmap (Pins Color-coded by Category) */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+      {/* ─── Row 2: Category Map + Problems by Category (Heatmap View Style) ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Heatmap (Pins Color-coded by Category) — Spans 2 columns */}
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
             <div className="flex items-center gap-2">
               <MapPin size={18} className="text-[#2B164D]" />
               <h2 className="font-bold text-slate-800">แผนที่ความร้อนแยกตามหมวดหมู่ (Category Map)</h2>
@@ -164,14 +215,13 @@ export default function GlobalDashboard() {
             </span>
           </div>
 
-          <div className="h-[300px] relative">
+          <div className="h-[320px] relative">
             <MapContainer center={PHAYAO_CENTER} zoom={15} scrollWheelZoom={false} className="h-full w-full absolute inset-0">
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
               {geoPoints.map((pt, idx) => {
-                // Use category color code from DB or fallback to status color
                 const color = pt.color_code || (pt.status === 'RESOLVED' ? '#10b981' : '#3b82f6');
                 return (
                   <CircleMarker
@@ -186,6 +236,7 @@ export default function GlobalDashboard() {
                           📁 {pt.category_name || 'หมวดหมู่ทั่วไป'}
                         </span>
                         <strong className="block text-sm text-slate-800 font-bold leading-tight">{pt.title}</strong>
+                        {pt.building_name && <p className="text-xs text-slate-600 mt-1">📍 {pt.building_name}</p>}
                         <span className="text-xs text-slate-500 mt-1 block">สถานะ: <strong className="text-indigo-600">{pt.status}</strong></span>
                       </div>
                     </Popup>
@@ -210,85 +261,77 @@ export default function GlobalDashboard() {
           </div>
         </div>
 
-        {/* Bar Chart: Issues by Category */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col">
-          <div className="flex items-center gap-2 mb-5">
-            <BarChart3 size={18} className="text-[#2B164D]" />
-            <h2 className="font-bold text-slate-800">ปัญหาแยกตามหมวดหมู่ (Category Distribution)</h2>
+        {/* Problems by Category (Heatmap View Progress Bars) */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
+              <Layers size={18} className="text-[#2B164D]" />
+              <h2 className="font-bold text-slate-800">ปัญหาแยกตามหมวดหมู่ (Problems by Category)</h2>
+            </div>
+            
+            {byCategory.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-10">ไม่มีข้อมูลหมวดหมู่</p>
+            ) : (
+              <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
+                {byCategory.map((c, idx) => {
+                  const color = geoPoints.find(g => g.category_name === c.category_name)?.color_code || BAR_COLORS[idx % BAR_COLORS.length];
+                  return (
+                    <CategoryBar
+                      key={c.category_name}
+                      name={c.category_name}
+                      count={c.count}
+                      max={maxCatCount}
+                      color={color}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <div className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={byCategory} margin={{ left: -20, bottom: 20 }}>
-                <XAxis dataKey="category_name" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(v) => [`${v} ปัญหา`, '']} />
-                <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                  {byCategory.map((cat, i) => {
-                    const color = geoPoints.find(g => g.category_name === cat.category_name)?.color_code || BAR_COLORS[i % BAR_COLORS.length];
-                    return <Cell key={i} fill={color} />;
-                  })}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <p className="text-[11px] text-slate-400 mt-4 text-center">สัดส่วนจำนวนปัญหาแยกตามแต่ละหมวดหมู่</p>
         </div>
       </div>
 
-      {/* ─── Row 3: SLA Table + AI Control Center Donut ─── */}
+      {/* ─── Row 3: Top Problem Buildings (Normalized to Master List) + AI Control Center ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* SLA Breached Table */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Clock size={18} className="text-rose-500" />
-              <h2 className="font-bold text-slate-800">Top 5 ตั๋วที่ SLA เกินกำหนด</h2>
+        {/* Top Problem Buildings (พื้นที่เกิดเรื่องบ่อย) */}
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2">
+                <Building2 size={20} className="text-indigo-600" />
+                <h2 className="font-bold text-slate-800 text-base">Top Problem Buildings (พื้นที่เกิดเรื่องบ่อย)</h2>
+              </div>
+              <span className="text-xs font-semibold text-slate-400">จัดกลุ่มตามหลักอาคารสถานที่</span>
             </div>
-            <span className="text-xs text-slate-400 font-medium">เรียงตามวันที่รอนานสุด</span>
+
+            {topBuildings.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <Building2 size={32} className="mx-auto mb-2 text-slate-300" />
+                <p className="text-xs font-medium">ยังไม่มีข้อมูลสถิติอาคารสถานที่</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {topBuildings.map((b, idx) => (
+                  <div key={b.name} className="flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-100 transition-colors">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-3">
+                      <span className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-extrabold flex items-center justify-center shadow-xs">
+                        #{idx + 1}
+                      </span>
+                      {b.name}
+                    </span>
+                    <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-lg">
+                      {b.count} เคส
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead>
-                <tr className="bg-slate-50 text-slate-400 text-xs uppercase tracking-wider">
-                  <th className="px-4 py-3 font-bold">Ticket ID</th>
-                  <th className="px-4 py-3 font-bold">ชื่อปัญหา</th>
-                  <th className="px-4 py-3 font-bold">หมวดหมู่</th>
-                  <th className="px-4 py-3 font-bold">สถานะ SLA</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {slaItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
-                      <CheckCircle size={24} className="mx-auto mb-2 text-emerald-400" />
-                      ไม่มีตั๋วที่ SLA เกินกำหนด 🎉
-                    </td>
-                  </tr>
-                ) : (
-                  slaItems.map(item => (
-                    <tr key={item.problem_id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs text-indigo-600 font-bold">
-                        {item.ticket_id ?? `#${item.problem_id}`}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-700 max-w-[180px] truncate">
-                        {item.title}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">{item.category_name}</td>
-                      <td className="px-4 py-3">
-                        <SLABadge
-                          level={item.sla_status?.level}
-                          label={item.sla_status?.label}
-                          daysOpen={item.sla_status?.days_open}
-                        />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <p className="text-[11px] text-slate-400 mt-4 text-center">พื้นที่เกิดเหตุจะถูกจัดกลุ่มเข้าสู่อาคารหลักตามรายชื่อ Master Building</p>
         </div>
 
-        {/* AI Control Center & Enhanced Donut Chart */}
+        {/* AI Control Center & Donut Chart */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
@@ -339,7 +382,6 @@ export default function GlobalDashboard() {
                       <PieCell key={i} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(val, name) => [`${val}%`, name]} />
                 </PieChart>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <span className={`text-2xl font-black ${donutMode === 'accuracy' ? 'text-emerald-600' : 'text-indigo-600'}`}>
