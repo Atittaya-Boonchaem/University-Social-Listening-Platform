@@ -160,6 +160,8 @@ export default function ReportProblem({
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedBuilding, setSelectedBuilding] = useState<string>('');
   const [visibility, setVisibility] = useState<'public' | 'internal'>('public');
+  const [locationConfidence, setLocationConfidence] = useState<number | null>(null);
+  const [needsLocationConfirmation, setNeedsLocationConfirmation] = useState<boolean>(false);
 
   // ── Data state ──────────────────────────────────────────────────────────────
   const [categories, setCategories] = useState<Category[]>([]);
@@ -171,22 +173,42 @@ export default function ReportProblem({
   const [customBuildingName, setCustomBuildingName] = useState('');
 
   const handleAiChatComplete = (data: any) => {
-    if (data.description) setDescription(data.description);
-    if (data.title) setTitle(data.title);
-    if (data.category_name) {
+    if (data.description && data.description.trim()) {
+      setDescription(data.description);
+    }
+    if (data.title && data.title.trim()) {
+      setTitle(data.title);
+    }
+    if (data.category_id) {
+      setSelectedCategory(String(data.category_id));
+    } else if (data.category_name) {
       const matchedCat = categories.find(c => c.name.includes(data.category_name) || data.category_name.includes(c.name));
       if (matchedCat) setSelectedCategory(String(matchedCat.id));
     }
-    if (data.location) {
+    if (data.location && !data.location.includes('ไม่ระบุ') && !data.location.includes('ไม่พบ')) {
       const matchedBuilding = buildings.find(b => data.location.includes(b.name) || b.name.includes(data.location));
       if (matchedBuilding) {
         setSelectedBuilding(String(matchedBuilding.id));
+        if (matchedBuilding.latitude && matchedBuilding.longitude) {
+          setSelectedLocation({ lat: matchedBuilding.latitude, lng: matchedBuilding.longitude });
+          setMapFlyTarget([matchedBuilding.latitude, matchedBuilding.longitude]);
+        }
       } else {
         setSelectedBuilding('other');
         setCustomBuildingName(data.location);
       }
     }
-    showToast('AI ช่วยดึงข้อมูลและกรอกฟอร์มให้เรียบร้อยแล้วครับ!', 'success');
+    if (data.latitude && data.longitude) {
+      setSelectedLocation({ lat: data.latitude, lng: data.longitude });
+      setMapFlyTarget([data.latitude, data.longitude]);
+    }
+    if (data.location_confidence !== undefined) {
+      setLocationConfidence(data.location_confidence);
+    }
+    if (data.needs_location_confirmation !== undefined) {
+      setNeedsLocationConfirmation(data.needs_location_confirmation);
+    }
+    showToast('✨ AI ช่วยเลือกหมวดหมู่และปักพิกัดตำแหน่งบนแผนที่ให้อัตโนมัติเรียบร้อยแล้ว!', 'success');
   };
 
   const handleAiSuggest = async () => {
@@ -413,12 +435,16 @@ export default function ReportProblem({
     e.preventDefault();
 
     // Validation (mirrors Flutter)
-    if (description.trim().length < 10) {
-      showToast('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร', 'warning');
+    if (!selectedCategory) {
+      showToast('กรุณาเลือกหมวดหมู่ปัญหาอย่างน้อย 1 หมวดหมู่', 'warning');
       return;
     }
-    if (!selectedCategory || (requiresMap && !selectedBuilding)) {
-      showToast('กรุณาเลือกหมวดหมู่และสถานที่', 'warning');
+    if (requiresMap && !selectedBuilding) {
+      showToast('กรุณาเลือกสถานที่เกิดเหตุ (หรือระบุอาคาร/สถานที่)', 'warning');
+      return;
+    }
+    if (description.trim().length < 10) {
+      showToast('กรุณากรอกรายละเอียดปัญหาอย่างน้อย 10 ตัวอักษร', 'warning');
       return;
     }
 
@@ -452,7 +478,12 @@ export default function ReportProblem({
         formData.append('longitude', String(selectedLocation.lng));
       }
       if (images.length > 0) {
-        images.forEach(img => {
+        if (locationConfidence !== null) {
+        formData.append('location_confidence', String(locationConfidence));
+      }
+      formData.append('is_location_confirmed', String(!needsLocationConfirmation));
+
+      images.forEach((img) => {
           formData.append('images', img, img.name);
         });
       }
@@ -480,8 +511,9 @@ export default function ReportProblem({
         setSelectedLocation(null);
         setMapFlyTarget(null);
         setVisibility('public');
-        clearAllImages();
-        showToast('ส่งรายงานปัญหาสำเร็จ! 🎉', 'success');
+        const ticketId = data?.data?.item?.ticket_id;
+        const msg = ticketId ? `ส่งรายงานปัญหาสำเร็จ! 🎉 (รหัสติดตามปัญหา: ${ticketId})` : 'ส่งรายงานปัญหาสำเร็จ! 🎉';
+        showToast(msg, 'success');
         onSuccess?.();
       } else {
         showToast(data.message ?? 'เกิดข้อผิดพลาดในการส่งข้อมูล', 'error');
@@ -687,7 +719,7 @@ export default function ReportProblem({
               </div>
 
               {/* Location */}
-              {requiresMap && (
+              {(requiresMap || customBuildingName || selectedLocation || selectedBuilding) ? (
                 <div className="space-y-3">
                   <div className="flex justify-between items-end">
                     <label className="font-label-md text-label-md text-on-surface-variant font-bold">ระบุพิกัดที่เกิดปัญหา <span className="text-error">*</span></label>
@@ -744,7 +776,7 @@ export default function ReportProblem({
                     )}
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {/* Smart Privacy Notice */}
               {isTeachingCategory && (

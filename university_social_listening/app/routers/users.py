@@ -13,6 +13,7 @@ Key changes from v1:
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional
+from pydantic import BaseModel
 from datetime import datetime
 import logging
 import uuid
@@ -358,6 +359,106 @@ def register_invite(
 
 
 # ──────────────────────────────────────────────
+# Get current user profile (Must be BEFORE /{user_id})
+# ──────────────────────────────────────────────
+@router.get("/me", response_model=StandardResponse)
+def get_current_user_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    role = get_user_role(current_user.user_id, db)
+    display_name = get_display_name(current_user.user_id, db)
+    
+    category_name = None
+    category_id = None
+    
+    if role == "category_admin":
+        from app.models import CategoryAdmin, Category
+        cat_admin = db.query(CategoryAdmin).filter(
+            CategoryAdmin.user_id == current_user.user_id,
+            CategoryAdmin.is_active == True
+        ).first()
+        if cat_admin and cat_admin.category_id:
+            category_id = cat_admin.category_id
+            cat = db.query(Category).filter(Category.category_id == cat_admin.category_id).first()
+            if cat:
+                category_name = cat.category_name
+                
+    # Faculty & Year Name Mapping
+    FACULTY_NAMES = {
+        1: 'คณะเทคโนโลยีสารสนเทศและการสื่อสาร',
+        2: 'คณะวิศวกรรมศาสตร์',
+        3: 'คณะวิทยาศาสตร์',
+        4: 'คณะแพทยศาสตร์',
+        5: 'คณะศิลปศาสตร์',
+        6: 'คณะบริหารธุรกิจและนิเทศศาสตร์',
+        7: 'คณะนิติศาสตร์',
+        8: 'คณะสหเวชศาสตร์และสาธารณสุขศาสตร์',
+        9: 'คณะเกษตรศาสตร์และทรัพยากรธรรมชาติ',
+        10: 'คณะทันตแพทยศาสตร์',
+        11: 'คณะสถาปัตยกรรมศาสตร์และศิลปกรรมศาสตร์',
+        12: 'คณะพยาบาลศาสตร์',
+        13: 'คณะเภสัชศาสตร์',
+        14: 'วิทยาลัยการศึกษา',
+    }
+    YEAR_NAMES = {
+        1: 'ระดับปริญญาตรี',
+        2: 'ระดับปริญญาโท',
+        3: 'ระดับปริญญาเอก',
+    }
+
+    # Fetch sub-profile details (Student / Staff / Public)
+    profile: Optional[dict] = None
+    student = db.query(Student).filter(Student.user_id == current_user.user_id).first()
+    if student:
+        f_name = FACULTY_NAMES.get(student.faculty_id) if student.faculty_id else 'คณะเทคโนโลยีสารสนเทศและการสื่อสาร'
+        y_name = YEAR_NAMES.get(student.year) if student.year else 'ระดับปริญญาตรี'
+        profile = {
+            "student_id": student.student_id,
+            "student_name": student.student_name,
+            "faculty_id": student.faculty_id,
+            "faculty_name": f_name,
+            "year": student.year,
+            "year_name": y_name,
+            "birthdate": student.birthdate,
+            "gender": student.gender,
+        }
+    else:
+        stf = db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
+        if stf:
+            profile = {
+                "employee_id": stf.employee_id,
+                "staff_name": stf.staff_name,
+                "department": stf.department,
+                "position": stf.position,
+                "office_location": stf.office_location,
+            }
+        else:
+            pub = db.query(PublicUser).filter(PublicUser.user_id == current_user.user_id).first()
+            if pub:
+                profile = {
+                    "first_name": pub.first_name,
+                    "last_name": pub.last_name,
+                    "user_type": pub.user_type,
+                }
+
+    return StandardResponse(
+        success=True,
+        message="Current user profile retrieved successfully",
+        data={
+            "user_id": current_user.user_id,
+            "email": current_user.email,
+            "display_name": display_name,
+            "role": role,
+            "category_id": category_id,
+            "category_name": category_name,
+            "is_active": current_user.is_active,
+            "profile": profile,
+        }
+    )
+
+
+# ──────────────────────────────────────────────
 # Get single user profile
 # ──────────────────────────────────────────────
 @router.get("/{user_id}", response_model=StandardResponse)
@@ -379,15 +480,17 @@ def get_user(
 
     student = db.query(Student).filter(Student.user_id == user_id).first()
     if student:
+        f_name = FACULTY_NAMES.get(student.faculty_id) if student.faculty_id else 'คณะเทคโนโลยีสารสนเทศและการสื่อสาร'
+        y_name = YEAR_NAMES.get(student.year) if student.year else 'ระดับปริญญาตรี'
         profile = {
             "student_id": student.student_id,
             "student_name": student.student_name,
             "faculty_id": student.faculty_id,
-            "major": student.major,
+            "faculty_name": f_name,
             "year": student.year,
+            "year_name": y_name,
             "birthdate": student.birthdate,
             "gender": student.gender,
-            "phone": student.phone,
         }
     else:
         stf = db.query(Staff).filter(Staff.user_id == user_id).first()
@@ -509,6 +612,7 @@ def unban_user(
 
     active_ban.is_active = False
     target.is_active = True
+    target.strike_count = 0
 
     audit = AuditLog(
         admin_id=current_user.user_id,
@@ -571,6 +675,71 @@ def promote_to_super_admin(
         success=True,
         message=f"User #{user_id} promoted to Super Admin",
         data={"user_id": user_id, "new_role": "super_admin"},
+    )
+
+
+class ResetPasswordPayload(BaseModel):
+    new_password: str
+
+@router.post("/{user_id}/reset-password", response_model=StandardResponse)
+def reset_user_password(
+    user_id: int,
+    payload: ResetPasswordPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_super_admin(current_user, db)
+
+    target = db.query(User).filter(User.user_id == user_id, User.is_deleted == False).first()
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    if not payload.new_password or len(payload.new_password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+
+    target.password_hash = hash_password(payload.new_password)
+
+    audit = AuditLog(
+        admin_id=current_user.user_id,
+        action_type="RESET_PASSWORD",
+        table_name="users",
+        record_id=user_id,
+        new_value={"reset_by": current_user.user_id},
+    )
+    db.add(audit)
+    db.commit()
+
+    return StandardResponse(
+        success=True,
+        message=f"Password for User #{user_id} has been reset successfully",
+        data={"user_id": user_id, "new_password": payload.new_password}
+    )
+
+
+class ChangePasswordPayload(BaseModel):
+    current_password: Optional[str] = None
+    new_password: str
+
+@router.post("/change-password", response_model=StandardResponse)
+def change_my_password(
+    payload: ChangePasswordPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not payload.new_password or len(payload.new_password) < 6:
+        raise HTTPException(400, "New password must be at least 6 characters")
+    
+    if payload.current_password and current_user.password_hash:
+        from app.routers.auth import verify_password
+        if not verify_password(payload.current_password, current_user.password_hash):
+            raise HTTPException(400, "รหัสผ่านปัจจุบันไม่ถูกต้อง")
+
+    current_user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return StandardResponse(
+        success=True,
+        message="เปลี่ยนรหัสผ่านเรียบร้อยแล้ว",
+        data=None
     )
 
 

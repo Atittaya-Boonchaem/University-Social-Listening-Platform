@@ -130,18 +130,33 @@ class OllamaService:
         toxic_score = 0.0
         found_keywords = []
         
+        from app.database import SessionLocal
+        from app.models import LLMSetting
+        
+        db = SessionLocal()
+        setting = db.query(LLMSetting).first()
+        db.close()
+        
+        db_banned_words = setting.banned_words if setting and setting.banned_words else []
+        
         # 1️⃣ Keyword matching (ตัวแรก - เร็ว)
         text_lower = text.lower()
         
-        # Check Thai keywords
+        # Check DB banned words
+        for word in db_banned_words:
+            if word.lower() in text_lower:
+                found_keywords.append(word)
+                toxic_score += 0.20
+        
+        # Check Thai keywords (hardcoded fallback)
         for thai_word, category in self.thai_toxic_keywords.items():
-            if thai_word in text_lower:
+            if thai_word in text_lower and thai_word not in found_keywords:
                 found_keywords.append(thai_word)
                 toxic_score += 0.15
         
-        # Check English keywords
+        # Check English keywords (hardcoded fallback)
         for eng_word in self.english_toxic_keywords:
-            if eng_word in text_lower:
+            if eng_word in text_lower and eng_word not in found_keywords:
                 found_keywords.append(eng_word)
                 toxic_score += 0.15
         

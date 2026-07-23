@@ -353,7 +353,9 @@ export default function LoginPage() {
 
   function onLoggedIn(roleId: number, token: string) {
     if (roleId === 4 || roleId === 5) {
-      window.location.href = `https://university-social-listening-platfor-olive.vercel.app/sso?token=${token}`;
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const adminUrl = import.meta.env.VITE_ADMIN_DASHBOARD_URL || (isLocal ? 'http://localhost:5173' : 'https://university-social-listening-platfor-olive.vercel.app');
+      window.location.href = `${adminUrl}/sso?token=${token}`;
     } else {
       navigate('/');
     }

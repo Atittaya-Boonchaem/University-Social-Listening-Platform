@@ -14,11 +14,27 @@ interface AIChatWidgetProps {
 
 export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: 'สวัสดีครับ มีปัญหาหรือข้อร้องเรียนอะไร แจ้งผมได้เลยครับ (เช่น "แอร์เสียที่ห้องเรียน")' }
+    { role: 'assistant', content: 'กำลังโหลดข้อมูล...' }
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Fetch opening message from public settings
+    axios.get(`${API_BASE}/settings/public-llm-settings`)
+      .then(res => {
+        if (res.data?.success && res.data?.data?.item?.chatbot_opening_message) {
+          setMessages([{ role: 'assistant', content: res.data.data.item.chatbot_opening_message }]);
+        } else {
+          setMessages([{ role: 'assistant', content: 'สวัสดีครับ มีปัญหาหรือข้อร้องเรียนอะไร แจ้งผมได้เลยครับ' }]);
+        }
+      })
+      .catch(err => {
+        console.error("Failed to fetch public LLM settings", err);
+        setMessages([{ role: 'assistant', content: 'สวัสดีครับ มีปัญหาหรือข้อร้องเรียนอะไร แจ้งผมได้เลยครับ' }]);
+      });
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -47,17 +63,24 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
 
       if (res.data.success) {
         const data = res.data.data;
-        if (data.is_complete) {
-          // Add final confirmation message
-          setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
-          
-          // Delay briefly so user can read the confirmation, then pass data
-          setTimeout(() => {
-            onComplete(data.extracted_data);
-          }, 1500);
-        } else {
-          setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
-        }
+        const replyText = data.reply || 'ขอบคุณครับ ระบบกำลังบันทึกข้อมูลให้';
+        setMessages(prev => [...prev, { role: 'assistant', content: replyText }]);
+        
+        // Pass extracted_data or fallback user input so form auto-fills immediately
+        const extracted = data.extracted_data || {};
+        const fallbackDesc = userMsg.content;
+        
+        onComplete({
+          description: extracted.description || fallbackDesc,
+          title: extracted.title || (fallbackDesc.length > 50 ? fallbackDesc.substring(0, 50) + '...' : fallbackDesc),
+          category_id: extracted.category_id,
+          category_name: extracted.category_name,
+          location: extracted.location,
+          latitude: extracted.latitude,
+          longitude: extracted.longitude,
+          location_confidence: extracted.location_confidence,
+          needs_location_confirmation: extracted.needs_location_confirmation
+        });
       } else {
         setMessages(prev => [...prev, { role: 'assistant', content: 'ขออภัยครับ เกิดข้อผิดพลาดในการเชื่อมต่อ' }]);
       }

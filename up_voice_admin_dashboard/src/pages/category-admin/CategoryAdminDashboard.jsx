@@ -1,17 +1,38 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { fetchProblems, updateProblemStatus, fetchAnalytics } from '../../services/problemService';
+import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import { MapPin, Filter, Layers, CheckCircle2, Clock, AlertTriangle, RefreshCw, X, Eye, ShieldCheck, Sparkles, Building2 } from 'lucide-react';
+
+const PHAYAO_CENTER = [19.0289, 99.8967];
 
 export default function CategoryAdminDashboard() {
   const [selectedCluster, setSelectedCluster] = useState(null);
   const [expandedPostId, setExpandedPostId] = useState(null);
   const [clusters, setClusters] = useState([]);
+  const [allRawProblems, setAllRawProblems] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(null);
+
+  // Status Filter State for Interactive Stat Cards
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'OPEN' | 'IN_PROGRESS' | 'RESOLVED'
+  const [showMap, setShowMap] = useState(false);
+  const [assignedCatName, setAssignedCatName] = useState('');
+
+  useEffect(() => {
+    api.get('/users/me')
+      .then(res => {
+        if (res.data?.success && res.data?.data?.category_name) {
+          setAssignedCatName(res.data.data.category_name);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Get Admin Name from token
   const getAdminName = () => {
@@ -46,11 +67,10 @@ export default function CategoryAdminDashboard() {
       const merged = [...(pubData.items || []), ...(internalData.items || [])];
       const unique = Array.from(new Map(merged.map(p => [p.problem_id, p])).values());
 
-      // Filter out RESOLVED / CLOSED problems for active dashboard
-      const activeProblems = unique.filter(p => p.status_name !== 'RESOLVED' && p.status_name !== 'CLOSED');
+      setAllRawProblems(unique);
 
-      // Separate parents and children
-      const parents = activeProblems.filter(p => !p.parent_problem_id);
+      // Separate parents and children across ALL statuses (including RESOLVED)
+      const parents = unique.filter(p => !p.parent_problem_id);
       const children = unique.filter(p => p.parent_problem_id);
 
       const constructedClusters = parents.map(parent => {
@@ -81,6 +101,10 @@ export default function CategoryAdminDashboard() {
           date: new Date(parent.created_at).toLocaleDateString('th-TH'),
           isoDate: parent.created_at.split('T')[0],
           location: parent.building_name || parent.location || "ไม่ระบุสถานที่",
+          latitude: parent.latitude,
+          longitude: parent.longitude,
+          category_name: parent.category_name,
+          color_code: parent.color_code || '#2B164D',
           reportCount: allPostsInCluster.length,
           status: parent.status_name,
           posts: allPostsInCluster
@@ -89,6 +113,11 @@ export default function CategoryAdminDashboard() {
 
       setClusters(constructedClusters);
       setAnalytics(analyticsData);
+
+      // Automatically show map if category has GPS coordinates
+      const hasGps = constructedClusters.some(c => c.latitude && c.longitude);
+      setShowMap(hasGps);
+
     } catch (e) {
       console.error(e);
       setError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่');
@@ -122,16 +151,31 @@ export default function CategoryAdminDashboard() {
     setExpandedPostId(null);
   };
 
-  // Filter clusters by search and date
+  // Filter clusters by search, date, AND active status card filter
   const filteredClusters = clusters.filter(c => {
     const matchSearch = !search || c.topic.toLowerCase().includes(search.toLowerCase()) || c.id.toLowerCase().includes(search.toLowerCase());
     const matchDate = !dateFilter || c.isoDate === dateFilter;
-    return matchSearch && matchDate;
+    
+    let matchStatus = true;
+    if (statusFilter === 'OPEN') {
+      matchStatus = c.status === 'OPEN';
+    } else if (statusFilter === 'IN_PROGRESS') {
+      matchStatus = c.status === 'IN_PROGRESS';
+    } else if (statusFilter === 'RESOLVED') {
+      matchStatus = c.status === 'RESOLVED' || c.status === 'CLOSED';
+    }
+
+    return matchSearch && matchDate && matchStatus;
   });
 
-  const openCount = analytics?.by_status?.OPEN ?? clusters.filter(c => c.status === 'OPEN').length;
-  const progressCount = analytics?.by_status?.IN_PROGRESS ?? clusters.filter(c => c.status === 'IN_PROGRESS').length;
-  const resolvedCount = analytics?.by_status?.RESOLVED ?? 0;
+  // Calculate real counts across all loaded items
+  const openCount = clusters.filter(c => c.status === 'OPEN').length;
+  const progressCount = clusters.filter(c => c.status === 'IN_PROGRESS').length;
+  const resolvedCount = clusters.filter(c => c.status === 'RESOLVED' || c.status === 'CLOSED').length;
+
+  // GPS points for location map
+  const geoPoints = clusters.filter(c => c.latitude && c.longitude);
+  const categoryTitle = assignedCatName || clusters[0]?.category_name || 'หมวดหมู่ปัญหาของคุณ';
 
   if (loading) {
     return (
@@ -142,57 +186,169 @@ export default function CategoryAdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans text-left">
+    <div className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans text-left space-y-6">
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Category Admin Dashboard</h1>
-            <p className="text-sm text-slate-500 mt-1">บริหารจัดการกลุ่มปัญหา (AI Clustered Reports)</p>
+            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+              <span>Category Admin Dashboard</span>
+              <span className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-1 rounded-full font-bold">
+                📁 {categoryTitle}
+              </span>
+            </h1>
+            <p className="text-sm text-slate-500 mt-1">บริหารจัดการและติดตามปัญหากลุ่มงานที่คุณรับผิดชอบ</p>
           </div>
-          <div className="text-left md:text-right">
-            <p className="font-bold text-[#2B164D] flex items-center md:justify-end gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              {adminName}
-            </p>
-            <p className="text-sm text-slate-500 mt-1">{today}</p>
+          <div className="flex items-center gap-4">
+            {geoPoints.length > 0 && (
+              <button
+                onClick={() => setShowMap(!showMap)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
+                  showMap 
+                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <MapPin size={14} />
+                {showMap ? 'ซ่อนแผนที่' : 'แสดงแผนที่จุดเกิดเหตุ'}
+              </button>
+            )}
+            <div className="text-left md:text-right border-l pl-4 border-slate-200">
+              <p className="font-bold text-[#2B164D] flex items-center md:justify-end gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                {adminName}
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">{today}</p>
+            </div>
           </div>
         </div>
 
-        {/* KPI Cards */}
+        {/* Dynamic Category Location Map (Collapsible / Shows if Category has GPS data) */}
+        {showMap && geoPoints.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-[pageFadeIn_0.2s_ease]">
+            <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                <MapPin size={15} className="text-indigo-600" />
+                แผนที่แสดงจุดเกิดเหตุในหมวดหมู่ {categoryTitle} ({geoPoints.length} ตำแหน่ง)
+              </span>
+              <button onClick={() => setShowMap(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                ✕ ปิด
+              </button>
+            </div>
+            <div className="h-[280px] relative">
+              <MapContainer center={PHAYAO_CENTER} zoom={15} scrollWheelZoom={false} className="h-full w-full absolute inset-0">
+                <TileLayer
+                  attribution='&copy; OpenStreetMap'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                {geoPoints.map((pt) => (
+                  <CircleMarker
+                    key={pt.problem_id}
+                    center={[parseFloat(pt.latitude), parseFloat(pt.longitude)]}
+                    pathOptions={{ 
+                      color: pt.status === 'OPEN' ? '#f59e0b' : pt.status === 'IN_PROGRESS' ? '#0284c7' : '#10b981',
+                      fillColor: pt.status === 'OPEN' ? '#f59e0b' : pt.status === 'IN_PROGRESS' ? '#0284c7' : '#10b981',
+                      fillOpacity: 0.85 
+                    }}
+                    radius={10}
+                  >
+                    <Popup>
+                      <div className="p-1 text-left font-sans min-w-[150px]">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded text-white mb-1 inline-block" style={{ backgroundColor: pt.color_code || '#2B164D' }}>
+                          {pt.id}
+                        </span>
+                        <strong className="block text-sm text-slate-800 font-bold leading-tight">{pt.topic}</strong>
+                        <p className="text-xs text-slate-500 mt-1">📍 {pt.location}</p>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                ))}
+              </MapContainer>
+            </div>
+          </div>
+        )}
+
+        {/* Interactive KPI Cards (Clicking any card filters the table below!) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
-            <div>
-              <p className="text-sm font-bold text-slate-400 mb-1">ยังไม่รับเรื่อง</p>
-              <h3 className="text-3xl font-black text-amber-500">{openCount}</h3>
+          {/* Card 1: OPEN */}
+          <div 
+            onClick={() => setStatusFilter(prev => prev === 'OPEN' ? 'ALL' : 'OPEN')}
+            className={`bg-white p-6 rounded-2xl shadow-sm border transition-all cursor-pointer select-none ${
+              statusFilter === 'OPEN' 
+                ? 'border-amber-400 ring-2 ring-amber-400/20 bg-amber-50/20 shadow-md' 
+                : 'border-slate-100 hover:border-amber-200 hover:shadow-md'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">ยังไม่รับเรื่อง (Open)</p>
+                <h3 className="text-3xl font-black text-amber-500">{openCount}</h3>
+                <p className="text-[11px] text-amber-600 font-medium mt-1">
+                  {statusFilter === 'OPEN' ? '✓ กำลังแสดงเฉพาะรายการนี้' : 'คลิกเพื่อดูรายการยังไม่รับเรื่อง'}
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-500 text-xl shadow-inner">⏳</div>
             </div>
-            <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 text-xl">⏳</div>
           </div>
           
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
-            <div>
-              <p className="text-sm font-bold text-slate-400 mb-1">กำลังดำเนินการ</p>
-              <h3 className="text-3xl font-black text-sky-500">{progressCount}</h3>
+          {/* Card 2: IN_PROGRESS */}
+          <div 
+            onClick={() => setStatusFilter(prev => prev === 'IN_PROGRESS' ? 'ALL' : 'IN_PROGRESS')}
+            className={`bg-white p-6 rounded-2xl shadow-sm border transition-all cursor-pointer select-none ${
+              statusFilter === 'IN_PROGRESS' 
+                ? 'border-sky-400 ring-2 ring-sky-400/20 bg-sky-50/20 shadow-md' 
+                : 'border-slate-100 hover:border-sky-200 hover:shadow-md'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">กำลังดำเนินการ (In Progress)</p>
+                <h3 className="text-3xl font-black text-sky-500">{progressCount}</h3>
+                <p className="text-[11px] text-sky-600 font-medium mt-1">
+                  {statusFilter === 'IN_PROGRESS' ? '✓ กำลังแสดงเฉพาะรายการนี้' : 'คลิกเพื่อดูรายการกำลังทำ'}
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500 text-xl shadow-inner">⚙️</div>
             </div>
-            <div className="w-12 h-12 rounded-full bg-sky-50 flex items-center justify-center text-sky-500 text-xl">⚙️</div>
           </div>
           
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
-            <div>
-              <p className="text-sm font-bold text-slate-400 mb-1">เสร็จสิ้น</p>
-              <h3 className="text-3xl font-black text-emerald-500">{resolvedCount}</h3>
+          {/* Card 3: RESOLVED */}
+          <div 
+            onClick={() => setStatusFilter(prev => prev === 'RESOLVED' ? 'ALL' : 'RESOLVED')}
+            className={`bg-white p-6 rounded-2xl shadow-sm border transition-all cursor-pointer select-none ${
+              statusFilter === 'RESOLVED' 
+                ? 'border-emerald-400 ring-2 ring-emerald-400/20 bg-emerald-50/20 shadow-md' 
+                : 'border-slate-100 hover:border-emerald-200 hover:shadow-md'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">เสร็จสิ้น (Resolved)</p>
+                <h3 className="text-3xl font-black text-emerald-500">{resolvedCount}</h3>
+                <p className="text-[11px] text-emerald-600 font-medium mt-1">
+                  {statusFilter === 'RESOLVED' ? '✓ กำลังแสดงเฉพาะรายการนี้' : 'คลิกเพื่อดูรายการเสร็จสิ้น'}
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500 text-xl shadow-inner">✅</div>
             </div>
-            <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 text-xl">✅</div>
           </div>
         </div>
 
         {/* Smart Clustered Table */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           
-          {/* Search Bar & Date Filter UI */}
+          {/* Search Bar & Status Filter Tag */}
           <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-bold text-slate-800">รายการกลุ่มปัญหาล่าสุด (Clustered Topics)</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-bold text-slate-800">รายการกลุ่มปัญหาล่าสุด (Clustered Topics)</h2>
+              {statusFilter !== 'ALL' && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  <span>กรองสถานะ: {statusFilter === 'OPEN' ? 'ยังไม่รับเรื่อง' : statusFilter === 'IN_PROGRESS' ? 'กำลังดำเนินการ' : 'เสร็จสิ้น'}</span>
+                  <button onClick={() => setStatusFilter('ALL')} className="text-indigo-400 hover:text-indigo-900 ml-1 font-bold">✕</button>
+                </span>
+              )}
+            </div>
             
             <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
               <div className="relative w-full sm:w-64">
@@ -238,14 +394,14 @@ export default function CategoryAdminDashboard() {
               <tbody className="divide-y divide-slate-100 text-sm">
                 {filteredClusters.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="p-12 text-center text-slate-400 font-medium">ไม่พบข้อมูลปัญหาระบบ</td>
+                    <td colSpan="6" className="p-12 text-center text-slate-400 font-medium">ไม่พบข้อมูลปัญหาระบบตามเงื่อนไขที่เลือก</td>
                   </tr>
                 ) : filteredClusters.map((cluster) => (
                   <tr key={cluster.id} className="hover:bg-slate-50/70 transition-colors group">
                     <td className="px-6 py-5 whitespace-nowrap">
                       <button 
                         onClick={() => openModal(cluster)}
-                        className="font-bold text-[#2B164D] bg-indigo-50/50 px-3 py-1.5 rounded-lg border border-indigo-100/50 hover:bg-indigo-100 hover:text-indigo-700 transition-all"
+                        className="font-bold text-[#2B164D] bg-indigo-50/50 px-3 py-1.5 rounded-lg border border-indigo-100/50 hover:bg-indigo-100 hover:text-indigo-700 transition-all font-mono"
                       >
                         {cluster.id}
                       </button>
@@ -307,13 +463,13 @@ export default function CategoryAdminDashboard() {
 
       {/* Drill-down Modal (Nested Details) */}
       {selectedCluster && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
           <div 
             className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" 
             onClick={() => setSelectedCluster(null)}
           ></div>
           
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left z-[100000]">
             
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white z-10 shrink-0">
@@ -349,93 +505,57 @@ export default function CategoryAdminDashboard() {
                   รายงานย่อยที่เกี่ยวข้อง ({(selectedCluster.posts || []).length} รายการ)
                 </h4>
               </div>
-              
-              <div className="p-6 pt-4 space-y-3">
-                {(selectedCluster.posts || []).map((post) => {
+
+              <div className="p-6 space-y-4">
+                {(selectedCluster.posts || []).map((post, idx) => {
                   const isExpanded = expandedPostId === post.id;
                   return (
-                    <div 
-                      key={post.id} 
-                      className={`bg-white rounded-xl shadow-sm border transition-all cursor-pointer overflow-hidden ${
-                        isExpanded ? 'border-[#2B164D] ring-1 ring-[#2B164D]/10' : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                      onClick={() => setExpandedPostId(isExpanded ? null : post.id)}
-                    >
-                      <div className="p-4 flex items-start gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold border transition-colors ${
-                          isExpanded ? 'bg-[#2B164D] text-white border-[#2B164D]' : 'bg-indigo-50 text-indigo-500 border-indigo-100'
-                        }`}>
-                          #{post.id}
+                    <div key={post.id || idx} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm hover:border-indigo-200 transition-colors">
+                      <div 
+                        onClick={() => setExpandedPostId(isExpanded ? null : post.id)}
+                        className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/80 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                            {post.author[0]?.toUpperCase() || '?'}
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">{post.author}</p>
+                            <p className="text-xs text-slate-400">{post.time} &bull; {post.locationDetail}</p>
+                          </div>
                         </div>
-                        <div className="flex-1 text-left">
-                          <p className="text-sm text-slate-700 font-medium leading-relaxed">"{post.text}"</p>
-                          
-                          {/* Level 3 Deep Inspection */}
-                          {isExpanded && (
-                            <div className="mt-4 pt-4 border-t border-slate-100 animate-in fade-in slide-in-from-top-2 duration-300">
-                              <div className="grid grid-cols-2 gap-4 mb-4">
-                                <div>
-                                  <span className="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">ผู้โพสต์</span>
-                                  <span className="text-xs text-slate-600 flex items-center gap-1">
-                                    <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                                    {post.author}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">เวลาที่โพสต์</span>
-                                  <span className="text-xs text-slate-600 flex items-center gap-1">
-                                    <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    {post.time}
-                                  </span>
-                                </div>
-                                <div className="col-span-2">
-                                  <span className="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">ตำแหน่งที่เกิดเหตุ</span>
-                                  <span className="text-xs text-slate-600 flex items-center gap-1">
-                                    <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                                    {post.locationDetail}
-                                  </span>
-                                </div>
-                              </div>
-                              
-                              {post.images && post.images.length > 0 && (
-                                <div>
-                                  <span className="block text-[10px] uppercase font-bold text-slate-400 mb-2">รูปภาพแนบ</span>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    {post.images.map((img, i) => (
-                                      <img key={i} src={img} alt="Attachment" className="w-full h-32 object-cover rounded-lg border border-slate-200" />
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="text-slate-300 flex-shrink-0 mt-0.5">
-                          <svg 
-                            className={`w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-[#2B164D]' : ''}`} 
-                            fill="none" 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24"
-                          >
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-indigo-600 font-semibold">
+                            {isExpanded ? 'ย่อรายละเอียด' : 'ดูขยาย'}
+                          </span>
+                          <svg className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
                           </svg>
                         </div>
                       </div>
+
+                      {/* Expanded Content */}
+                      {isExpanded && (
+                        <div className="p-4 pt-0 border-t border-slate-100 bg-slate-50/40 text-sm space-y-3">
+                          <p className="text-slate-700 leading-relaxed mt-3">{post.text}</p>
+
+                          {post.images && post.images.length > 0 && (
+                            <div className="flex gap-2 overflow-x-auto pt-2">
+                              {post.images.map((img, i) => {
+                                const srcUrl = !img ? '' : (img.startsWith('http') ? img : `http://localhost:8000${img.startsWith('/') ? '' : '/'}${img}`);
+                                return (
+                                  <img key={i} src={srcUrl} alt="attachment" className="h-24 w-24 object-cover rounded-lg border border-slate-200" />
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
-            </div>
-            
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-100 bg-white flex justify-end shrink-0">
-              <button 
-                onClick={() => setSelectedCluster(null)}
-                className="px-6 py-2 bg-[#2B164D] text-white text-sm font-bold rounded-lg hover:bg-[#1a0d30] transition-colors shadow-sm"
-              >
-                ปิดหน้าต่าง
-              </button>
             </div>
           </div>
         </div>

@@ -180,6 +180,8 @@ def serialize_problem(p: Problem, db: Session, current_user: Optional[User] = No
         "is_flagged": p.is_flagged,
         "flagged_reason": p.flagged_reason,
         "llm_analysis": p.llm_analysis,
+        "location_confidence": p.location_confidence,
+        "is_location_confirmed": p.is_location_confirmed,
         "sla_due_date": p.sla_due_date,
         "sla_status": sla,
         "created_at": p.created_at,
@@ -324,6 +326,8 @@ async def create_problem(
     building_id: Optional[int] = Form(None),
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
+    location_confidence: Optional[float] = Form(None),
+    is_location_confirmed: Optional[bool] = Form(False),
     images: List[UploadFile] = File(default=[]),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
@@ -341,7 +345,56 @@ async def create_problem(
     from app.services.ai_service import check_profanity, suggest_category
     try:
         if check_profanity(description):
-            raise HTTPException(status_code=400, detail="เนื้อหาไม่เหมาะสมเนื่องจากมีคำหยาบคาย")
+            from app.models import LLMSetting, Notification, SuperAdmin
+            setting = db.query(LLMSetting).first()
+            if setting and setting.is_auto_ban_enabled:
+                current_user.strike_count = (current_user.strike_count or 0) + 1
+                max_strikes = setting.max_warnings_before_ban or 1
+                
+                if current_user.strike_count > max_strikes:
+                    current_user.is_active = False
+                    
+                    # Create ban record
+                    from app.models import UserBan
+                    ban_rec = UserBan(
+                        user_id=current_user.user_id,
+                        banned_by=current_user.user_id, # Self-banned by system
+                        reason="Auto-banned for toxic content",
+                        unban_at=None,
+                        is_active=True
+                    )
+                    db.add(ban_rec)
+                    
+                    # Create notification for super admin
+                    super_admins = db.query(SuperAdmin).all()
+                    for sa in super_admins:
+                        notif = Notification(
+                            user_id=sa.user_id,
+                            title="ผู้ใช้ถูกแบนอัตโนมัติ (Auto-Banned)",
+                            message=f"ผู้ใช้ {current_user.email or current_user.user_id} ถูกแบนเนื่องจากละเมิดกฎคำหยาบเกิน {max_strikes} ครั้ง",
+                            is_read=False
+                        )
+                        db.add(notif)
+                    db.commit()
+                    raise HTTPException(status_code=403, detail="บัญชีของคุณถูกระงับเนื่องจากละเมิดกฎของระบบซ้ำซาก")
+                else:
+                    
+                    # Create warning notification for super admin
+                    super_admins = db.query(SuperAdmin).all()
+                    for sa in super_admins:
+                        notif = Notification(
+                            user_id=sa.user_id,
+                            title="ผู้ใช้ละเมิดกฎคำหยาบ (Warning)",
+                            message=f"ผู้ใช้ {current_user.email or current_user.user_id} พิมพ์คำหยาบ (เตือนครั้งที่ {current_user.strike_count}/{max_strikes})",
+                            is_read=False
+                        )
+                        db.add(notif)
+                        
+                    db.commit()
+                    remaining = max_strikes - current_user.strike_count + 1
+                    raise HTTPException(status_code=400, detail=f"เนื้อหาของคุณไม่เหมาะสม นี่คือการเตือนครั้งที่ {current_user.strike_count} หากทำผิดอีก {remaining} ครั้ง บัญชีจะถูกระงับ")
+            else:
+                raise HTTPException(status_code=400, detail="เนื้อหาไม่เหมาะสมเนื่องจากมีคำหยาบคาย")
 
         # AI Category Suggestion if category is "อื่นๆ"
         cat = db.query(Category).filter(Category.category_id == category_id).first()
@@ -413,14 +466,31 @@ async def create_problem(
         latitude=latitude,
         longitude=longitude,
         building_name=building_name,
+        location_confidence=location_confidence,
+        is_location_confirmed=is_location_confirmed,
     )
     db.add(problem)
     db.flush()   # get problem_id
 
     # Advanced features: Generate ticket_id & SLA
-    if cat.ticket_prefix:
-        year_str = datetime.utcnow().strftime("%y")
-        problem.ticket_id = f"{cat.ticket_prefix}-{year_str}-{problem.problem_id:04d}"
+    prefix = (cat.ticket_prefix if cat and cat.ticket_prefix else "").strip().upper()
+    if not prefix and cat and cat.category_name:
+        name_lower = cat.category_name.lower()
+        if "รถ" in name_lower or "เมล์" in name_lower or "ขนส่ง" in name_lower: prefix = "BUS"
+        elif "สะอาด" in name_lower or "ขยะ" in name_lower: prefix = "CLEAN"
+        elif "อาคาร" in name_lower or "สถานที่" in name_lower: prefix = "BLDG"
+        elif "ไอที" in name_lower or "ระบบ" in name_lower: prefix = "IT"
+        elif "ไฟ" in name_lower or "แอร์" in name_lower: prefix = "ELEC"
+        elif "ประปา" in name_lower or "น้ำ" in name_lower: prefix = "PLUMB"
+        elif "จราจร" in name_lower or "จอดรถ" in name_lower: prefix = "TRAF"
+        elif "ปลอดภัย" in name_lower: prefix = "SAFE"
+        elif "เรียน" in name_lower or "วิชาการ" in name_lower: prefix = "ACAD"
+        else: prefix = "GEN"
+    if not prefix:
+        prefix = "GEN"
+
+    year_str = datetime.utcnow().strftime("%y")
+    problem.ticket_id = f"{prefix}-{year_str}-{problem.problem_id:04d}"
     
     problem.sla_due_date = datetime.utcnow() + timedelta(days=7)
 
@@ -666,13 +736,32 @@ async def get_analytics(
 
     # Geo points
     geo_rows = (
-        db.query(Problem.problem_id, Problem.latitude, Problem.longitude, Status.status_name)
+        db.query(
+            Problem.problem_id,
+            Problem.latitude,
+            Problem.longitude,
+            Status.status_name,
+            Category.category_name,
+            Category.color_code,
+            Category.category_id,
+            Problem.title
+        )
         .join(Status, Status.status_id == Problem.status_id)
+        .outerjoin(Category, Category.category_id == Problem.category_id)
         .filter(Problem.latitude.isnot(None), Problem.longitude.isnot(None), *base_filters)
         .all()
     )
     geo_points = [
-        {"id": r[0], "latitude": float(r[1]), "longitude": float(r[2]), "status": r[3]}
+        {
+            "id": r[0],
+            "latitude": float(r[1]),
+            "longitude": float(r[2]),
+            "status": r[3],
+            "category_name": r[4] or "ทั่วไป",
+            "color_code": r[5] or "#2B164D",
+            "category_id": r[6],
+            "title": r[7]
+        }
         for r in geo_rows
     ]
 

@@ -4,7 +4,7 @@
 """
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date,
-    ForeignKey, Text, JSON, DECIMAL, UniqueConstraint,
+    ForeignKey, Text, JSON, DECIMAL, UniqueConstraint, Float
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -46,6 +46,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)
     is_deleted = Column(Boolean, default=False)
+    strike_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -71,13 +72,9 @@ class Student(Base):
     student_id = Column(String(20), unique=True, nullable=False)
     student_name = Column(String(100), nullable=False)
     faculty_id = Column(Integer, ForeignKey("faculties.faculty_id"), nullable=True)
-    major = Column(String(100), nullable=True)
     year = Column(Integer, nullable=True)
     birthdate = Column(Date, nullable=True)
     gender = Column(String(20), nullable=True)
-    phone = Column(String(20), nullable=True)
-    enrolled_date = Column(DateTime, nullable=True)
-    is_graduated = Column(Boolean, default=False)
 
     # Relationships
     user = relationship("User", back_populates="student")
@@ -278,6 +275,7 @@ class ProblemCluster(Base):
     status_id      = Column(Integer, ForeignKey("statuses.status_id"), nullable=True)
     ai_summary     = Column(Text, nullable=True)       # AI-generated summary text
     location_label = Column(String(500), nullable=True) # Building / location name
+    ai_confidence_score = Column(Float, default=0.92)   # AI clustering confidence score (e.g. 0.95 = 95%)
     post_count     = Column(Integer, default=1)
     first_posted_at = Column(DateTime, nullable=True)
     last_posted_at  = Column(DateTime, nullable=True)
@@ -311,6 +309,8 @@ class Problem(Base):
     is_flagged = Column(Boolean, default=False)
     flagged_reason = Column(String(255), nullable=True)
     llm_analysis = Column(JSON, nullable=True)
+    location_confidence = Column(Float, nullable=True)
+    is_location_confirmed = Column(Boolean, default=False)
     sla_due_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
@@ -424,6 +424,13 @@ class LLMSetting(Base):
     is_auto_routing_enabled = Column(Boolean, default=True)
     auto_ban_duration_days = Column(Integer, default=7)
     confidence_threshold = Column(DECIMAL(3, 2), default=0.85)
+    max_warnings_before_ban = Column(Integer, default=1)
+    
+    # New fields for AI Chatbot Configuration
+    chatbot_persona = Column(Text, nullable=True)
+    chatbot_questions = Column(JSON, nullable=True)
+    chatbot_opening_message = Column(Text, nullable=True)
+
     updated_by = Column(Integer, ForeignKey("users.user_id"), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

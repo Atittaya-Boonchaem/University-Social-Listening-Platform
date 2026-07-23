@@ -120,26 +120,11 @@ function App() {
             <Route path="/tracking" element={<TrackingPage />} />
             <Route path="/profile" element={<ProfilePage />} />
 
-            {/* Catch-all inside protected layout */}
+        {/* Catch-all inside protected layout */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Route>
 
-        {/* ─── Admin Only Routes ─── */}
-        <Route element={<ProtectedRoute allowedRoles={[4]} />}>
-          <Route element={<MainLayout />}>
-            <Route path="/admin/dashboard" element={<AdminDashboard />} />
-            <Route path="/admin/problems" element={<AdminProblems />} />
-            <Route path="/admin/users" element={<AdminUsers />} />
-            
-            <Route path="/admin/settings" element={<SettingsLayout />}>
-              <Route index element={<Navigate to="master-data" replace />} />
-              <Route path="master-data" element={<MasterDataSettings />} />
-              <Route path="ai-system" element={<AISystemSettings />} />
-              <Route path="security-logs" element={<SecurityLogsSettings />} />
-            </Route>
-          </Route>
-        </Route>
       </Routes>
     </BrowserRouter>
   );

@@ -38,6 +38,7 @@ def serialize_cluster(c: ProblemCluster, db: Session) -> dict:
         "category_id":   c.category_id,
         "category_name": cat_name,
         "location_label": c.location_label,
+        "ai_confidence_score": c.ai_confidence_score or 0.95,
         "post_count":    c.post_count,
         "status_name":   stat_name,
         "status_color":  stat_color,

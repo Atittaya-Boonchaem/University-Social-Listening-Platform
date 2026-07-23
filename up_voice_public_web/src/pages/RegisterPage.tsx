@@ -251,51 +251,40 @@ export default function RegisterPage() {
             </button>
           </div>
 
-          <div className={`grid ${isInviteMode ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
-            <input
-              type="tel"
-              name="phone"
-              placeholder="เบอร์โทรศัพท์ (ไม่บังคับ)"
-              value={formData.phone}
-              onChange={handleChange}
-              className={getInputCls('phone')}
-              disabled={isLoading || !!successMsg}
-            />
-            {!isInviteMode && (
-              <div className="relative z-50">
-                <LocalizationProvider dateAdapter={AdapterDayjs}>
-                  <DatePicker
-                    label="วันเกิดของคุณ *"
-                    disableFuture
-                    openTo="year"
-                    views={['year', 'month', 'day']}
-                    format="DD/MM/YYYY"
-                    value={formData.birthdate}
-                    onChange={(newValue) => {
-                      setFormData(prev => ({ ...prev, birthdate: newValue }));
-                      setMissingFields(prev => prev.filter(f => f !== 'birthdate'));
-                    }}
-                    slotProps={{
-                      textField: {
-                        required: true,
-                        className: getInputCls('birthdate'),
-                        sx: {
-                          '& .MuiOutlinedInput-root': {
-                            backgroundColor: 'transparent',
-                            '& fieldset': { border: 'none' },
-                          },
-                          '& .MuiInputBase-input': {
-                            padding: '0',
-                            fontFamily: 'inherit',
-                          }
+          {!isInviteMode && (
+            <div className="relative z-50">
+              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                <DatePicker
+                  label="วันเกิดของคุณ *"
+                  disableFuture
+                  openTo="year"
+                  views={['year', 'month', 'day']}
+                  format="DD/MM/YYYY"
+                  value={formData.birthdate}
+                  onChange={(newValue) => {
+                    setFormData(prev => ({ ...prev, birthdate: newValue }));
+                    setMissingFields(prev => prev.filter(f => f !== 'birthdate'));
+                  }}
+                  slotProps={{
+                    textField: {
+                      required: true,
+                      className: getInputCls('birthdate'),
+                      sx: {
+                        '& .MuiOutlinedInput-root': {
+                          backgroundColor: 'transparent',
+                          '& fieldset': { border: 'none' },
+                        },
+                        '& .MuiInputBase-input': {
+                          padding: '0',
+                          fontFamily: 'inherit',
                         }
                       }
-                    }}
-                  />
-                </LocalizationProvider>
-              </div>
-            )}
-          </div>
+                    }
+                  }}
+                />
+              </LocalizationProvider>
+            </div>
+          )}
 
           {!isInviteMode && (
             <label className="flex items-start gap-3 mt-2 cursor-pointer group">

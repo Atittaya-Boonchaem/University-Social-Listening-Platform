@@ -101,12 +101,20 @@ export default function ProfilePage() {
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
     // Fetch user profile from API
-    if (userId && token) {
-      axios.get(`${API_BASE}/users/${userId}`, { headers })
+    if (token) {
+      axios.get(`${API_BASE}/users/me`, { headers })
         .then(res => {
-          if (res.data?.success) setProfile(res.data.data?.profile ?? null);
+          if (res.data?.success) setProfile(res.data.data?.profile ?? res.data.data ?? null);
         })
-        .catch(err => console.error('Profile fetch error:', err));
+        .catch(() => {
+          if (userId) {
+            axios.get(`${API_BASE}/users/${userId}`, { headers })
+              .then(res => {
+                if (res.data?.success) setProfile(res.data.data?.profile ?? null);
+              })
+              .catch(err => console.error('Profile fetch error:', err));
+          }
+        });
     }
 
     // Fetch my problems
@@ -152,11 +160,10 @@ export default function ProfilePage() {
     ? `Student #${profile.student_id}`
     : `User #${userId || 'Guest'}`;
 
-  const facultyName = profile?.faculty_id
-    ? (FACULTY_MAP[Number(profile.faculty_id)] ?? `คณะ #${profile.faculty_id}`)
-    : null;
-  const genderLabel = profile?.gender ? (GENDER_MAP[profile.gender] ?? profile.gender) : null;
-  const yearLabel = profile?.year ? (YEAR_MAP[Number(profile.year)] ?? `ปีที่ ${profile.year}`) : null;
+  const facultyId = profile?.faculty_id || localStorage.getItem('faculty_id') || 1;
+  const facultyName = profile?.faculty_name || (FACULTY_MAP[Number(facultyId)] ?? 'คณะเทคโนโลยีสารสนเทศและการสื่อสาร');
+  const genderLabel = (profile?.gender || localStorage.getItem('gender')) ? (GENDER_MAP[profile?.gender || localStorage.getItem('gender') || ''] ?? 'ชาย') : 'ชาย';
+  const yearLabel = profile?.year_name || (YEAR_MAP[Number(profile?.year || localStorage.getItem('education_level') || 1)] ?? 'ระดับปริญญาตรี');
 
   const getAvatarContent = () => {
     switch (roleId) {
@@ -250,7 +257,7 @@ export default function ProfilePage() {
               {profile?.position && <InfoRow icon="work" label="ตำแหน่ง" value={profile.position} />}
               {genderLabel && <InfoRow icon="person" label="เพศ" value={genderLabel} />}
               {profile?.birthdate && <InfoRow icon="calendar_today" label="วันเกิด" value={dayjs(profile.birthdate).format('DD/MM/YYYY')} />}
-              {profile?.phone && <InfoRow icon="phone" label="เบอร์โทรศัพท์" value={profile.phone} />}
+              {profile?.phone && roleId !== 1 && <InfoRow icon="phone" label="เบอร์โทรศัพท์" value={profile.phone} />}
             </div>
           </section>
         )}

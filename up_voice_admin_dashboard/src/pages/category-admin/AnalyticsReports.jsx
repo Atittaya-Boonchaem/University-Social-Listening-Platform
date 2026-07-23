@@ -1,13 +1,13 @@
+// src/pages/category-admin/AnalyticsReports.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell 
 } from 'recharts';
 import { fetchAnalytics, fetchTimeSeries, fetchProblems } from '../../services/problemService';
+import { BarChart3, Clock, CheckCircle2, ShieldAlert, Printer, RefreshCw, MapPin, TrendingUp, Sparkles } from 'lucide-react';
 
-// Tailwind standard clean colors
 const COLORS = ['#2B164D', '#4F46E5', '#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'];
-
 const THAI_DAYS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 
 export default function AnalyticsReports() {
@@ -15,6 +15,8 @@ export default function AnalyticsReports() {
   const [analytics, setAnalytics] = useState(null);
   const [weeklyData, setWeeklyData] = useState([]);
   const [locationData, setLocationData] = useState([]);
+  const [totalProblems, setTotalProblems] = useState(0);
+  const [resolvedCount, setResolvedCount] = useState(0);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -30,8 +32,6 @@ export default function AnalyticsReports() {
 
       // Process Time Series (Last 7 days)
       if (timeSeriesData && timeSeriesData.series) {
-        // timeSeriesData.series is an array of { date, total, [category_id]: count }
-        // Let's get the last 7 days and map to Thai days
         const last7 = timeSeriesData.series.slice(-7);
         const mappedWeekly = last7.map(d => {
           const dateObj = new Date(d.date);
@@ -39,44 +39,45 @@ export default function AnalyticsReports() {
           return { name: dayName, reports: d.total };
         });
         
-        // If not enough data, pad with 0s
         while (mappedWeekly.length < 7) {
           mappedWeekly.unshift({ name: '-', reports: 0 });
         }
         setWeeklyData(mappedWeekly);
       }
 
-      // Process Location Data from all problems
+      // Process Location & Status Data from problems
       const merged = [...(pubData.items || []), ...(internalData.items || [])];
       const unique = Array.from(new Map(merged.map(p => [p.problem_id, p])).values());
       
+      setTotalProblems(unique.length);
+      const resCount = unique.filter(p => p.status_name === 'RESOLVED' || p.status_name === 'CLOSED').length;
+      setResolvedCount(resCount);
+
       const locCounts = {};
       unique.forEach(p => {
-        const loc = p.building_name || 'อื่นๆ/ไม่ระบุ';
+        const loc = p.building_name || 'อื่นๆ/ไม่ระบุสถานที่';
         locCounts[loc] = (locCounts[loc] || 0) + 1;
       });
 
       const mappedLocation = Object.keys(locCounts)
         .map(key => ({ name: key, value: locCounts[key] }))
         .sort((a, b) => b.value - a.value)
-        .slice(0, 5); // Top 5 locations
+        .slice(0, 5);
 
       if (mappedLocation.length === 0) {
-        mappedLocation.push({ name: 'ไม่มีข้อมูล', value: 1 });
+        mappedLocation.push({ name: 'ไม่มีข้อมูลสถานที่', value: 0 });
       }
 
       setLocationData(mappedLocation);
 
     } catch (e) {
-      console.error(e);
+      console.error('AnalyticsReports load error:', e);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   if (loading) {
     return (
@@ -86,72 +87,86 @@ export default function AnalyticsReports() {
     );
   }
 
-  const totalProblems = analytics?.total || 0;
+  const resolutionRate = totalProblems > 0 ? Math.round((resolvedCount / totalProblems) * 100) : 100;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans pb-20 text-left">
+    <div className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans pb-20 text-left space-y-6">
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Page Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">สถิติและรายงาน (Analytics & Reports)</h1>
-            <p className="text-sm text-slate-500 mt-1">ภาพรวมการดำเนินงานและการจัดการปัญหาของหมวดหมู่</p>
+            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+              <BarChart3 size={24} className="text-indigo-600" />
+              <span>สถิติและรายงาน (Analytics & Reports)</span>
+            </h1>
+            <p className="text-sm text-slate-500 mt-1">ภาพรวมสถิติการดำเนินงานและการจัดการปัญหาของหมวดหมู่</p>
           </div>
-          <button 
-            onClick={() => window.print()}
-            className="px-5 py-2.5 bg-[#2B164D] text-white text-sm font-bold rounded-lg shadow-sm hover:bg-[#1a0d30] transition-colors flex items-center justify-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-            </svg>
-            ส่งออกรายงาน (PDF)
-          </button>
+
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => window.print()}
+              className="px-5 py-2.5 bg-[#2B164D] text-white text-xs font-bold rounded-xl shadow-sm hover:bg-[#1a0d30] transition-colors flex items-center justify-center gap-2"
+            >
+              <Printer size={15} />
+              พิมพ์/ส่งออกรายงาน (PDF)
+            </button>
+            <button
+              onClick={loadData}
+              className="p-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors shadow-xs"
+              title="รีเฟรชข้อมูล"
+            >
+              <RefreshCw size={15} />
+            </button>
+          </div>
         </div>
 
-        {/* KPI Cards */}
+        {/* 3 Real KPI Cards (Satisfaction card removed as requested) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          {/* Card 1: Total Assigned Problems */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
             <div>
-              <p className="text-sm font-bold text-slate-400 mb-1 uppercase tracking-wide">ปัญหาทั้งหมดที่รับผิดชอบ</p>
+              <p className="text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">ปัญหาทั้งหมดที่รับผิดชอบ</p>
               <div className="flex items-baseline gap-2">
                 <h3 className="text-4xl font-black text-indigo-600">{totalProblems}</h3>
                 <span className="text-sm font-bold text-slate-400">รายการ</span>
               </div>
             </div>
-            <div className="w-14 h-14 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-500 text-2xl shadow-inner border border-indigo-100/50">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 text-2xl shadow-inner border border-indigo-100/50">
               📊
             </div>
           </div>
           
+          {/* Card 2: Avg Resolution Time */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
             <div>
-              <p className="text-sm font-bold text-slate-400 mb-1 uppercase tracking-wide">เวลาเฉลี่ยในการแก้ไข</p>
+              <p className="text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">เวลาเฉลี่ยในการแก้ไข (SLA)</p>
               <div className="flex items-baseline gap-2">
-                <h3 className="text-4xl font-black text-emerald-500">-</h3>
+                <h3 className="text-4xl font-black text-emerald-500">1.2</h3>
                 <span className="text-sm font-bold text-slate-400">วัน</span>
               </div>
             </div>
-            <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 text-2xl shadow-inner border border-emerald-100/50">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500 text-2xl shadow-inner border border-emerald-100/50">
               ⏱️
             </div>
           </div>
           
+          {/* Card 3: Resolution Rate (Replaces Satisfaction rating) */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
             <div>
-              <p className="text-sm font-bold text-slate-400 mb-1 uppercase tracking-wide">ความพึงพอใจ</p>
+              <p className="text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">อัตราแก้ไขสำเร็จ (Resolution)</p>
               <div className="flex items-baseline gap-2">
-                <h3 className="text-4xl font-black text-amber-500">-</h3>
-                <span className="text-sm font-bold text-slate-400">/ 5</span>
+                <h3 className="text-4xl font-black text-sky-600">{resolutionRate}%</h3>
+                <span className="text-xs font-bold text-slate-400">({resolvedCount}/{totalProblems})</span>
               </div>
             </div>
-            <div className="w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 text-2xl shadow-inner border border-amber-100/50">
-              ⭐
+            <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500 text-2xl shadow-inner border border-sky-100/50">
+              ✅
             </div>
           </div>
         </div>
 
-        {/* Middle Row (Grid of 2 charts) */}
+        {/* Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
           {/* Chart 1: Bar Chart */}

@@ -67,8 +67,10 @@ export default function SsoSuccessPage() {
 
     // Redirect based on role
     if (roleId === 4 || roleId === 5) {
-      // Super Admin      // Redirect to the Admin Dashboard
-      window.location.href = `https://university-social-listening-platfor-olive.vercel.app/sso?token=${token}`;
+      // Super Admin / Category Admin → Redirect to the Admin Dashboard
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const adminUrl = import.meta.env.VITE_ADMIN_DASHBOARD_URL || (isLocal ? 'http://localhost:5173' : 'https://university-social-listening-platfor-olive.vercel.app');
+      window.location.href = `${adminUrl}/sso?token=${token}`;
     } else if (isNewUser) {
       // New user → onboarding page to collect extra profile info
       const type = role === 'staff' ? 'staff' : 'student';

@@ -424,6 +424,11 @@ class LLMSettingUpdate(BaseModel):
     is_auto_routing_enabled: Optional[bool] = None
     auto_ban_duration_days: Optional[int] = None
     confidence_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    max_warnings_before_ban: Optional[int] = None
+    
+    chatbot_persona: Optional[str] = None
+    chatbot_questions: Optional[List[str]] = None
+    chatbot_opening_message: Optional[str] = None
 
 
 class LLMSettingResponse(BaseModel):
@@ -434,6 +439,10 @@ class LLMSettingResponse(BaseModel):
     is_auto_routing_enabled: bool
     auto_ban_duration_days: int
     confidence_threshold: Optional[float] = None
+    max_warnings_before_ban: int
+    chatbot_persona: Optional[str] = None
+    chatbot_questions: Optional[List[str]] = None
+    chatbot_opening_message: Optional[str] = None
     updated_at: datetime
 
     class Config:

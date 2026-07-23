@@ -1,16 +1,24 @@
+// src/pages/category-admin/ResolvedHistory.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
-import { fetchProblems, updateProblemStatus, fetchAnalytics } from '../../services/problemService';
+import { fetchProblems, updateProblemStatus } from '../../services/problemService';
+import { fetchCategories } from '../../services/categoryService';
+import TicketDetailModal from '../../components/TicketDetailModal';
+import { CheckCircle2, Clock, Download, Search, RefreshCw, Layers, Shield, ShieldOff, Eye, Filter, Calendar, Award, Sparkles } from 'lucide-react';
 
 export default function ResolvedHistory() {
-  const [selectedCluster, setSelectedCluster] = useState(null);
-  const [expandedPostId, setExpandedPostId] = useState(null);
-  const [clusters, setClusters] = useState([]);
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('');
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(null);
+  const [toastMsg, setToastMsg] = useState('');
+
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(''), 3500);
+  };
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -24,48 +32,20 @@ export default function ResolvedHistory() {
       const merged = [...(pubData.items || []), ...(internalData.items || [])];
       const unique = Array.from(new Map(merged.map(p => [p.problem_id, p])).values());
 
-      // Filter only RESOLVED / CLOSED problems
-      const resolvedProblems = unique.filter(p => p.status_name === 'RESOLVED' || p.status_name === 'CLOSED');
-
-      // Separate parents and children
-      const parents = resolvedProblems.filter(p => !p.parent_problem_id);
+      // Filter RESOLVED / CLOSED problems & attach nested duplicates
+      const parents = unique.filter(p => !p.parent_problem_id && (p.status_name === 'RESOLVED' || p.status_name === 'CLOSED'));
       const children = unique.filter(p => p.parent_problem_id);
 
-      const constructedClusters = parents.map(parent => {
+      const resolvedProblems = parents.map(parent => {
         const dups = children.filter(child => child.parent_problem_id === parent.problem_id);
-        const allPostsInCluster = [
-          {
-            id: parent.problem_id,
-            text: parent.description,
-            author: parent.author_name || parent.author?.display_name || "ไม่ระบุชื่อ",
-            time: new Date(parent.created_at).toLocaleString('th-TH'),
-            locationDetail: parent.building_name || parent.location || "ไม่ระบุสถานที่",
-            images: parent.attachments?.map(a => a.file_url) || []
-          },
-          ...dups.map(dup => ({
-            id: dup.problem_id,
-            text: dup.description,
-            author: dup.author_name || dup.author?.display_name || "ไม่ระบุชื่อ",
-            time: new Date(dup.created_at).toLocaleString('th-TH'),
-            locationDetail: dup.building_name || dup.location || "ไม่ระบุสถานที่",
-            images: dup.attachments?.map(a => a.file_url) || []
-          }))
-        ];
-
         return {
-          id: parent.ticket_id || (parent.ticket_prefix ? `${parent.ticket_prefix}-${new Date(parent.created_at).getFullYear().toString().slice(-2)}-${String(parent.problem_id).padStart(4, '0')}` : `#${parent.problem_id}`),
-          problem_id: parent.problem_id,
-          topic: parent.title,
-          date: new Date(parent.created_at).toLocaleDateString('th-TH'),
-          isoDate: parent.created_at.split('T')[0],
-          location: parent.building_name || parent.location || "ไม่ระบุสถานที่",
-          reportCount: allPostsInCluster.length,
-          status: parent.status_name,
-          posts: allPostsInCluster
+          ...parent,
+          reportCount: 1 + dups.length,
+          duplicates: dups
         };
       });
 
-      setClusters(constructedClusters);
+      setTickets(resolvedProblems);
     } catch (e) {
       console.error(e);
       setError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่');
@@ -74,40 +54,58 @@ export default function ResolvedHistory() {
     }
   }, []);
 
-  useEffect(() => { 
-    loadData(); 
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   const handleStatusChange = async (problemId, newStatus) => {
-    setIsUpdatingStatus(problemId);
     try {
       await updateProblemStatus(problemId, newStatus);
-      // Remove it from the resolved list if it is no longer resolved
       if (newStatus !== 'RESOLVED' && newStatus !== 'CLOSED') {
-        setClusters(prev => prev.filter(c => c.problem_id !== problemId));
+        setTickets(prev => prev.filter(t => t.problem_id !== problemId));
+        showToast(`⚡ ย้ายตั๋ว #${problemId} กลับไปยังตารางงานย้อนหลังสำเร็จ`);
       } else {
-        setClusters(prev => prev.map(c => 
-          c.problem_id === problemId ? { ...c, status: newStatus } : c
-        ));
+        setTickets(prev => prev.map(t => t.problem_id === problemId ? { ...t, status_name: newStatus } : t));
       }
     } catch (err) {
-      alert("ไม่สามารถเปลี่ยนสถานะได้: " + err.message);
-    } finally {
-      setIsUpdatingStatus(null);
+      showToast("❌ ไม่สามารถเปลี่ยนสถานะได้: " + err.message);
     }
   };
 
-  const openModal = (cluster) => {
-    setSelectedCluster(cluster);
-    setExpandedPostId(null);
+  // Export CSV Report
+  const handleExportCSV = () => {
+    if (tickets.length === 0) {
+      showToast('⚠️ ไม่มีข้อมูลสำหรับส่งออก CSV');
+      return;
+    }
+    const headers = ['Problem ID', 'Ticket ID', 'Title', 'Category', 'Date', 'Status'];
+    const rows = tickets.map(t => [
+      t.problem_id,
+      t.ticket_id || `#${t.problem_id}`,
+      `"${(t.title || '').replace(/"/g, '""')}"`,
+      `"${(t.category_name || '').replace(/"/g, '""')}"`,
+      new Date(t.created_at).toLocaleDateString('th-TH'),
+      t.status_name
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,﻿' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `resolved_history_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('📥 ดาวน์โหลดรายงานประวัติการแก้ไข CSV สำเร็จ');
   };
 
-  // Filter clusters by search and date
-  const filteredClusters = clusters.filter(c => {
-    const matchSearch = !search || c.topic.toLowerCase().includes(search.toLowerCase()) || c.id.toLowerCase().includes(search.toLowerCase());
-    const matchDate = !dateFilter || c.isoDate === dateFilter;
+  // Filter items
+  const filteredTickets = tickets.filter(t => {
+    const matchSearch = !search || t.title?.toLowerCase().includes(search.toLowerCase()) || (t.ticket_id || '').toLowerCase().includes(search.toLowerCase());
+    const isoDate = t.created_at?.split('T')[0];
+    const matchDate = !dateFilter || isoDate === dateFilter;
     return matchSearch && matchDate;
   });
+
+  const categoryName = tickets[0]?.category_name || 'หมวดหมู่ของคุณ';
 
   if (loading) {
     return (
@@ -118,120 +116,151 @@ export default function ResolvedHistory() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans text-left">
+    <div className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans text-left space-y-6">
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">ประวัติการแก้ไข (Resolved History)</h1>
-            <p className="text-sm text-slate-500 mt-1">ประวัติกลุ่มปัญหาที่ดำเนินการเสร็จสิ้นแล้ว</p>
+            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+              <CheckCircle2 size={24} className="text-emerald-600" />
+              <span>ประวัติการแก้ไขและคลังผลงาน (Resolved History)</span>
+            </h1>
+            <p className="text-sm text-slate-500 mt-1">คลังจัดเก็บและสรุปผลงานปัญหาที่ดำเนินการเสร็จสิ้นแล้ว</p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-all shadow-xs"
+            >
+              <Download size={14} />
+              ส่งออกรายงาน CSV
+            </button>
+            <button
+              onClick={loadData}
+              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50 transition-all shadow-xs"
+            >
+              <RefreshCw size={14} />
+              รีเฟรช
+            </button>
           </div>
         </div>
 
-        {/* Smart Table Container */}
+        {/* KPI Stats Strip */}
+        <div className="grid grid-cols-1 gap-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">แก้ไขเสร็จสิ้นทั้งหมด</p>
+              <h3 className="text-3xl font-black text-emerald-600">{tickets.length} เคส</h3>
+              <p className="text-[11px] text-slate-400 mt-1">ในหมวดหมู่ {categoryName}</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shadow-inner">🏆</div>
+          </div>
+        </div>
+
+        {/* Data Table */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           
-          {/* Search Bar & Date Filter UI */}
-          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/30">
-            <h2 className="text-lg font-bold text-slate-800">รายการที่แก้ไขเรียบร้อยแล้ว</h2>
+          {/* Search & Filter */}
+          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50">
+            <h2 className="text-lg font-bold text-slate-800">รายการประวัติผลงานการแก้ไข</h2>
             
             <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
               <div className="relative w-full sm:w-64">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                  </svg>
-                </div>
+                <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
                 <input 
                   type="text" 
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="ค้นหาเนื้อหาหรือรหัส..." 
-                  className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2B164D]/20 focus:border-[#2B164D] transition-all placeholder:text-slate-400"
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-300 transition-all placeholder:text-slate-400"
                 />
               </div>
               <input 
                 type="date" 
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full sm:w-auto px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2B164D]/20 focus:border-[#2B164D] transition-all text-slate-600"
+                className="w-full sm:w-auto px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-300 transition-all text-slate-600"
               />
-              <button onClick={loadData} className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors text-slate-600" title="รีเฟรชข้อมูล">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H17.79"></path>
-                </svg>
-              </button>
             </div>
           </div>
 
-          {/* Data Table */}
+          {/* Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wider font-semibold">
                   <th className="px-6 py-4">รหัสปัญหา</th>
-                  <th className="px-6 py-4">เนื้อหาสรุป</th>
-                  <th className="px-6 py-4">วันที่โพสต์</th>
-                  <th className="px-6 py-4">ตำแหน่ง</th>
-                  <th className="px-6 py-4 text-center">จำนวนโพสต์</th>
-                  <th className="px-6 py-4 text-center">สถานะและจัดการ</th>
+                  <th className="px-6 py-4">ชื่อเรื่องปัญหา</th>
+                  <th className="px-6 py-4">วันที่แจ้งเรื่อง</th>
+                  <th className="px-6 py-4">สถานที่</th>
+                  <th className="px-6 py-4 text-center">สถานะ</th>
+                  <th className="px-6 py-4 text-center">การจัดการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
-                {filteredClusters.length === 0 ? (
+                {filteredTickets.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="p-12 text-center text-slate-400 font-medium">ไม่พบประวัติปัญหาที่แก้ไขเสร็จสิ้น</td>
+                    <td colSpan="6" className="p-12 text-center text-slate-400 font-medium">
+                      <div className="max-w-md mx-auto space-y-3">
+                        <span className="text-4xl block">🎉</span>
+                        <p className="font-bold text-slate-700 text-base">ไม่พบประวัติปัญหาที่แก้ไขเสร็จสิ้น</p>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          เมื่อแอดมินหมวดหมู่ทำการเปลี่ยนสถานะตั๋วปัญหาเป็น <strong className="text-emerald-600">"แก้ไขสำเร็จ (RESOLVED)"</strong> ตั๋วนั้นจะถูกย้ายมาบันทึกจัดเก็บเป็นประวัติผลงานในหน้านี้โดยอัตโนมัติครับ
+                        </p>
+                      </div>
+                    </td>
                   </tr>
-                ) : filteredClusters.map((cluster) => (
-                  <tr key={cluster.id} className="hover:bg-slate-50/70 transition-colors group">
+                ) : filteredTickets.map((ticket) => (
+                  <tr key={ticket.problem_id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-6 py-5 whitespace-nowrap">
                       <button 
-                        onClick={() => openModal(cluster)}
-                        className="font-bold text-[#2B164D] bg-indigo-50/50 px-3 py-1.5 rounded-lg border border-indigo-100/50 hover:bg-indigo-100 hover:text-indigo-700 transition-all"
+                        onClick={() => setSelectedTicket(ticket)}
+                        className="font-mono font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-all"
                       >
-                        {cluster.id}
+                        {ticket.ticket_id || `#${ticket.problem_id}`}
                       </button>
                     </td>
                     <td className="px-6 py-5">
-                      <div className="flex items-start gap-2">
-                        <span className="font-semibold text-slate-700 leading-relaxed line-clamp-2">{cluster.topic}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-800 leading-relaxed">{ticket.title}</span>
+                        {ticket.duplicates && ticket.duplicates.length > 0 && (
+                          <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-bold rounded-full shrink-0 flex items-center gap-1">
+                            <Sparkles size={11} /> รวม {1 + ticket.duplicates.length} รายการ
+                          </span>
+                        )}
                       </div>
                     </td>
-                    <td className="px-6 py-5 text-slate-500 whitespace-nowrap">{cluster.date}</td>
-                    <td className="px-6 py-5 text-slate-500 max-w-[200px] truncate" title={cluster.location}>{cluster.location}</td>
+                    <td className="px-6 py-5 text-slate-500 whitespace-nowrap text-xs">
+                      {new Date(ticket.created_at).toLocaleDateString('th-TH')}
+                    </td>
+                    <td className="px-6 py-5 text-slate-500 max-w-[200px] truncate text-xs" title={ticket.building_name || ticket.location}>
+                      {ticket.building_name || ticket.location || 'ไม่ระบุสถานที่'}
+                    </td>
                     <td className="px-6 py-5 text-center">
-                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 border border-slate-200 font-bold text-slate-600 shadow-sm">
-                        {cluster.reportCount}
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full">
+                        <CheckCircle2 size={13} /> เสร็จสิ้น
                       </span>
                     </td>
-                    <td className="px-6 py-5">
-                      <div className="flex items-center justify-center gap-3">
-                        <select 
-                          value={cluster.status}
-                          disabled={isUpdatingStatus === cluster.problem_id}
-                          onChange={(e) => handleStatusChange(cluster.problem_id, e.target.value)}
-                          className={`text-xs font-bold rounded-lg px-3 py-2 outline-none cursor-pointer transition-all shadow-sm disabled:opacity-50 appearance-none text-center min-w-[120px] ${
-                            cluster.status === 'OPEN' ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100' :
-                            cluster.status === 'IN_PROGRESS' ? 'bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100' :
-                            'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                          }`}
-                        >
-                          <option value="OPEN">รอดำเนินการ</option>
-                          <option value="IN_PROGRESS">กำลังดำเนินการ</option>
-                          <option value="RESOLVED">เสร็จสิ้น</option>
-                        </select>
-                        
+                    <td className="px-6 py-5 text-center">
+                      <div className="flex items-center justify-center gap-2">
                         <button 
-                          onClick={() => openModal(cluster)}
-                          className="w-9 h-9 rounded-lg flex items-center justify-center bg-white border border-slate-200 text-slate-400 hover:border-[#2B164D] hover:bg-[#2B164D] hover:text-white transition-all shadow-sm"
-                          title="ตรวจสอบรายละเอียด (Drill-down)"
+                          onClick={() => setSelectedTicket(ticket)}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 text-xs font-semibold hover:border-indigo-300 hover:text-indigo-600 transition-all shadow-xs"
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                          </svg>
+                          <Eye size={13} /> ดูรายละเอียด
                         </button>
+                        <select 
+                          value={ticket.status_name}
+                          onChange={(e) => handleStatusChange(ticket.problem_id, e.target.value)}
+                          className="text-xs font-semibold rounded-lg px-2 py-1.5 border border-slate-200 bg-slate-50 text-slate-600 outline-none cursor-pointer"
+                          title="เปลี่ยนสถานะย้อนกลับ"
+                        >
+                          <option value="RESOLVED">✅ เสร็จสิ้น</option>
+                          <option value="IN_PROGRESS">⚙️ กำลังทำ</option>
+                          <option value="OPEN">⏳ รอดำเนินการ</option>
+                        </select>
                       </div>
                     </td>
                   </tr>
@@ -242,139 +271,19 @@ export default function ResolvedHistory() {
         </div>
       </div>
 
-      {/* Drill-down Modal (Nested Details) */}
-      {selectedCluster && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div 
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" 
-            onClick={() => setSelectedCluster(null)}
-          ></div>
-          
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-            
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white z-10 shrink-0">
-              <div>
-                <h3 className="text-xl font-bold text-[#2B164D] mb-1">
-                  รายละเอียดกลุ่มปัญหา: {selectedCluster.id}
-                </h3>
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
-                    {selectedCluster.topic}
-                  </span>
-                  &bull; 
-                  <span className="flex items-center gap-1">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    {selectedCluster.location}
-                  </span>
-                </div>
-              </div>
-              <button 
-                onClick={() => setSelectedCluster(null)}
-                className="w-8 h-8 bg-white border border-slate-200 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
-              </button>
-            </div>
-            
-            {/* Modal Body - Scrollable Area */}
-            <div className="flex-1 overflow-y-auto bg-slate-50/50">
-              <div className="p-6 pb-2 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-slate-50/90 backdrop-blur-md z-10">
-                <h4 className="font-bold text-slate-700 text-sm">
-                  รายงานย่อยที่เกี่ยวข้อง ({(selectedCluster.posts || []).length} รายการ)
-                </h4>
-              </div>
-              
-              <div className="p-6 pt-4 space-y-3">
-                {(selectedCluster.posts || []).map((post) => {
-                  const isExpanded = expandedPostId === post.id;
-                  return (
-                    <div 
-                      key={post.id} 
-                      className={`bg-white rounded-xl shadow-sm border transition-all cursor-pointer overflow-hidden ${
-                        isExpanded ? 'border-[#2B164D] ring-1 ring-[#2B164D]/10' : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                      onClick={() => setExpandedPostId(isExpanded ? null : post.id)}
-                    >
-                      <div className="p-4 flex items-start gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold border transition-colors ${
-                          isExpanded ? 'bg-[#2B164D] text-white border-[#2B164D]' : 'bg-indigo-50 text-indigo-500 border-indigo-100'
-                        }`}>
-                          #{post.id}
-                        </div>
-                        <div className="flex-1 text-left">
-                          <p className="text-sm text-slate-700 font-medium leading-relaxed">"{post.text}"</p>
-                          
-                          {/* Level 3 Deep Inspection */}
-                          {isExpanded && (
-                            <div className="mt-4 pt-4 border-t border-slate-100 animate-in fade-in slide-in-from-top-2 duration-300">
-                              <div className="grid grid-cols-2 gap-4 mb-4">
-                                <div>
-                                  <span className="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">ผู้โพสต์</span>
-                                  <span className="text-xs text-slate-600 flex items-center gap-1">
-                                    <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                                    {post.author}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">เวลาที่โพสต์</span>
-                                  <span className="text-xs text-slate-600 flex items-center gap-1">
-                                    <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    {post.time}
-                                  </span>
-                                </div>
-                                <div className="col-span-2">
-                                  <span className="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">ตำแหน่งที่เกิดเหตุ</span>
-                                  <span className="text-xs text-slate-600 flex items-center gap-1">
-                                    <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                                    {post.locationDetail}
-                                  </span>
-                                </div>
-                              </div>
-                              
-                              {post.images && post.images.length > 0 && (
-                                <div>
-                                  <span className="block text-[10px] uppercase font-bold text-slate-400 mb-2">รูปภาพแนบ</span>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    {post.images.map((img, i) => (
-                                      <img key={i} src={img} alt="Attachment" className="w-full h-32 object-cover rounded-lg border border-slate-200" />
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="text-slate-300 flex-shrink-0 mt-0.5">
-                          <svg 
-                            className={`w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-[#2B164D]' : ''}`} 
-                            fill="none" 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-100 bg-white flex justify-end shrink-0">
-              <button 
-                onClick={() => setSelectedCluster(null)}
-                className="px-6 py-2 bg-[#2B164D] text-white text-sm font-bold rounded-lg hover:bg-[#1a0d30] transition-colors shadow-sm"
-              >
-                ปิดหน้าต่าง
-              </button>
-            </div>
-          </div>
+      {/* Ticket Detail Modal */}
+      {selectedTicket && (
+        <TicketDetailModal
+          ticket={selectedTicket}
+          onClose={() => setSelectedTicket(null)}
+          onStatusChange={handleStatusChange}
+        />
+      )}
+
+      {/* Toast */}
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 px-5 py-3 bg-slate-800 text-white text-sm font-semibold rounded-2xl shadow-xl">
+          {toastMsg}
         </div>
       )}
     </div>
