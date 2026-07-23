@@ -221,7 +221,7 @@ function PublicPanel({ onSuccess, onClose }: { onSuccess: (roleId: number, token
       const isEmail = loginId.includes('@');
       const payload: Record<string, string | number> = {
         password,
-        expected_role: 'public',
+        // ไม่ส่ง expected_role เพื่อให้รับทุก role ที่อนุญาต
       };
       
       if (isEmail) {
@@ -243,8 +243,8 @@ function PublicPanel({ onSuccess, onClose }: { onSuccess: (roleId: number, token
         else if (actualRoleStr === 'anonymous') actualRoleId = 6;
         else if (data.data?.user?.role_id != null) actualRoleId = Number(data.data.user.role_id);
 
-        if (![3, 4, 5].includes(actualRoleId)) {
-          setError('บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานผ่านช่องทางนี้');
+        if (![2, 3, 4, 5].includes(actualRoleId)) {
+          setError('บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานผ่านช่องทางนี้ (ไม่ใช่บัญชีบุคลากรหรือบุคคลทั่วไป)');
           setIsLoading(false);
           return;
         }
