@@ -290,20 +290,56 @@ export default function GlobalDashboard() {
                 <p className="text-xs font-semibold text-slate-500">ยังไม่มีข้อมูลสถิติอาคารสถานที่</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {topBuildings.map((b, idx) => (
-                  <div key={b.name} className="flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-100 transition-all hover:shadow-sm">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-3 truncate pr-2">
-                      <span className="w-7 h-7 rounded-xl bg-indigo-600 text-white text-xs font-black flex items-center justify-center shadow-sm flex-shrink-0">
-                        #{idx + 1}
-                      </span>
-                      <span className="truncate">{b.name}</span>
-                    </span>
-                    <span className="text-xs font-extrabold text-indigo-700 bg-white border border-indigo-100 px-3 py-1.5 rounded-xl flex-shrink-0 shadow-xs">
-                      {b.count} เคส
-                    </span>
-                  </div>
-                ))}
+              <div className="overflow-x-auto border border-slate-100 rounded-2xl shadow-xs">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="bg-slate-50/80 text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-slate-100">
+                      <th className="px-5 py-3.5 w-16 text-center">อันดับ</th>
+                      <th className="px-5 py-3.5">ชื่ออาคารสถานที่ (Master Building)</th>
+                      <th className="px-5 py-3.5 w-48">สัดส่วนเคสปัญหา</th>
+                      <th className="px-5 py-3.5 w-32 text-right">จำนวนเคส</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {topBuildings.map((b, idx) => {
+                      const totalCount = topBuildings.reduce((sum, item) => sum + item.count, 0);
+                      const pct = totalCount > 0 ? Math.round((b.count / totalCount) * 100) : 0;
+                      return (
+                        <tr key={b.name} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="px-5 py-3.5 text-center">
+                            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-xl text-xs font-black shadow-xs ${
+                              idx === 0 ? 'bg-amber-500 text-white' :
+                              idx === 1 ? 'bg-slate-400 text-white' :
+                              idx === 2 ? 'bg-amber-700 text-white' :
+                              'bg-indigo-100 text-indigo-700'
+                            }`}>
+                              #{idx + 1}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 font-bold text-slate-800 text-xs md:text-sm">
+                            {b.name}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-indigo-500 to-violet-600 rounded-full transition-all duration-500" 
+                                  style={{ width: `${pct}%` }} 
+                                />
+                              </div>
+                              <span className="text-xs font-semibold text-slate-500 w-9 text-right">{pct}%</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5 text-right">
+                            <span className="inline-block px-3 py-1 bg-indigo-50 border border-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl shadow-2xs">
+                              {b.count} เคส
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
