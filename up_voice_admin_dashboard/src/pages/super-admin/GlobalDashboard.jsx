@@ -5,36 +5,22 @@
  *  - 4 Clean & Balanced KPI Cards (Total Users, Total Problems, Open, Resolved)
  *  - Category Map (Heatmap/Pin Map with Category Colors + Legend)
  *  - Problems by Category (Heatmap View style horizontal progress bars)
- *  - Top Problem Buildings (Normalized to master building list, replacing SLA table)
- *  - AI Control Center (Interactive Donut Chart + Knowledge Base Re-index)
+ *  - Top Problem Buildings (Normalized to master building list, full width 100%)
+ *  - AI Control Center (Disabled/Hidden per requirement)
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { PieChart, Pie, Cell as PieCell } from 'recharts';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
-  AlertTriangle, BarChart3, Bot, MapPin, Users, CheckCircle, Clock,
-  RefreshCw, Zap, Building2, Layers
+  BarChart3, MapPin, Users, CheckCircle, Clock,
+  RefreshCw, Building2, Layers
 } from 'lucide-react';
-import { fetchAnalytics } from '../../services/problemService';
+import { fetchAnalytics, fetchProblems } from '../../services/problemService';
 import { fetchUsers } from '../../services/userService';
 import { fetchBuildings } from '../../services/buildingService';
 
 const PHAYAO_CENTER = [19.0289, 99.8967];
 const BAR_COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#c084fc', '#d8b4fe', '#ec4899', '#3b82f6'];
-
-// Rich AI Performance & Accuracy Data
-const AI_ACCURACY_BREAKDOWN = [
-  { name: 'จำแนกถูกต้อง (Auto-routed)', value: 87, color: '#10b981' },
-  { name: 'แอดมินปรับแก้ (Re-categorized)', value: 9, color: '#f59e0b' },
-  { name: 'กรองคำหยาบ/สแปม (Blocked)', value: 4, color: '#f43f5e' },
-];
-
-const AI_SENTIMENT_BREAKDOWN = [
-  { name: 'เชิงลบ/เร่งด่วน (Urgent)', value: 65, color: '#ef4444' },
-  { name: 'ปานกลาง/ทั่วไป (Neutral)', value: 25, color: '#3b82f6' },
-  { name: 'ข้อเสนอแนะ (Positive)', value: 10, color: '#10b981' },
-];
 
 // ── Category bar component from Heatmap View ───────────────────
 const CategoryBar = ({ name, count, max, color }) => {
@@ -63,31 +49,24 @@ export default function GlobalDashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [totalUsers, setTotalUsers] = useState(0);
   const [geoPoints, setGeoPoints] = useState([]);
+  const [allProblems, setAllProblems] = useState([]);
   const [masterBuildings, setMasterBuildings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [reindexing, setReindexing] = useState(false);
-  const [toastMsg, setToastMsg] = useState('');
-  
-  // Donut chart view mode ('accuracy' | 'sentiment')
-  const [donutMode, setDonutMode] = useState('accuracy');
-
-  const showToast = (msg) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 3500);
-  };
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [analyticsData, usersData, bldData] = await Promise.all([
+      const [analyticsData, usersData, bldData, probRes] = await Promise.all([
         fetchAnalytics(),
         fetchUsers(),
         fetchBuildings().catch(() => []),
+        fetchProblems({ page_size: 200 }, true).catch(() => ({ items: [] })),
       ]);
       setAnalytics(analyticsData);
       setTotalUsers(usersData.length || 0);
       setGeoPoints(analyticsData?.geo_points ?? []);
       setMasterBuildings(Array.isArray(bldData) ? bldData : bldData?.data || []);
+      setAllProblems(probRes?.items || probRes || []);
     } catch (e) {
       console.error('GlobalDashboard load error:', e);
     } finally {
@@ -97,20 +76,13 @@ export default function GlobalDashboard() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const handleReindex = async () => {
-    setReindexing(true);
-    await new Promise(r => setTimeout(r, 1800));
-    setReindexing(false);
-    showToast('⚡ AI Knowledge Base Re-indexed & Trained Successfully!');
-  };
-
   const byStatus = analytics?.by_status ?? {};
   const byCategory = analytics?.by_category ?? [];
   const total = analytics?.total ?? 0;
   const resolved = (byStatus['RESOLVED'] ?? 0) + (byStatus['CLOSED'] ?? 0);
   const pending = (byStatus['OPEN'] ?? 0) + (byStatus['IN_PROGRESS'] ?? 0);
 
-  // Revamped 4 KPI cards (Removed SLA Overdue & Resolution Rate Cards)
+  // 4 KPI cards
   const kpis = [
     { label: 'ผู้ใช้ทั้งหมด', value: totalUsers, icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-100' },
     { label: 'ปัญหาทั้งหมด', value: total, icon: BarChart3, color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
@@ -120,17 +92,20 @@ export default function GlobalDashboard() {
 
   const maxCatCount = Math.max(...byCategory.map((c) => c.count), 1);
 
-  // Normalize building names to main master building list
+  // Aggregate problem counts by building across ALL problems in DB
   const buildingCounts = {};
-  geoPoints.forEach(p => {
-    const rawName = p.building_name || p.location;
-    if (rawName && rawName.trim()) {
-      const clean = rawName.trim();
+  const problemSource = allProblems.length > 0 ? allProblems : geoPoints;
+  
+  problemSource.forEach(p => {
+    const rawName = p.building_name || p.location || p.building?.name;
+    if (rawName && String(rawName).trim()) {
+      const clean = String(rawName).trim();
       let matchedName = clean;
       
       // Match against master buildings list
       const matchedMaster = masterBuildings.find(b => {
         const mName = b.name || '';
+        if (!mName) return false;
         return clean.toLowerCase().includes(mName.toLowerCase()) ||
                mName.toLowerCase().includes(clean.toLowerCase()) ||
                (clean.toUpperCase().includes('ICT') && mName.includes('สารสนเทศ')) ||
@@ -151,9 +126,7 @@ export default function GlobalDashboard() {
   const topBuildings = Object.entries(buildingCounts)
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
-
-  const currentDonutData = donutMode === 'accuracy' ? AI_ACCURACY_BREAKDOWN : AI_SENTIMENT_BREAKDOWN;
+    .slice(0, 6);
 
   if (loading) {
     return (
@@ -172,7 +145,7 @@ export default function GlobalDashboard() {
           <h1 className="text-2xl font-bold text-[#2B164D] flex items-center gap-2">
             <span>🌐 Super Admin Dashboard</span>
           </h1>
-          <p className="text-sm text-slate-500 mt-1">ภาพรวมระบบ UP Connect ทั้งมหาวิทยาลัยและการวิเคราะห์ AI</p>
+          <p className="text-sm text-slate-500 mt-1">ภาพรวมระบบ UP Connect ทั้งมหาวิทยาลัย</p>
         </div>
         <button
           onClick={loadAll}
@@ -292,35 +265,41 @@ export default function GlobalDashboard() {
         </div>
       </div>
 
-      {/* ─── Row 3: Top Problem Buildings (Normalized to Master List) + AI Control Center ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Top Problem Buildings (พื้นที่เกิดเรื่องบ่อย) */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
+      {/* ─── Row 3: Top Problem Buildings (Full Width 100%) ─── */}
+      <div className="w-full">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <div className="flex items-center gap-2">
-                <Building2 size={20} className="text-indigo-600" />
-                <h2 className="font-bold text-slate-800 text-base">Top Problem Buildings (พื้นที่เกิดเรื่องบ่อย)</h2>
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Building2 size={22} />
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-800 text-base">Top Problem Buildings (พื้นที่เกิดเรื่องบ่อย)</h2>
+                  <p className="text-xs text-slate-400">จัดกลุ่มรายงานปัญหาตามรายชื่ออาคารสถานที่หลัก Master Building</p>
+                </div>
               </div>
-              <span className="text-xs font-semibold text-slate-400">จัดกลุ่มตามหลักอาคารสถานที่</span>
+              <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-xl">
+                รวมทั้งหมด {topBuildings.reduce((sum, b) => sum + b.count, 0)} รายการ
+              </span>
             </div>
 
             {topBuildings.length === 0 ? (
               <div className="text-center py-12 text-slate-400">
-                <Building2 size={32} className="mx-auto mb-2 text-slate-300" />
-                <p className="text-xs font-medium">ยังไม่มีข้อมูลสถิติอาคารสถานที่</p>
+                <Building2 size={36} className="mx-auto mb-2 text-slate-300" />
+                <p className="text-xs font-semibold text-slate-500">ยังไม่มีข้อมูลสถิติอาคารสถานที่</p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {topBuildings.map((b, idx) => (
-                  <div key={b.name} className="flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-100 transition-colors">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-3">
-                      <span className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-extrabold flex items-center justify-center shadow-xs">
+                  <div key={b.name} className="flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-100 transition-all hover:shadow-sm">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-3 truncate pr-2">
+                      <span className="w-7 h-7 rounded-xl bg-indigo-600 text-white text-xs font-black flex items-center justify-center shadow-sm flex-shrink-0">
                         #{idx + 1}
                       </span>
-                      {b.name}
+                      <span className="truncate">{b.name}</span>
                     </span>
-                    <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-lg">
+                    <span className="text-xs font-extrabold text-indigo-700 bg-white border border-indigo-100 px-3 py-1.5 rounded-xl flex-shrink-0 shadow-xs">
                       {b.count} เคส
                     </span>
                   </div>
@@ -328,117 +307,16 @@ export default function GlobalDashboard() {
               </div>
             )}
           </div>
-          <p className="text-[11px] text-slate-400 mt-4 text-center">พื้นที่เกิดเหตุจะถูกจัดกลุ่มเข้าสู่อาคารหลักตามรายชื่อ Master Building</p>
-        </div>
-
-        {/* AI Control Center & Donut Chart */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <div className="flex items-center gap-2">
-                <Bot size={18} className="text-violet-600" />
-                <h2 className="font-bold text-slate-800">AI Control Center</h2>
-              </div>
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Model Online
-              </span>
-            </div>
-
-            {/* Donut Mode Switcher */}
-            <div className="flex bg-slate-100 p-1 rounded-xl gap-1 mb-4 text-xs font-semibold">
-              <button
-                onClick={() => setDonutMode('accuracy')}
-                className={`flex-1 py-1.5 rounded-lg transition-all ${
-                  donutMode === 'accuracy' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                🎯 ความแม่นยำ AI
-              </button>
-              <button
-                onClick={() => setDonutMode('sentiment')}
-                className={`flex-1 py-1.5 rounded-lg transition-all ${
-                  donutMode === 'sentiment' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                📊 อารมณ์ (Sentiment)
-              </button>
-            </div>
-
-            {/* Donut Chart View */}
-            <div className="flex flex-col items-center justify-center my-2">
-              <div className="relative">
-                <PieChart width={170} height={170}>
-                  <Pie
-                    data={currentDonutData}
-                    cx={80}
-                    cy={80}
-                    innerRadius={52}
-                    outerRadius={75}
-                    dataKey="value"
-                    startAngle={90}
-                    endAngle={-270}
-                  >
-                    {currentDonutData.map((entry, i) => (
-                      <PieCell key={i} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className={`text-2xl font-black ${donutMode === 'accuracy' ? 'text-emerald-600' : 'text-indigo-600'}`}>
-                    {donutMode === 'accuracy' ? '87%' : '65%'}
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-semibold">
-                    {donutMode === 'accuracy' ? 'ความแม่นยำ' : 'เคสเร่งด่วน'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Legend List */}
-            <div className="space-y-1.5 text-xs mb-5 bg-slate-50/80 p-3 rounded-xl border border-slate-100">
-              {currentDonutData.map(d => (
-                <div key={d.name} className="flex items-center justify-between text-slate-700">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                    <span className="font-medium text-[11px]">{d.name}</span>
-                  </div>
-                  <span className="font-bold text-slate-800">{d.value}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Re-index button */}
-          <div>
-            <button
-              id="ai-reindex-btn"
-              onClick={handleReindex}
-              disabled={reindexing}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-bold hover:opacity-90 disabled:opacity-60 transition-all shadow-md hover:shadow-lg"
-            >
-              {reindexing ? (
-                <>
-                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  กำลังอัปเดต AI...
-                </>
-              ) : (
-                <>
-                  <Zap size={14} />
-                  อัปเดต AI Knowledge Base
-                </>
-              )}
-            </button>
-            <p className="text-[10px] text-slate-400 text-center mt-1.5">Re-index ข้อมูลบริบทหมวดหมู่เพื่อเพิ่มความแม่นยำ AI</p>
-          </div>
+          <p className="text-[11px] text-slate-400 mt-6 text-center">พื้นที่เกิดเหตุย่อยจะถูกนำมารวมสถิติเข้าสู่อาคารหลักตามรายชื่อ Master Building</p>
         </div>
       </div>
 
-      {/* Toast */}
-      {toastMsg && (
-        <div className="fixed bottom-6 right-6 z-50 px-5 py-3 bg-slate-800 text-white text-sm font-semibold rounded-2xl shadow-xl">
-          {toastMsg}
-        </div>
-      )}
+      {/* ─── AI Control Center (Disabled / Hidden per user request) ─── */}
+      {/* 
+      <div className="hidden">
+        AI Control Center Component
+      </div> 
+      */}
     </div>
   );
 }
