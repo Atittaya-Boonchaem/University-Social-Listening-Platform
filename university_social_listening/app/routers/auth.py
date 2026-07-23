@@ -653,7 +653,7 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
         if not email:
             raise HTTPException(400, "Could not extract email from Microsoft account")
 
-        # Check if user exists
+        # Check if user exists by email
         user = db.query(User).filter(User.email == email).first()
 
         is_new_user = False
@@ -670,19 +670,29 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
             # Check prefix logic (starts with digit -> student, else -> staff)
             prefix = email.split('@')[0]
             if prefix and prefix[0].isdigit():
-                student = Student(
-                    user_id=user.user_id,
-                    student_id=prefix,
-                    student_name=display_name,
-                )
-                db.add(student)
+                existing_st = db.query(Student).filter(Student.student_id == prefix).first()
+                if existing_st:
+                    existing_st.user_id = user.user_id
+                    if not existing_st.student_name or existing_st.student_name == "Unknown":
+                        existing_st.student_name = display_name
+                else:
+                    student = Student(
+                        user_id=user.user_id,
+                        student_id=prefix,
+                        student_name=display_name,
+                    )
+                    db.add(student)
             else:
-                staff = Staff(
-                    user_id=user.user_id,
-                    employee_id=f"SSO-{prefix}",
-                    staff_name=display_name,
-                )
-                db.add(staff)
+                existing_stf = db.query(Staff).filter(Staff.employee_id == f"SSO-{prefix}").first()
+                if existing_stf:
+                    existing_stf.user_id = user.user_id
+                else:
+                    staff = Staff(
+                        user_id=user.user_id,
+                        employee_id=f"SSO-{prefix}",
+                        staff_name=display_name,
+                    )
+                    db.add(staff)
             
             db.commit()
             db.refresh(user)
