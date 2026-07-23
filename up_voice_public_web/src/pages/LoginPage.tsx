@@ -414,7 +414,10 @@ export default function LoginPage() {
                 {/* SSO Primary Action */}
                 {activePanel === 'none' ? (
                   <button
-                    onClick={() => { window.location.href = `${import.meta.env.VITE_API_AUTH_URL || 'http://localhost:8000/api/v1/auth'}/sso/login`; }}
+                    onClick={() => { 
+                      const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '');
+                      window.location.href = `${apiBase}/auth/sso/login`; 
+                    }}
                     className="w-full py-4 px-6 bg-primary-container text-white rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-primary transition-all active:scale-[0.98] shadow-lg shadow-primary/10"
                   >
                     <svg className="w-5 h-5" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
