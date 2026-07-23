@@ -550,18 +550,25 @@ def login_anonymous(request: Request, db: Session = Depends(get_db)):
 @router.post("/sso/demo-student", response_model=StandardResponse)
 def demo_student_sso(db: Session = Depends(get_db)):
     """API สำหรับเข้าสู่ระบบสิทธิ์นิสิตแบบจำลอง (Demo SSO)"""
-    student = db.query(Student).first()
-    if not student:
+    student = db.query(Student).filter(Student.user_id != None).first()
+    user = None
+    if student:
+        user = db.query(User).filter(User.user_id == student.user_id).first()
+    
+    if not user:
         user = User(email="student@up.ac.th", is_active=True)
         db.add(user)
         db.flush()
         student = Student(user_id=user.user_id, student_id="66027179", student_name="นิสิตทดสอบระบบ (SSO Demo)", year=2, gender="male")
         db.add(student)
         db.commit()
-    else:
-        user = db.query(User).filter(User.user_id == student.user_id).first()
     
-    token = create_access_token({"user_id": user.user_id, "role": "student", "email": user.email or "student@up.ac.th", "display_name": student.student_name})
+    token = create_access_token({
+        "user_id": user.user_id,
+        "role": "student",
+        "email": user.email or "student@up.ac.th",
+        "display_name": student.student_name if student else "นิสิตทดสอบระบบ",
+    })
     return StandardResponse(
         success=True,
         message="เข้าสู่ระบบสิทธิ์นิสิตสำเร็จ",
@@ -572,7 +579,7 @@ def demo_student_sso(db: Session = Depends(get_db)):
                 "user_id": user.user_id,
                 "email": user.email or "student@up.ac.th",
                 "role": "student",
-                "display_name": student.student_name,
+                "display_name": student.student_name if student else "นิสิตทดสอบระบบ",
             }
         }
     )
