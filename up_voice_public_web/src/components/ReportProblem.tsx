@@ -170,7 +170,74 @@ export default function ReportProblem({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAiSuggesting, setIsAiSuggesting] = useState(false);
   const [isAiExpanding, setIsAiExpanding] = useState(false);
+  const [isUserManualCategory, setIsUserManualCategory] = useState(false);
   const [customBuildingName, setCustomBuildingName] = useState('');
+
+  // ── Auto AI Category Selection in background when typing description ──
+  useEffect(() => {
+    if (isUserManualCategory || description.trim().length < 8) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const response = await axios.post(`${API_BASE}/problems/ai/suggest-category`, {
+          description: description.trim(),
+        });
+        if (response.data?.success && response.data?.data?.category_id) {
+          const suggestedId = String(response.data.data.category_id);
+          if (!isUserManualCategory) {
+            setSelectedCategory(suggestedId);
+          }
+        }
+      } catch (err) {
+        console.error('Auto AI category suggest error:', err);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [description, isUserManualCategory]);
+
+  const findMatchingBuilding = (locStr: string, buildingsList: Building[]): Building | undefined => {
+    if (!locStr) return undefined;
+    const clean = locStr.toLowerCase().trim();
+
+    // 1. Direct exact or substring match
+    let match = buildingsList.find(b => clean.includes(b.name.toLowerCase()) || b.name.toLowerCase().includes(clean));
+    if (match) return match;
+
+    // 2. Keyword & Alias mapping table for UP Campus
+    const aliasRules: { keywords: string[]; buildingNameQuery: string }[] = [
+      { keywords: ['ict', 'ไอซีที', 'เทคโนโลยีสารสนเทศ', 'ตึกไอที'], buildingNameQuery: 'เทคโนโลยีสารสนเทศ' },
+      { keywords: ['อธิการ', 'สำนักงานอธิการ'], buildingNameQuery: 'สำนักงานอธิการบดี' },
+      { keywords: ['งำเมือง', 'หอประชุม'], buildingNameQuery: 'หอประชุมพญางำเมือง' },
+      { keywords: ['ศูนย์การแพทย์', 'รพ.มพ', 'โรงพยาบาล มพ', 'โรงพยาบาลมหาลัย'], buildingNameQuery: 'ศูนย์การแพทย์' },
+      { keywords: ['วิศวะ', 'วิศวกรรม'], buildingNameQuery: 'วิศวกรรมศาสตร์' },
+      { keywords: ['ทันตะ', 'ทันตแพทย์'], buildingNameQuery: 'ทันตแพทยศาสตร์' },
+      { keywords: ['เภสัช'], buildingNameQuery: 'เภสัชศาสตร์' },
+      { keywords: ['หมอ', 'แพทยศาสตร์'], buildingNameQuery: 'แพทยศาสตร์' },
+      { keywords: ['พยาบาล'], buildingNameQuery: 'พยาบาลศาสตร์' },
+      { keywords: ['สถาปัตย์', 'สถ.'], buildingNameQuery: 'สถาปัตยกรรมศาสตร์' },
+      { keywords: ['เกษตร'], buildingNameQuery: 'เกษตรศาสตร์' },
+      { keywords: ['นิติ', 'กฎหมาย'], buildingNameQuery: 'นิติศาสตร์' },
+      { keywords: ['รัฐศาสตร์'], buildingNameQuery: 'รัฐศาสตร์' },
+      { keywords: ['วิทยาการจัดการ', 'บิสซิเนส', 'การจัดการ'], buildingNameQuery: 'วิทยาการจัดการ' },
+      { keywords: ['หอพัก', 'หอนิสิต', 'หอมพ', 'up dorm'], buildingNameQuery: 'หอพัก' },
+      { keywords: ['บรรณสาร', 'ห้องสมุด', 'หอสมุด'], buildingNameQuery: 'บรรณสาร' },
+      { keywords: ['99 ปี', 'อุบาลี'], buildingNameQuery: '99 ปี' },
+      { keywords: ['สาธิต'], buildingNameQuery: 'สาธิต' },
+      { keywords: ['สนาม', 'สนามกีฬา'], buildingNameQuery: 'สนามกีฬา' },
+      { keywords: ['สงวน', 'อาคารสงวน', 'ตึกสงวน', 'สงวนเสริมศรี'], buildingNameQuery: 'สงวนเสริมศรี' },
+      { keywords: ['ประตู 1', 'ประตู 2', 'ประตู 3', 'หน้ามอ'], buildingNameQuery: 'อธิการ' },
+    ];
+
+    for (const rule of aliasRules) {
+      if (rule.keywords.some(k => clean.includes(k))) {
+        match = buildingsList.find(b => b.name.includes(rule.buildingNameQuery));
+        if (match) return match;
+      }
+    }
+
+    return undefined;
+  };
 
   const handleAiChatComplete = (data: any) => {
     if (data.description && data.description.trim()) {
@@ -186,31 +253,38 @@ export default function ReportProblem({
       if (matchedCat) setSelectedCategory(String(matchedCat.id));
     }
     if (data.location && !data.location.includes('ไม่ระบุ') && !data.location.includes('ไม่พบ')) {
-      const matchedBuilding = buildings.find(b => data.location.includes(b.name) || b.name.includes(data.location));
+      const matchedBuilding = findMatchingBuilding(data.location, buildings);
       if (matchedBuilding) {
         setSelectedBuilding(String(matchedBuilding.id));
-        if (matchedBuilding.latitude && matchedBuilding.longitude) {
-          const lat = Number(matchedBuilding.latitude);
-          const lng = Number(matchedBuilding.longitude);
+        setCustomBuildingName('');
+        const lat = matchedBuilding.latitude ? Number(matchedBuilding.latitude) : (data.latitude ? Number(data.latitude) : null);
+        const lng = matchedBuilding.longitude ? Number(matchedBuilding.longitude) : (data.longitude ? Number(data.longitude) : null);
+        if (lat && lng) {
           setSelectedLocation({ lat, lng });
           setMapFlyTarget([lat, lng]);
         }
       } else {
         setSelectedBuilding('other');
         setCustomBuildingName(data.location);
+        if (data.latitude && data.longitude) {
+          const lat = Number(data.latitude);
+          const lng = Number(data.longitude);
+          setSelectedLocation({ lat, lng });
+          setMapFlyTarget([lat, lng]);
+        }
       }
-    }
-    if (data.latitude && data.longitude) {
-      setSelectedLocation({ lat: data.latitude, lng: data.longitude });
-      setMapFlyTarget([data.latitude, data.longitude]);
+    } else if (data.latitude && data.longitude) {
+      setSelectedLocation({ lat: Number(data.latitude), lng: Number(data.longitude) });
+      setMapFlyTarget([Number(data.latitude), Number(data.longitude)]);
     }
     if (data.location_confidence !== undefined) {
       setLocationConfidence(data.location_confidence);
     }
-    if (data.needs_location_confirmation !== undefined) {
-      setNeedsLocationConfirmation(data.needs_location_confirmation);
+    if (data.is_inquiry) {
+      showToast('📍 AI ตอบคำถามสถานที่และปักพิกัดบนแผนที่ให้อัตโนมัติเรียบร้อยแล้ว!', 'success');
+    } else {
+      showToast('✨ AI ช่วยเลือกหมวดหมู่และปักพิกัดตำแหน่งบนแผนที่ให้อัตโนมัติเรียบร้อยแล้ว!', 'success');
     }
-    showToast('✨ AI ช่วยเลือกหมวดหมู่และปักพิกัดตำแหน่งบนแผนที่ให้อัตโนมัติเรียบร้อยแล้ว!', 'success');
   };
 
   const handleAiSuggest = async () => {
@@ -611,12 +685,8 @@ export default function ReportProblem({
 
               {/* Category Selection Grid */}
               <div className="space-y-3">
-                <div className="flex justify-between items-end">
+                <div>
                   <label className="block font-label-md text-label-md text-on-surface-variant font-bold">หมวดหมู่ปัญหา (Category) <span className="text-error">*</span></label>
-                  <button type="button" onClick={handleAiSuggest} disabled={isAiSuggesting || isFetchingData} className="text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-full transition-colors flex items-center gap-1 disabled:opacity-50">
-                    {isAiSuggesting ? <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span> : '🪄'}
-                    {isAiSuggesting ? 'กำลังวิเคราะห์...' : 'ให้ AI ช่วยเลือก'}
-                  </button>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {categories.map((cat) => {
@@ -628,7 +698,10 @@ export default function ReportProblem({
                       <button
                         key={cat.id}
                         type="button"
-                        onClick={() => setSelectedCategory(String(cat.id))}
+                        onClick={() => {
+                          setSelectedCategory(String(cat.id));
+                          setIsUserManualCategory(true);
+                        }}
                         disabled={isSubmitting || isFetchingData}
                         className={`relative flex flex-col items-center justify-center p-4 rounded-xl border transition-all ${
                           isSelected

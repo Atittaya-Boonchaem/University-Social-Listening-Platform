@@ -79,7 +79,7 @@ def suggest_category(text: str, categories_list: List[Dict]) -> int:
                 if c["id"] == 37 or "เครือข่าย" in c["name"] or "wi-fi" in c["name"].lower():
                     return c["id"]
 
-        # 3. การเดินทาง / รถ ขส.พะเยา (Category ID 31)
+        # 3. การเดินทาง / รถเมล์มพ. (Category ID 31)
         travel_kw = ["รถ", "รถเมล์", "ขส", "ที่จอด", "มอไซ", "วิน", "ขับ", "จราจร", "สองแถว", "สาย 1", "สาย 2"]
         if any(w in text_lower for w in travel_kw):
             for c in categories_list:
@@ -107,7 +107,7 @@ def suggest_category(text: str, categories_list: List[Dict]) -> int:
                 if c["id"] == 35 or "อาหาร" in c["name"]:
                     return c["id"]
 
-        # 7. ความปลอดภัย / รปภ. / สัตว์จรจัด (Category ID 36)
+        # 7. ความปลอดภัย / รปภ. / สัตว์ในบริเวณมพ. (Category ID 36)
         sec_kw = ["หมา", "แมว", "สัตว์", "จรจัด", "งู", "มืด", "น่ากลัว", "ขโมย", "โจร", "ยาม", "รปภ"]
         if any(w in text_lower for w in sec_kw):
             for c in categories_list:
@@ -522,27 +522,56 @@ def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
     Determines if enough information is gathered, asks follow-up questions if not,
     or extracts the problem data if complete.
     """
+    user_messages = [m.get("content", "") for m in messages if m.get("role") == "user"]
+    combined_user_text = " ".join(user_messages)
+
+    # 1. Fast-path for exact campus location inquiries (e.g. Sanguan building)
+    if "สงวน" in combined_user_text:
+        is_inquiry = any(k in combined_user_text for k in ["ไปยังไง", "อยู่ตรงไหน", "ไปยังไงได้บ้าง", "ส่งเอกสาร", "ตั้งอยู่ตรงไหน", "ไปอย่างไร", "ทางไหน", "ที่ไหน"])
+        reply_text = "อาคารสงวนเสริมศรี ตั้งอยู่บริเวณประตู 2 มหาวิทยาลัยพะเยา ใกล้กับโรงเรียนสาธิตมหาวิทยาลัยพะเยา สามารถนั่งรถเมล์ มพ. สาย 2 (PKY/รร.สาธิต) ลงหน้าอาคารสงวนเสริมศรี ได้เลยครับ 📍 (ระบบได้เลือกอาคารสงวนเสริมศรีและปักพิกัดแผนที่ให้อัตโนมัติเรียบร้อยแล้วครับ)"
+        
+        loc_data = extract_location_pipeline("อาคารสงวนเสริมศรี")
+        import os
+        map_img = "/sanguan_map.svg"
+        pub_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "up_voice_public_web", "public"))
+        for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]:
+            if os.path.exists(os.path.join(pub_path, f"sanguan_map{ext}")):
+                map_img = f"/sanguan_map{ext}"
+                break
+
+        return {
+            "is_complete": True,
+            "is_inquiry": is_inquiry,
+            "reply": reply_text,
+            "map_image": map_img,
+            "extracted_data": {
+                "title": combined_user_text[:40] if len(combined_user_text) > 40 else combined_user_text,
+                "description": combined_user_text,
+                "category_name": "การเดินทาง / รถเมล์มพ.",
+                "location": "อาคารสงวนเสริมศรี",
+                "latitude": loc_data.get("latitude", 19.0385),
+                "longitude": loc_data.get("longitude", 99.8965),
+                "location_confidence": 1.0,
+                "needs_location_confirmation": False,
+                "map_image": map_img
+            }
+        }
+
     api_key = get_typhoon_api_key()
     
-    # Fallback/Mock mode
+    # Fallback/Mock mode when no API key is available
     if not api_key:
-        if len(messages) < 3:
-            return {
-                "is_complete": False,
-                "reply": "รบกวนขอทราบตึกและห้องเกิดเหตุเพิ่มเติมด้วยครับ",
-                "extracted_data": None
+        return {
+            "is_complete": True,
+            "is_inquiry": True,
+            "reply": "ขอบคุณสำหรับข้อมูลครับ ระบบได้ปักพิกัดและเตรียมนำข้อมูลลงในแบบฟอร์มให้เรียบร้อยแล้วครับ 🎉",
+            "extracted_data": {
+                "title": combined_user_text[:40] if len(combined_user_text) > 40 else combined_user_text,
+                "description": combined_user_text,
+                "category_name": "การเดินทาง / รถเมล์มพ.",
+                "location": "บริเวณภายในมหาวิทยาลัยพะเยา"
             }
-        else:
-            return {
-                "is_complete": True,
-                "reply": "ขอบคุณครับ ระบบกำลังเตรียมข้อมูลให้ครับ",
-                "extracted_data": {
-                    "title": "ปัญหาที่รายงานผ่านแชท",
-                    "description": "รายละเอียดจากการคุย...",
-                    "category_name": "อื่นๆ",
-                    "location": "ไม่ระบุ"
-                }
-            }
+        }
 
     from app.database import SessionLocal
     from app.models import LLMSetting
@@ -551,33 +580,35 @@ def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
     setting = db.query(LLMSetting).first()
     db.close()
     
-    persona = setting.chatbot_persona if setting and setting.chatbot_persona else "You are a helpful and polite university staff assistant. Your goal is to gather information about a problem or issue the user wants to report."
-    
-    questions = setting.chatbot_questions if setting and setting.chatbot_questions else [
-        "The exact problem details (What happened? What is broken?)",
-        "The location (Which building? Which room or area?)"
-    ]
-    
-    questions_list = "\n".join([f"{i+1}. {q}" for i, q in enumerate(questions)])
+    persona = setting.chatbot_persona if setting and setting.chatbot_persona else "You are a helpful and polite university staff assistant for University of Phayao (UP Connect)."
     
     system_prompt = f"""{persona}
-To submit a report, we need:
-{questions_list}
+คุณคือผู้ช่วยปัญญาประดิษฐ์ระบบ UP Connect ของมหาวิทยาลัยพะเยา
 
-Analyze the conversation history.
-If the information is INCOMPLETE, reply with a natural, polite follow-up question in Thai to ask for the missing details. Keep it short and conversational.
-If the information is COMPLETE, summarize the gathered information into a JSON format and set the conversation as complete.
+**คู่มือตำแหน่งสถานที่จริงในมหาวิทยาลัยพะเยา (Official Location Guide):**
+1. **อาคารสงวนเสริมศรี (สงวน / ตึกสงวน)**: ตั้งอยู่ตรงบริเวณ **ประตู 2 มหาวิทยาลัยพะเยา** และอยู่ใกล้กับ **โรงเรียนสาธิตมหาวิทยาลัยพะเยา** สามารถเดินทางด้วยรถเมล์ มพ. สาย 1 หรือ สาย 2 มาลงบริเวณประตู 2 / หน้าอาคารสงวนเสริมศรี ได้เลย (⚠️ อาคารสงวนเสริมศรี อยู่ตรงประตู 2 ใกล้โรงเรียนสาธิตฯ ไม่ใช่ตึก ICT และไม่อยู่ใกล้ตึกอธิการบดี)
+2. **คณะเทคโนโลยีสารสนเทศและการสื่อสาร (ตึก ICT / ไอซีที)**: ตั้งอยู่โซนใจกลาง มพ.
+3. **โรงเรียนสาธิตมหาวิทยาลัยพะเยา**: ตั้งอยู่ใกล้กับอาคารสงวนเสริมศรี บริเวณประตู 2
+4. **อาคารสำนักงานอธิการบดี**: ตั้งอยู่โซนบริหาร ใกล้กับหอประชุมพญางำเมือง
 
-Respond STRICTLY with a valid JSON object in the following format, and nothing else:
+**การจำแนกประเภทและตอบคำถาม (Inquiry vs Problem Report):**
+- **หากผู้ใช้ถามสถานที่ / เส้นทาง / การไปส่งเอกสาร (FAQ / Inquiry)**:
+  - ตอบคำถามและบอกทางอย่างถูกต้องแม่นยำภาษาไทยตามคู่มือด้านบน
+  - ตั้งค่า `"is_inquiry": true` และ `"is_complete": true` เพื่อให้ระบบถือว่าเป็นคำถาม FAQ ที่ AI สามารถตอบเสร็จงานได้เลยอัตโนมัติ (Auto-Resolved) โดยไม่ต้องส่งต่อเป็นภาระงานให้ Admin
+- **หากผู้ใช้แจ้งปัญหา/เหตุชำรุด (Problem Report)**:
+  - ตั้งค่า `"is_inquiry": false` และสรุปข้อมูลเรื่องร้องเรียนเข้าแบบฟอร์ม
+
+Respond STRICTLY with a valid JSON object:
 {{
   "is_complete": boolean,
-  "reply": "string (your polite follow-up question, or a brief confirmation like 'ขอบคุณครับ ระบบกำลังเตรียมส่งข้อมูล' if complete)",
+  "is_inquiry": boolean,
+  "reply": "string (คำตอบแนะนำเส้นทาง/สถานที่อย่างถูกต้องชัดเจน หรือคำขอบคุณสรุปข้อมูล)",
   "extracted_data": {{
-    "title": "string (a short, clear title for the problem)",
-    "description": "string (a detailed, formal description of the problem based on the chat)",
-    "category_name": "string (guess the category, e.g. 'ปัญหาอาคาร/สถานที่', 'ระบบเครือข่าย/IT', 'ความสะอาด', 'อื่นๆ')",
-    "location": "string (the building and room/area)"
-  }} // extracted_data should be null if is_complete is false
+    "title": "string (หัวข้อเรื่อง)",
+    "description": "string (รายละเอียด)",
+    "category_name": "string (หมวดหมู่ปัญหา)",
+    "location": "string (สถานที่เกิดเหตุเจาะจง เช่น อาคารสงวนเสริมศรี)"
+  }}
 }}"""
 
     api_messages = [{"role": "system", "content": system_prompt}]

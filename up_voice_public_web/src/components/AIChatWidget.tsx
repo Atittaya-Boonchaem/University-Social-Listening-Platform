@@ -6,6 +6,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  image?: string;
 }
 
 interface AIChatWidgetProps {
@@ -64,23 +65,27 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
       if (res.data.success) {
         const data = res.data.data;
         const replyText = data.reply || 'ขอบคุณครับ ระบบกำลังบันทึกข้อมูลให้';
-        setMessages(prev => [...prev, { role: 'assistant', content: replyText }]);
+        const imgUrl = data.map_image || data.extracted_data?.map_image;
+        setMessages(prev => [...prev, { role: 'assistant', content: replyText, image: imgUrl }]);
         
-        // Pass extracted_data or fallback user input so form auto-fills immediately
-        const extracted = data.extracted_data || {};
-        const fallbackDesc = userMsg.content;
-        
-        onComplete({
-          description: extracted.description || fallbackDesc,
-          title: extracted.title || (fallbackDesc.length > 50 ? fallbackDesc.substring(0, 50) + '...' : fallbackDesc),
-          category_id: extracted.category_id,
-          category_name: extracted.category_name,
-          location: extracted.location,
-          latitude: extracted.latitude,
-          longitude: extracted.longitude,
-          location_confidence: extracted.location_confidence,
-          needs_location_confirmation: extracted.needs_location_confirmation
-        });
+        // Trigger form auto-fill ONLY when AI has gathered complete information (is_complete === true)
+        if (data.is_complete && data.extracted_data) {
+          const extracted = data.extracted_data;
+          const fallbackDesc = userMsg.content;
+          
+          onComplete({
+            description: extracted.description || fallbackDesc,
+            title: extracted.title || (fallbackDesc.length > 50 ? fallbackDesc.substring(0, 50) + '...' : fallbackDesc),
+            category_id: extracted.category_id,
+            category_name: extracted.category_name,
+            location: extracted.location,
+            latitude: extracted.latitude,
+            longitude: extracted.longitude,
+            location_confidence: extracted.location_confidence,
+            needs_location_confirmation: extracted.needs_location_confirmation,
+            is_inquiry: data.is_inquiry ?? false
+          });
+        }
       } else {
         setMessages(prev => [...prev, { role: 'assistant', content: 'ขออภัยครับ เกิดข้อผิดพลาดในการเชื่อมต่อ' }]);
       }
@@ -112,6 +117,20 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
               }`}
             >
               <p className="font-body-sm whitespace-pre-wrap">{msg.content}</p>
+              {msg.image && (
+                <div className="mt-3 overflow-hidden rounded-xl border border-outline-variant/40 shadow-sm bg-surface">
+                  <div className="px-3 py-1.5 bg-primary/10 text-primary text-xs font-bold flex items-center gap-1.5 border-b border-outline-variant/20">
+                    <span>🗺️</span>
+                    <span>ผังแนะนำการเดินทาง (Campus Map)</span>
+                  </div>
+                  <img 
+                    src={msg.image} 
+                    alt="Campus Map" 
+                    className="w-full h-auto object-cover hover:opacity-95 transition-opacity cursor-pointer" 
+                    onClick={() => window.open(msg.image, '_blank')} 
+                  />
+                </div>
+              )}
             </div>
           </div>
         ))}
