@@ -34,7 +34,9 @@ app = FastAPI(
 # Static file serving (uploaded images)
 # ──────────────────────────────────────────────
 os.makedirs(config.IMAGE_UPLOAD_DIR, exist_ok=True)
+os.makedirs("./static", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="./uploads"), name="uploads")
+app.mount("/static", StaticFiles(directory="./static"), name="static")
 
 # ──────────────────────────────────────────────
 # CORS
