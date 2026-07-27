@@ -65,7 +65,16 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
       if (res.data.success) {
         const data = res.data.data;
         const replyText = data.reply || 'ขอบคุณครับ ระบบกำลังบันทึกข้อมูลให้';
-        const imgUrl = data.map_image || data.extracted_data?.map_image;
+        const rawImgUrl = data.map_image || data.extracted_data?.map_image;
+        let imgUrl: string | undefined = undefined;
+        if (rawImgUrl) {
+          if (rawImgUrl.startsWith('http://') || rawImgUrl.startsWith('https://')) {
+            imgUrl = rawImgUrl;
+          } else {
+            const apiRoot = API_BASE.replace(/\/api\/v1\/?$/, '');
+            imgUrl = `${apiRoot}${rawImgUrl.startsWith('/') ? '' : '/'}${rawImgUrl}`;
+          }
+        }
         setMessages(prev => [...prev, { role: 'assistant', content: replyText, image: imgUrl }]);
         
         // Trigger form auto-fill ONLY when AI has gathered complete information (is_complete === true)
