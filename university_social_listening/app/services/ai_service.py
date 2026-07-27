@@ -532,13 +532,13 @@ def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
         
         loc_data = extract_location_pipeline("อาคารสงวนเสริมศรี")
         import os
-        map_img = "/static/sanguan_map.png"
+        map_img = "https://university-social-listening-platform.onrender.com/static/sanguan_map.png"
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         for folder in ["static", "uploads"]:
             folder_dir = os.path.join(base_dir, folder)
             for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]:
                 if os.path.exists(os.path.join(folder_dir, f"sanguan_map{ext}")):
-                    map_img = f"/{folder}/sanguan_map{ext}"
+                    map_img = f"https://university-social-listening-platform.onrender.com/{folder}/sanguan_map{ext}"
                     break
 
         return {
