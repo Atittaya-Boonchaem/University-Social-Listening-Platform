@@ -5,21 +5,22 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-SMTP_EMAIL = os.getenv("SMTP_EMAIL")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-
 def send_invitation_email(email: str, role: str, category_name: str, token: str):
-    if not SMTP_EMAIL or not SMTP_PASSWORD:
+    smtp_email = os.getenv("SMTP_EMAIL", "artitaya.11244@gmail.com")
+    raw_password = os.getenv("SMTP_PASSWORD", "nupd wksj jknn aiks")
+    smtp_password = raw_password.replace(" ", "") if raw_password else ""
+
+    if not smtp_email or not smtp_password:
         logger.error("SMTP_EMAIL or SMTP_PASSWORD not set in environment variables.")
         return
 
     try:
         msg = EmailMessage()
         msg['Subject'] = 'You have been invited to the UP Voice Platform!'
-        msg['From'] = SMTP_EMAIL
+        msg['From'] = smtp_email
         msg['To'] = email
 
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5174")
+        frontend_url = os.getenv("FRONTEND_URL", "https://university-social-listening-platfor.vercel.app")
         invite_link = f"{frontend_url}/register?token={token}"
         
         display_role = role.replace("_", " ").title()
@@ -121,7 +122,7 @@ def send_invitation_email(email: str, role: str, category_name: str, token: str)
 
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
-            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.login(smtp_email, smtp_password)
             server.send_message(msg)
             
         logger.info(f"Invitation email sent successfully to {email}")
