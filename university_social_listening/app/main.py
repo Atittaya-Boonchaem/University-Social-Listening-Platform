@@ -131,8 +131,28 @@ def seed_initial_data():
             db.add_all(faculties)
             db.commit()
 
+        # Seed Statuses & Visibilities
+        from app.models import Status, VisibilityType, Category, Building, User, SuperAdmin, Staff
+        if db.query(Status).count() == 0:
+            statuses = [
+                Status(status_id=1, status_name="OPEN", color_code="#EF4444"),
+                Status(status_id=2, status_name="IN_PROGRESS", color_code="#F59E0B"),
+                Status(status_id=3, status_name="RESOLVED", color_code="#10B981"),
+                Status(status_id=4, status_name="CLOSED", color_code="#6B7280"),
+            ]
+            db.add_all(statuses)
+            db.commit()
+
+        if db.query(VisibilityType).count() == 0:
+            visibilities = [
+                VisibilityType(visibility_id=1, visibility_name="PUBLIC", description="สาธารณะ (เห็นได้ทุกคน)"),
+                VisibilityType(visibility_id=2, visibility_name="STAFF_ONLY", description="เฉพาะเจ้าหน้าที่"),
+                VisibilityType(visibility_id=3, visibility_name="ANONYMOUS", description="ไม่เปิดเผยตัวตน"),
+            ]
+            db.add_all(visibilities)
+            db.commit()
+
         # Seed Categories
-        from app.models import Category, Building, User, SuperAdmin, Staff
         if db.query(Category).count() == 0:
             cats = [
                 Category(category_id=1, category_name="สิ่งอำนวยความสะดวกและอาคารสถานที่", ticket_prefix="FAC", description="ปัญหาอาคาร ชำรุด โต๊ะเก้าอี้ ไฟฟ้า ประปา"),
@@ -145,17 +165,47 @@ def seed_initial_data():
             db.add_all(cats)
             db.commit()
 
-        # Seed Buildings
-        if db.query(Building).count() == 0:
-            blds = [
-                Building(building_id=1, name="อาคารเทคโนโลยีสารสนเทศและการสื่อสาร (ICT)", latitude=19.0275, longitude=99.8965),
-                Building(building_id=2, name="อาคารเรียนรวม PKY", latitude=19.0280, longitude=99.8970),
-                Building(building_id=3, name="อาคารสำนักงานอธิการบดี", latitude=19.0260, longitude=99.8950),
-                Building(building_id=4, name="อาคารหอประชุมมหาวิทยาลัยพะเยา", latitude=19.0290, longitude=99.8980),
-                Building(building_id=5, name="กลุ่มอาคารหอพักนิสิต UP DORM", latitude=19.0250, longitude=99.8930),
-            ]
-            db.add_all(blds)
+        # Seed Buildings (All UP Campus Locations)
+        all_up_buildings = [
+            ("คณะเทคโนโลยีสารสนเทศและการสื่อสาร (ICT)", 19.0286, 99.8958),
+            ("อาคารเรียนรวม PKY", 19.0280, 99.8970),
+            ("อาคารสำนักงานอธิการบดี", 19.0295, 99.8960),
+            ("หอประชุมพญางำเมือง / อาคารหอประชุม มพ.", 19.0290, 99.8950),
+            ("กลุ่มอาคารหอพักนิสิต UP DORM", 19.0370, 99.8935),
+            ("ศูนย์การแพทย์และโรงพยาบาล มหาวิทยาลัยพะเยา", 19.0270, 99.8940),
+            ("คณะทันตแพทยศาสตร์", 19.0275, 99.8945),
+            ("คณะพลังงานและสิ่งแวดล้อม", 19.0280, 99.8970),
+            ("คณะวิศวกรรมศาสตร์", 19.0285, 99.8975),
+            ("คณะสหเวชศาสตร์", 19.0290, 99.8980),
+            ("คณะเภสัชศาสตร์", 19.0295, 99.8985),
+            ("คณะสถาปัตยกรรมศาสตร์และศิลปกรรมศาสตร์", 19.0300, 99.8955),
+            ("คณะเกษตรศาสตร์และทรัพยากรธรรมชาติ", 19.0305, 99.8965),
+            ("คณะแพทยศาสตร์", 19.0310, 99.8975),
+            ("คณะพยาบาลศาสตร์", 19.0315, 99.8985),
+            ("คณะวิทยาศาสตร์", 19.0320, 99.8995),
+            ("คณะวิทยาศาสตร์การแพทย์", 19.0325, 99.9005),
+            ("คณะศิลปศาสตร์", 19.0330, 99.8930),
+            ("ศูนย์บรรณสารและการเรียนรู้ (หอสมุด)", 19.0335, 99.8940),
+            ("อาคาร 99 ปี พระอุบาลีคุณูปมาจารย์", 19.0340, 99.8950),
+            ("คณะนิติศาสตร์", 19.0345, 99.8960),
+            ("คณะบริหารธุรกิจและนิเทศศาสตร์", 19.0350, 99.8970),
+            ("วิทยาลัยการศึกษา", 19.0355, 99.8980),
+            ("ศูนย์หนังสือจุฬา มพ.", 19.0360, 99.8990),
+            ("คณะรัฐศาสตร์และสังคมศาสตร์", 19.0365, 99.9000),
+            ("หอพักนิสิต (มพ. 1-18)", 19.0375, 99.8945),
+            ("อาคารสงวนเสริมศรี", 19.0385, 99.8965),
+            ("โรงเรียนสาธิตมหาวิทยาลัยพะเยา", 19.0390, 99.8975),
+            ("พระพุทธภุชคารักษ์", 19.0395, 99.8985),
+        ]
+        existing_bld_names = {b.name for b in db.query(Building).all()}
+        new_blds = []
+        for bname, lat, lng in all_up_buildings:
+            if bname not in existing_bld_names:
+                new_blds.append(Building(name=bname, latitude=lat, longitude=lng))
+        if new_blds:
+            db.add_all(new_blds)
             db.commit()
+            logger.info(f"🏢 Seeded {len(new_blds)} new UP campus buildings successfully.")
 
         # Seed Super Admin Account
         admin_email = "superadmin@up.ac.th"
