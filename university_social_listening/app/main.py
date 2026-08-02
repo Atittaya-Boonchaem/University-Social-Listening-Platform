@@ -148,11 +148,11 @@ def seed_initial_data():
         # Seed Buildings
         if db.query(Building).count() == 0:
             blds = [
-                Building(building_id=1, building_name="อาคารเทคโนโลยีสารสนเทศและการสื่อสาร (ICT)", latitude=19.0275, longitude=99.8965),
-                Building(building_id=2, building_name="อาคารเรียนรวม PKY", latitude=19.0280, longitude=99.8970),
-                Building(building_id=3, building_name="อาคารสำนักงานอธิการบดี", latitude=19.0260, longitude=99.8950),
-                Building(building_id=4, building_name="อาคารหอประชุมมหาวิทยาลัยพะเยา", latitude=19.0290, longitude=99.8980),
-                Building(building_id=5, building_name="กลุ่มอาคารหอพักนิสิต UP DORM", latitude=19.0250, longitude=99.8930),
+                Building(building_id=1, name="อาคารเทคโนโลยีสารสนเทศและการสื่อสาร (ICT)", latitude=19.0275, longitude=99.8965),
+                Building(building_id=2, name="อาคารเรียนรวม PKY", latitude=19.0280, longitude=99.8970),
+                Building(building_id=3, name="อาคารสำนักงานอธิการบดี", latitude=19.0260, longitude=99.8950),
+                Building(building_id=4, name="อาคารหอประชุมมหาวิทยาลัยพะเยา", latitude=19.0290, longitude=99.8980),
+                Building(building_id=5, name="กลุ่มอาคารหอพักนิสิต UP DORM", latitude=19.0250, longitude=99.8930),
             ]
             db.add_all(blds)
             db.commit()
@@ -160,9 +160,9 @@ def seed_initial_data():
         # Seed Super Admin Account
         admin_email = "superadmin@up.ac.th"
         existing_admin = db.query(User).filter(User.email == admin_email).first()
+        import bcrypt
+        hashed = bcrypt.hashpw("123456".encode(), bcrypt.gensalt()).decode()
         if not existing_admin:
-            import bcrypt
-            hashed = bcrypt.hashpw("123456".encode(), bcrypt.gensalt()).decode()
             admin_user = User(email=admin_email, password_hash=hashed, is_active=True)
             db.add(admin_user)
             db.flush()
@@ -171,6 +171,14 @@ def seed_initial_data():
             db.add(Staff(user_id=admin_user.user_id, employee_id="ADM-001", staff_name="Super Administrator", staff_role="SuperAdmin"))
             db.commit()
             logger.info("🔑 Seeded default SuperAdmin (superadmin@up.ac.th / 123456) successfully.")
+        else:
+            existing_admin.password_hash = hashed
+            existing_admin.is_active = True
+            sa = db.query(SuperAdmin).filter(SuperAdmin.user_id == existing_admin.user_id).first()
+            if not sa:
+                db.add(SuperAdmin(user_id=existing_admin.user_id, is_active=True))
+            db.commit()
+            logger.info("🔑 Verified/updated default SuperAdmin (superadmin@up.ac.th / 123456) successfully.")
 
         logger.info("🌱 All initial seed data verified successfully.")
     except Exception as e:
