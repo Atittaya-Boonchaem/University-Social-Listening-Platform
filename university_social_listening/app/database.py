@@ -47,6 +47,9 @@ class Config:
     SSO_CLIENT_SECRET: str = os.getenv("SSO_CLIENT_SECRET", "").strip()
     SSO_REDIRECT_URI: str = os.getenv("SSO_REDIRECT_URI", "http://localhost:8000/api/v1/auth/sso/callback").strip()
 
+    # DB SSL
+    DB_SSL: bool = os.getenv("DB_SSL", "true" if "tidbcloud" in os.getenv("DB_HOST", "") else "false").lower() in ("true", "1", "t")
+
     @property
     def DATABASE_URL(self) -> str:
         return (
@@ -62,8 +65,13 @@ config = Config()
 # ──────────────────────────────────────────────
 Base = declarative_base()
 
+connect_args = {}
+if config.DB_SSL or "tidbcloud" in config.DB_HOST:
+    connect_args["ssl"] = {"ssl_mode": "VERIFY_IDENTITY"}
+
 engine = create_engine(
     config.DATABASE_URL,
+    connect_args=connect_args,
     echo=config.DEBUG,
     pool_pre_ping=True,
     pool_recycle=300,
