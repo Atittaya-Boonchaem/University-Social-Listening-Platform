@@ -50,7 +50,8 @@ class PublicUserRegisterCreate(BaseModel):
     password: str = Field(..., min_length=6)
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
-    birthdate: date
+    birthdate: Optional[date] = None
+    age: Optional[int] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     public_user_type_id: Optional[int] = None

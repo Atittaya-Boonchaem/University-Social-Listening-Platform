@@ -335,11 +335,12 @@ def register_public(data: PublicUserRegisterCreate, db: Session = Depends(get_db
     db.add(user)
     db.flush()
 
+    from datetime import date
     pub = PublicUser(
         user_id=user.user_id,
         first_name=data.first_name,
         last_name=data.last_name,
-        age=data.age,
+        birthdate=data.birthdate or date(2000, 1, 1),
         phone=data.phone,
         address=data.address,
         public_user_type_id=data.public_user_type_id,
