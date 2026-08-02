@@ -10,7 +10,7 @@ import {
   fetchPendingInvites,
   revokePendingInvite
 } from '../../services/adminInviteService';
-import { Mail, Plus, Trash2, CheckCircle2, AlertCircle, ChevronDown, Users, Shield, ShieldCheck, Tag, X, Clock } from 'lucide-react';
+import { Mail, Plus, Trash2, CheckCircle2, AlertCircle, ChevronDown, Users, Shield, ShieldCheck, Tag, X, Clock, Copy } from 'lucide-react';
 
 // ── Helpers ────────────────────────────────────────────────────
 const fmtDate = (iso) =>
@@ -297,6 +297,7 @@ const CategoryAdminInvites = () => {
         categoryId: i.category_id,
         role: i.role.replace('_', ' '),
         date: i.created_at,
+        token: i.token,
         isPending: true,
         raw: i
       }));
@@ -514,7 +515,20 @@ const CategoryAdminInvites = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-right flex items-center justify-end gap-1">
+                      {a.isPending && a.token && (
+                        <button
+                          onClick={() => {
+                            const link = `${window.location.origin}/register?token=${a.token}`;
+                            navigator.clipboard.writeText(link);
+                            showToast('คัดลอกลิงก์คำเชิญเรียบร้อยแล้ว!', 'success');
+                          }}
+                          className="inline-flex items-center justify-center p-2 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors"
+                          title="คัดลอกลิงก์คำเชิญ (Copy Invite Link)"
+                        >
+                          <Copy size={16} />
+                        </button>
+                      )}
                       <button
                         onClick={() => setRevokeDialog(a)}
                         className="inline-flex items-center justify-center p-2 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"

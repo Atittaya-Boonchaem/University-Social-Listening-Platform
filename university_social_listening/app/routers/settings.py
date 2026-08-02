@@ -14,6 +14,17 @@ class PublicLLMSettingResponse(BaseModel):
 
 router = APIRouter()
 
+@router.get("/categories", response_model=StandardResponse)
+def get_settings_categories(db: Session = Depends(get_db)):
+    from app.models import Category
+    from app.schemas import CategoryResponse
+    cats = db.query(Category).filter(Category.is_active == True).all()
+    return StandardResponse(
+        success=True,
+        message="Success",
+        data={"items": [CategoryResponse.model_validate(c).model_dump() for c in cats]}
+    )
+
 @router.get("/public-llm-settings", response_model=StandardResponse)
 def get_public_llm_settings(db: Session = Depends(get_db)):
     setting = db.query(LLMSetting).first()

@@ -159,10 +159,9 @@ const SAUserManagement = () => {
   useEffect(() => {
     async function loadCats() {
       try {
-        const res = await api.get('/settings/categories');
-        if (res.data && res.data.data) {
-          setAvailableCategories(res.data.data);
-        }
+        const res = await api.get('/problems/categories');
+        const items = res.data?.data?.items || res.data?.data || [];
+        setAvailableCategories(items);
       } catch (err) {
         console.error('Failed to load categories:', err);
       }
