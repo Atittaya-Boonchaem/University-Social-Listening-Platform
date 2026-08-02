@@ -356,11 +356,12 @@ export default function ReportProblem({
 
   // ── Smart Location Privacy: hide map based on category requires_location_privacy ───────────
   const { requiresMap, isTeachingCategory } = React.useMemo(() => {
-    if (!selectedCategory) return { requiresMap: false, isTeachingCategory: false };
-    const cat = categories.find((c) => String(c.id) === selectedCategory);
+    if (!selectedCategory) return { requiresMap: true, isTeachingCategory: false };
+    const cat = categories.find((c) => String(c.id) === selectedCategory || c.id === Number(selectedCategory));
+    const isPrivacy = Boolean(cat?.requires_location_privacy || cat?.name?.includes('การเรียนการสอน'));
     return {
-      requiresMap: cat?.requireMap ?? false,
-      isTeachingCategory: cat?.name === 'การเรียนการสอน',
+      requiresMap: !isPrivacy,
+      isTeachingCategory: isPrivacy,
     };
   }, [selectedCategory, categories]);
 
