@@ -882,9 +882,19 @@ def complete_onboarding(
     Staff:    gender
     """
     student = db.query(Student).filter(Student.user_id == current_user.user_id).first()
+    stf = db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
+
+    if not student and not stf:
+        student = Student(user_id=current_user.user_id, student_name="นิสิตใหม่")
+        db.add(student)
+        db.flush()
+
     if student:
         if "faculty_id" in payload and payload["faculty_id"]:
-            student.faculty_id = int(payload["faculty_id"])
+            try:
+                student.faculty_id = int(payload["faculty_id"])
+            except (ValueError, TypeError):
+                pass
         if "education_level" in payload and payload["education_level"]:
             try:
                 student.year = int(payload["education_level"])
@@ -893,11 +903,11 @@ def complete_onboarding(
         if "birthdate" in payload and payload["birthdate"]:
             try:
                 from datetime import datetime
-                student.birthdate = datetime.strptime(payload["birthdate"], "%Y-%m-%d").date()
+                student.birthdate = datetime.strptime(str(payload["birthdate"]), "%Y-%m-%d").date()
             except (ValueError, TypeError):
                 pass
         if "gender" in payload and payload["gender"]:
-            student.gender = payload["gender"]
+            student.gender = str(payload["gender"])
         # Update student_id prefix if provided
         if "student_prefix" in payload and payload["student_prefix"]:
             prefix = str(payload["student_prefix"])[:2]
@@ -909,12 +919,7 @@ def complete_onboarding(
         db.commit()
         return StandardResponse(success=True, message="Onboarding complete", data={"role": "student"})
 
-    stf = db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
     if stf:
-        if "birthdate" in payload and payload["birthdate"]:
-            pass  # Staff model has no birthdate column — store in a note or skip
-        if "gender" in payload and payload["gender"]:
-            pass  # Staff model has no gender column — extend model later if needed
         db.commit()
         return StandardResponse(success=True, message="Onboarding complete", data={"role": "staff"})
 

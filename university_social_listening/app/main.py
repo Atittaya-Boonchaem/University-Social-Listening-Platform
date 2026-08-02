@@ -94,11 +94,56 @@ async def http_exception_handler(request, exc):
 # ──────────────────────────────────────────────
 # Lifecycle events
 # ──────────────────────────────────────────────
+def seed_initial_data():
+    from app.database import SessionLocal
+    from app.models import Faculty, Role
+    db = SessionLocal()
+    try:
+        if db.query(Role).count() == 0:
+            roles = [
+                Role(role_id=1, role_name="SuperAdmin", description="Super Administrator"),
+                Role(role_id=2, role_name="CategoryAdmin", description="Category Administrator"),
+                Role(role_id=3, role_name="Staff", description="University Staff"),
+                Role(role_id=4, role_name="Student", description="University Student"),
+                Role(role_id=5, role_name="PublicUser", description="General Public User"),
+                Role(role_id=6, role_name="AnonymousUser", description="Anonymous User"),
+            ]
+            db.add_all(roles)
+            db.commit()
+
+        if db.query(Faculty).count() == 0:
+            faculties_data = [
+                (1, 'คณะเทคโนโลยีสารสนเทศและการสื่อสาร'),
+                (2, 'คณะวิศวกรรมศาสตร์'),
+                (3, 'คณะวิทยาศาสตร์'),
+                (4, 'คณะแพทยศาสตร์'),
+                (5, 'คณะศิลปศาสตร์'),
+                (6, 'คณะบริหารธุรกิจและนิเทศศาสตร์'),
+                (7, 'คณะนิติศาสตร์'),
+                (8, 'คณะสหเวชศาสตร์และสาธารณสุขศาสตร์'),
+                (9, 'คณะเกษตรศาสตร์และทรัพยากรธรรมชาติ'),
+                (10, 'คณะทันตแพทยศาสตร์'),
+                (11, 'คณะสถาปัตยกรรมศาสตร์และศิลปกรรมศาสตร์'),
+                (12, 'คณะพยาบาลศาสตร์'),
+                (13, 'คณะเภสัชศาสตร์'),
+            ]
+            faculties = [Faculty(faculty_id=fid, faculty_name=fname) for fid, fname in faculties_data]
+            db.add_all(faculties)
+            db.commit()
+            logger.info("🌱 Seeded 13 UP faculties and default roles successfully.")
+    except Exception as e:
+        logger.error(f"Error seeding initial data: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("🚀 FastAPI v2 — 26-table schema starting...")
     Base.metadata.create_all(bind=engine)
     logger.info("✅ All tables verified/created.")
+    seed_initial_data()
 
 
 @app.on_event("shutdown")
