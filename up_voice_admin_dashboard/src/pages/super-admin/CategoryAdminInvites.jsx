@@ -516,10 +516,11 @@ const CategoryAdminInvites = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right flex items-center justify-end gap-1">
-                      {a.isPending && a.token && (
+                      {a.isPending && (
                         <button
                           onClick={() => {
-                            const link = `${window.location.origin}/register?token=${a.token}`;
+                            const tk = a.token || a.raw?.token || '';
+                            const link = `${window.location.origin}/register?token=${tk}`;
                             navigator.clipboard.writeText(link);
                             showToast('คัดลอกลิงก์คำเชิญเรียบร้อยแล้ว!', 'success');
                           }}

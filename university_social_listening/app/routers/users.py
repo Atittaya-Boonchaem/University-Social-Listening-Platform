@@ -244,6 +244,7 @@ def get_invites(
             "category_id": inv.category_id,
             "category_name": cat_name,
             "status": inv.status,
+            "token": inv.token,
             "created_at": inv.created_at
         })
         
