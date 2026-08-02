@@ -130,7 +130,49 @@ def seed_initial_data():
             faculties = [Faculty(faculty_id=fid, faculty_name=fname) for fid, fname in faculties_data]
             db.add_all(faculties)
             db.commit()
-            logger.info("🌱 Seeded 13 UP faculties and default roles successfully.")
+
+        # Seed Problem Categories
+        from app.models import ProblemCategory, Building, User, SuperAdmin, Staff
+        if db.query(ProblemCategory).count() == 0:
+            cats = [
+                ProblemCategory(category_id=1, category_name="สิ่งอำนวยความสะดวกและอาคารสถานที่", description="ปัญหาอาคาร ชำรุด โต๊ะเก้าอี้ ไฟฟ้า ประปา"),
+                ProblemCategory(category_id=2, category_name="ระบบเครือข่ายและเทคโนโลยี", description="ปัญหาสัญญาณ Wi-Fi อินเทอร์เน็ต ระบบลงทะเบียน"),
+                ProblemCategory(category_id=3, category_name="การเรียนการสอนและหลักสูตร", description="ปัญหาเกี่ยวกับการเรียน ตารางเรียน การสอบ"),
+                ProblemCategory(category_id=4, category_name="สุขอนามัยและความสะอาด", description="ปัญหาขยะ โรงอาหาร ห้องน้ำ ความสะอาด"),
+                ProblemCategory(category_id=5, category_name="ความปลอดภัยและจราจร", description="ปัญหารถเมล์ มพ. การจราจร ทางข้าม ไฟส่องสว่าง"),
+                ProblemCategory(category_id=6, category_name="บริการและสวัสดิการนิสิต", description="ทุนการศึกษา สวัสดิการ หอพักนิสิต"),
+            ]
+            db.add_all(cats)
+            db.commit()
+
+        # Seed Buildings
+        if db.query(Building).count() == 0:
+            blds = [
+                Building(building_id=1, building_name="อาคารเทคโนโลยีสารสนเทศและการสื่อสาร (ICT)", latitude=19.0275, longitude=99.8965),
+                Building(building_id=2, building_name="อาคารเรียนรวม PKY", latitude=19.0280, longitude=99.8970),
+                Building(building_id=3, building_name="อาคารสำนักงานอธิการบดี", latitude=19.0260, longitude=99.8950),
+                Building(building_id=4, building_name="อาคารหอประชุมมหาวิทยาลัยพะเยา", latitude=19.0290, longitude=99.8980),
+                Building(building_id=5, building_name="กลุ่มอาคารหอพักนิสิต UP DORM", latitude=19.0250, longitude=99.8930),
+            ]
+            db.add_all(blds)
+            db.commit()
+
+        # Seed Super Admin Account
+        admin_email = "superadmin@up.ac.th"
+        existing_admin = db.query(User).filter(User.email == admin_email).first()
+        if not existing_admin:
+            import bcrypt
+            hashed = bcrypt.hashpw("123456".encode(), bcrypt.gensalt()).decode()
+            admin_user = User(email=admin_email, password_hash=hashed, is_active=True)
+            db.add(admin_user)
+            db.flush()
+
+            db.add(SuperAdmin(user_id=admin_user.user_id, is_active=True))
+            db.add(Staff(user_id=admin_user.user_id, employee_id="ADM-001", staff_name="Super Administrator", staff_role="SuperAdmin"))
+            db.commit()
+            logger.info("🔑 Seeded default SuperAdmin (superadmin@up.ac.th / 123456) successfully.")
+
+        logger.info("🌱 All initial seed data verified successfully.")
     except Exception as e:
         logger.error(f"Error seeding initial data: {e}")
         db.rollback()
