@@ -54,16 +54,26 @@ router = APIRouter(tags=["Problems"])
 # Lookup helpers
 # ──────────────────────────────────────────────
 def get_status_by_name(db: Session, name: str) -> Status:
-    s = db.query(Status).filter(Status.status_name == name).first()
+    s = db.query(Status).filter(Status.status_name == name.upper()).first()
     if not s:
-        raise HTTPException(400, f"Unknown status '{name}'. Run reset_db.py to seed defaults.")
+        s = db.query(Status).filter(Status.status_name == name).first()
+    if not s:
+        s = Status(status_name=name.upper(), color_code="#EF4444")
+        db.add(s)
+        db.commit()
+        db.refresh(s)
     return s
 
 
 def get_visibility_by_name(db: Session, name: str) -> VisibilityType:
-    v = db.query(VisibilityType).filter(VisibilityType.visibility_name == name).first()
+    v = db.query(VisibilityType).filter(VisibilityType.visibility_name == name.upper()).first()
     if not v:
-        raise HTTPException(400, f"Unknown visibility '{name}'. Run reset_db.py to seed defaults.")
+        v = db.query(VisibilityType).filter(VisibilityType.visibility_name == name).first()
+    if not v:
+        v = VisibilityType(visibility_name=name.upper(), description="Visibility")
+        db.add(v)
+        db.commit()
+        db.refresh(v)
     return v
 
 
