@@ -261,6 +261,7 @@ def get_invites(
 @router.delete("/invites/{invite_id}", response_model=StandardResponse)
 def delete_invite(
     invite_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -282,6 +283,10 @@ def delete_invite(
     )
     db.add(audit)
     db.commit()
+
+    # Send revocation notification email to recipient
+    from app.services.email_service import send_revocation_email
+    background_tasks.add_task(send_revocation_email, email=email_revoked)
     
     return StandardResponse(
         success=True,
@@ -800,11 +805,12 @@ def assign_category_admin(
 @router.patch("/{user_id}/revoke/category-admin", response_model=StandardResponse)
 def revoke_category_admin(
     user_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     require_super_admin(current_user, db)
-    from app.models import CategoryAdmin
+    from app.models import CategoryAdmin, User
     
     existing = db.query(CategoryAdmin).filter(
         CategoryAdmin.user_id == user_id, CategoryAdmin.is_active == True
@@ -816,6 +822,9 @@ def revoke_category_admin(
     existing.is_active = False
     existing.revoked_at = datetime.utcnow()
     
+    target_user = db.query(User).filter(User.user_id == user_id).first()
+    target_email = target_user.email if target_user else None
+
     audit = AuditLog(
         admin_id=current_user.user_id,
         action_type="REVOKE_CATEGORY_ADMIN",
@@ -825,6 +834,10 @@ def revoke_category_admin(
     )
     db.add(audit)
     db.commit()
+
+    if target_email:
+        from app.services.email_service import send_revocation_email
+        background_tasks.add_task(send_revocation_email, email=target_email)
     
     return StandardResponse(success=True, message=f"Revoked category admin role for user #{user_id}")
 
