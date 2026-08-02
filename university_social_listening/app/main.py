@@ -131,16 +131,16 @@ def seed_initial_data():
             db.add_all(faculties)
             db.commit()
 
-        # Seed Problem Categories
-        from app.models import ProblemCategory, Building, User, SuperAdmin, Staff
-        if db.query(ProblemCategory).count() == 0:
+        # Seed Categories
+        from app.models import Category, Building, User, SuperAdmin, Staff
+        if db.query(Category).count() == 0:
             cats = [
-                ProblemCategory(category_id=1, category_name="สิ่งอำนวยความสะดวกและอาคารสถานที่", description="ปัญหาอาคาร ชำรุด โต๊ะเก้าอี้ ไฟฟ้า ประปา"),
-                ProblemCategory(category_id=2, category_name="ระบบเครือข่ายและเทคโนโลยี", description="ปัญหาสัญญาณ Wi-Fi อินเทอร์เน็ต ระบบลงทะเบียน"),
-                ProblemCategory(category_id=3, category_name="การเรียนการสอนและหลักสูตร", description="ปัญหาเกี่ยวกับการเรียน ตารางเรียน การสอบ"),
-                ProblemCategory(category_id=4, category_name="สุขอนามัยและความสะอาด", description="ปัญหาขยะ โรงอาหาร ห้องน้ำ ความสะอาด"),
-                ProblemCategory(category_id=5, category_name="ความปลอดภัยและจราจร", description="ปัญหารถเมล์ มพ. การจราจร ทางข้าม ไฟส่องสว่าง"),
-                ProblemCategory(category_id=6, category_name="บริการและสวัสดิการนิสิต", description="ทุนการศึกษา สวัสดิการ หอพักนิสิต"),
+                Category(category_id=1, category_name="สิ่งอำนวยความสะดวกและอาคารสถานที่", ticket_prefix="FAC", description="ปัญหาอาคาร ชำรุด โต๊ะเก้าอี้ ไฟฟ้า ประปา"),
+                Category(category_id=2, category_name="ระบบเครือข่ายและเทคโนโลยี", ticket_prefix="IT", description="ปัญหาสัญญาณ Wi-Fi อินเทอร์เน็ต ระบบลงทะเบียน"),
+                Category(category_id=3, category_name="การเรียนการสอนและหลักสูตร", ticket_prefix="ACA", description="ปัญหาเกี่ยวกับการเรียน ตารางเรียน การสอบ"),
+                Category(category_id=4, category_name="สุขอนามัยและความสะอาด", ticket_prefix="SAN", description="ปัญหาขยะ โรงอาหาร ห้องน้ำ ความสะอาด"),
+                Category(category_id=5, category_name="ความปลอดภัยและจราจร", ticket_prefix="SEC", description="ปัญหารถเมล์ มพ. การจราจร ทางข้าม ไฟส่องสว่าง"),
+                Category(category_id=6, category_name="บริการและสวัสดิการนิสิต", ticket_prefix="WEL", description="ทุนการศึกษา สวัสดิการ หอพักนิสิต"),
             ]
             db.add_all(cats)
             db.commit()
