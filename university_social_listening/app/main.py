@@ -43,8 +43,13 @@ app.mount("/static", StaticFiles(directory="./static"), name="static")
 # ──────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_origin_regex=r".*",
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://university-social-listening-platfor.vercel.app",
+        "https://university-social-listening-public.vercel.app",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
