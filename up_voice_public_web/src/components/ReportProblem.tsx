@@ -428,14 +428,28 @@ export default function ReportProblem({
           else if (rawData?.data && Array.isArray(rawData.data)) itemsArray = rawData.data;
           else if (rawData?.data?.items && Array.isArray(rawData.data.items)) itemsArray = rawData.data.items;
           else if (rawData?.items && Array.isArray(rawData.items)) itemsArray = rawData.items;
-          // Normalize to match Building interface
-          const formatted = itemsArray.map((item: any) => ({
+          // Normalize to match Building interface & deduplicate by clean name
+          const formatted: Building[] = itemsArray.map((item: any) => ({
             id: item.building_id ?? item.id,
             name: item.name ?? item.building_name,
             latitude: item.latitude,
             longitude: item.longitude,
           }));
-          setBuildings(formatted);
+
+          const uniqueMap = new Map<string, Building>();
+          for (const b of formatted) {
+            const cleanKey = b.name.replace(/^(อาคาร|คณะ|ตึก|ศูนย์)/, '').trim().toLowerCase();
+            const existing = uniqueMap.get(cleanKey);
+            if (!existing) {
+              uniqueMap.set(cleanKey, b);
+            } else {
+              // Prefer entry with updated custom coordinates (not 19.0286 default)
+              if (b.latitude && b.longitude && (b.latitude !== 19.0286 || b.longitude !== 99.8958)) {
+                uniqueMap.set(cleanKey, b);
+              }
+            }
+          }
+          setBuildings(Array.from(uniqueMap.values()));
         }
       } catch (err) {
         if (!cancelled) console.error('🚨 ไม่สามารถดึงข้อมูลอาคารได้:', err);

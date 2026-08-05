@@ -21,9 +21,30 @@ def _normalize_text(text: str) -> str:
     return text.replace(" ", "").strip()
 
 def _check_dictionary(text: str) -> Optional[Dict]:
-    """Check if the text contains any known location or its aliases."""
+    """Check if the text contains any known location or its aliases from DB Building table first, then CAMPUS_LOCATIONS."""
     normalized_text = _normalize_text(text)
     
+    # 1. Check DB Building table dynamically
+    try:
+        from app.database import SessionLocal
+        from app.models import Building
+        db = SessionLocal()
+        db_buildings = db.query(Building).filter(Building.is_active == True).all()
+        db.close()
+        for b in db_buildings:
+            if b.name and b.latitude and b.longitude:
+                b_norm = _normalize_text(b.name)
+                clean_b_norm = re.sub(r'^(อาคาร|คณะ|ตึก|ศูนย์)', '', b_norm)
+                if (b_norm in normalized_text or (len(clean_b_norm) >= 3 and clean_b_norm in normalized_text)) and ("ict" in normalized_text.lower() if "ict" in b_norm.lower() else True):
+                    return {
+                        "canonical_name": b.name,
+                        "latitude": float(b.latitude),
+                        "longitude": float(b.longitude)
+                    }
+    except Exception as err:
+        logger.error(f"Error checking DB buildings in location_service: {err}")
+    
+    # 2. Check CAMPUS_LOCATIONS json fallback
     for loc in CAMPUS_LOCATIONS:
         # Check canonical name
         if _normalize_text(loc["canonical_name"]) in normalized_text:

@@ -1,0 +1,367 @@
+[
+  {
+    "location_id": "LOC001",
+    "canonical_name": "ประตู 1 มหาวิทยาลัยพะเยา",
+    "aliases": [
+      "หน้ามอ",
+      "ประตูหน้า",
+      "ประตู 1",
+      "หน้าม.พะเยา"
+    ],
+    "latitude": 19.0286,
+    "longitude": 99.8948
+  },
+  {
+    "location_id": "LOC001_2",
+    "canonical_name": "ประตู 2 มหาวิทยาลัยพะเยา",
+    "aliases": [
+      "ประตู 2",
+      "ประตูสอง"
+    ],
+    "latitude": 19.0292,
+    "longitude": 99.8952
+  },
+  {
+    "location_id": "LOC001_3",
+    "canonical_name": "ประตู 3 มหาวิทยาลัยพะเยา",
+    "aliases": [
+      "ประตู 3",
+      "ประตูสาม",
+      "ลานจอดรถประตู 3",
+      "ลานจอดรถประตูสาม"
+    ],
+    "latitude": 19.0298,
+    "longitude": 99.8956
+  },
+  {
+    "location_id": "LOC002",
+    "canonical_name": "หอประชุมพญางำเมือง",
+    "aliases": [],
+    "latitude": 19.029,
+    "longitude": 99.895
+  },
+  {
+    "location_id": "LOC002",
+    "canonical_name": "หอพัก 12",
+    "aliases": [
+      "หอ 12",
+      "หอสิบสอง",
+      "หน้าหอ 12"
+    ],
+    "latitude": 19.029,
+    "longitude": 99.895
+  },
+  {
+    "location_id": "LOC003",
+    "canonical_name": "คณะเทคโนโลยีสารสนเทศและการสื่อสาร",
+    "aliases": [
+      "คณะไอซีที",
+      "คณะเทคโนโลยีสารสนเทศและการสื่อสาร",
+      "ตึกไอซีที",
+      "ตึก ict",
+      "ตึกเทคโนโลยีสารสนเทศและการสื่อสาร",
+      "ตึกไอที"
+    ],
+    "latitude": 19.027329,
+    "longitude": 99.8999566
+  },
+  {
+    "location_id": "LOC003",
+    "canonical_name": "อาคารสำนักงานอธิการบดี",
+    "aliases": [
+      "ตึกสำนักงานอธิการบดี"
+    ],
+    "latitude": 19.0295,
+    "longitude": 99.896
+  },
+  {
+    "location_id": "LOC004",
+    "canonical_name": "ศูนย์การแพทย์และโรงพยาบาล มหาวิทยาลัยพะเยา",
+    "aliases": [],
+    "latitude": 19.027,
+    "longitude": 99.894
+  },
+  {
+    "location_id": "LOC005",
+    "canonical_name": "คณะทันตแพทยศาสตร์",
+    "aliases": [
+      "ตึกทันตแพทยศาสตร์"
+    ],
+    "latitude": 19.0275,
+    "longitude": 99.8945
+  },
+  {
+    "location_id": "LOC006",
+    "canonical_name": "คณะพลังงานและสิ่งแวดล้อม",
+    "aliases": [
+      "ตึกพลังงานและสิ่งแวดล้อม"
+    ],
+    "latitude": 19.028,
+    "longitude": 99.897
+  },
+  {
+    "location_id": "LOC007",
+    "canonical_name": "คณะวิศวกรรมศาสตร์",
+    "aliases": [
+      "ตึกวิศวกรรมศาสตร์"
+    ],
+    "latitude": 19.0285,
+    "longitude": 99.8975
+  },
+  {
+    "location_id": "LOC008",
+    "canonical_name": "คณะสหเวชศาสตร์",
+    "aliases": [
+      "ตึกสหเวชศาสตร์"
+    ],
+    "latitude": 19.029,
+    "longitude": 99.898
+  },
+  {
+    "location_id": "LOC009",
+    "canonical_name": "คณะเภสัชศาสตร์",
+    "aliases": [
+      "ตึกเภสัชศาสตร์"
+    ],
+    "latitude": 19.0295,
+    "longitude": 99.8985
+  },
+  {
+    "location_id": "LOC010",
+    "canonical_name": "คณะสถาปัตยกรรมศาสตร์และศิลปกรรมศาสตร์",
+    "aliases": [
+      "ตึกสถาปัตยกรรมศาสตร์และศิลปกรรมศาสตร์"
+    ],
+    "latitude": 19.03,
+    "longitude": 99.8955
+  },
+  {
+    "location_id": "LOC011",
+    "canonical_name": "คณะเกษตรศาสตร์และทรัพยากรธรรมชาติ",
+    "aliases": [
+      "ตึกเกษตรศาสตร์และทรัพยากรธรรมชาติ"
+    ],
+    "latitude": 19.0305,
+    "longitude": 99.8965
+  },
+  {
+    "location_id": "LOC012",
+    "canonical_name": "คณะแพทยศาสตร์",
+    "aliases": [
+      "ตึกแพทยศาสตร์"
+    ],
+    "latitude": 19.031,
+    "longitude": 99.8975
+  },
+  {
+    "location_id": "LOC013",
+    "canonical_name": "คณะพยาบาลศาสตร์",
+    "aliases": [
+      "ตึกพยาบาลศาสตร์"
+    ],
+    "latitude": 19.0315,
+    "longitude": 99.8985
+  },
+  {
+    "location_id": "LOC014",
+    "canonical_name": "คณะวิทยาศาสตร์",
+    "aliases": [
+      "ตึกวิทยาศาสตร์"
+    ],
+    "latitude": 19.032,
+    "longitude": 99.8995
+  },
+  {
+    "location_id": "LOC015",
+    "canonical_name": "คณะวิทยาศาสตร์การแพทย์",
+    "aliases": [
+      "ตึกวิทยาศาสตร์การแพทย์"
+    ],
+    "latitude": 19.0325,
+    "longitude": 99.9005
+  },
+  {
+    "location_id": "LOC016",
+    "canonical_name": "คณะศิลปศาสตร์",
+    "aliases": [
+      "ตึกศิลปศาสตร์"
+    ],
+    "latitude": 19.033,
+    "longitude": 99.893
+  },
+  {
+    "location_id": "LOC017",
+    "canonical_name": "ศูนย์บรรณสารและการเรียนรู้",
+    "aliases": [],
+    "latitude": 19.0335,
+    "longitude": 99.894
+  },
+  {
+    "location_id": "LOC018",
+    "canonical_name": "อาคาร 99 ปี พระอุบาลีคุณูปมาจารย์",
+    "aliases": [
+      "ตึก 99 ปี พระอุบาลีคุณูปมาจารย์"
+    ],
+    "latitude": 19.034,
+    "longitude": 99.895
+  },
+  {
+    "location_id": "LOC019",
+    "canonical_name": "คณะนิติศาสตร์",
+    "aliases": [
+      "ตึกนิติศาสตร์"
+    ],
+    "latitude": 19.0345,
+    "longitude": 99.896
+  },
+  {
+    "location_id": "LOC020",
+    "canonical_name": "คณะวิทยาการจัดการและสารสนเทศศาสตร์",
+    "aliases": [
+      "ตึกวิทยาการจัดการและสารสนเทศศาสตร์"
+    ],
+    "latitude": 19.035,
+    "longitude": 99.897
+  },
+  {
+    "location_id": "LOC021",
+    "canonical_name": "วิทยาลัยการศึกษา",
+    "aliases": [],
+    "latitude": 19.0355,
+    "longitude": 99.898
+  },
+  {
+    "location_id": "LOC022",
+    "canonical_name": "ศูนย์หนังสือจุฬา",
+    "aliases": [],
+    "latitude": 19.036,
+    "longitude": 99.899
+  },
+  {
+    "location_id": "LOC023",
+    "canonical_name": "คณะรัฐศาสตร์และสังคมศาสตร์",
+    "aliases": [
+      "ตึกรัฐศาสตร์และสังคมศาสตร์"
+    ],
+    "latitude": 19.0365,
+    "longitude": 99.9
+  },
+  {
+    "location_id": "LOC024",
+    "canonical_name": "หอพักนิสิต UP Dorm",
+    "aliases": [
+      "หน้าหอนิสิต UP Dorm",
+      "หอนิสิต UP Dorm"
+    ],
+    "latitude": 19.037,
+    "longitude": 99.8935
+  },
+  {
+    "location_id": "LOC025",
+    "canonical_name": "หอพักนิสิต (มพ. 1-18)",
+    "aliases": [
+      "หอนิสิต (มพ. 1-18)",
+      "หน้าหอนิสิต (มพ. 1-18)"
+    ],
+    "latitude": 19.0375,
+    "longitude": 99.8945
+  },
+  {
+    "location_id": "LOC026",
+    "canonical_name": "สนามกีฬา",
+    "aliases": [],
+    "latitude": 19.038,
+    "longitude": 99.8955
+  },
+  {
+    "location_id": "LOC027",
+    "canonical_name": "อาคารสงวนเสริมศรี",
+    "aliases": [
+      "ตึกสงวนเสริมศรี"
+    ],
+    "latitude": 19.0385,
+    "longitude": 99.8965
+  },
+  {
+    "location_id": "LOC028",
+    "canonical_name": "โรงเรียนสาธิตมหาวิทยาลัยพะเยา",
+    "aliases": [],
+    "latitude": 19.039,
+    "longitude": 99.8975
+  },
+  {
+    "location_id": "LOC029",
+    "canonical_name": "พระพุทธภุชคารักษ์",
+    "aliases": [],
+    "latitude": 19.0395,
+    "longitude": 99.8985
+  },
+  {
+    "location_id": "LOC_CE",
+    "canonical_name": "อาคารเรียนรวม CE",
+    "aliases": [
+      "ตึก CE",
+      "ตึกce",
+      "อาคาร CE",
+      "อาคารce",
+      "อาคารเรียนรวม CE",
+      "อาคารเรียนรวมCE",
+      "CE",
+      "ce",
+      "ce1102",
+      "CE1102",
+      "ce1101",
+      "CE1101",
+      "ce1103",
+      "ce1104",
+      "ce1105",
+      "ce1201",
+      "ce1202"
+    ],
+    "latitude": 19.0275,
+    "longitude": 99.8965
+  },
+  {
+    "location_id": "LOC_PK",
+    "canonical_name": "อาคารเรียนรวม PK",
+    "aliases": [
+      "ตึก PK",
+      "ตึกpk",
+      "อาคาร PK",
+      "อาคารpk",
+      "อาคารเรียนรวม PK",
+      "PK",
+      "pk"
+    ],
+    "latitude": 19.028,
+    "longitude": 99.897
+  },
+  {
+    "location_id": "LOC_UB",
+    "canonical_name": "อาคารเรียนรวม UB",
+    "aliases": [
+      "ตึก UB",
+      "ตึกub",
+      "อาคาร UB",
+      "อาคารub",
+      "อาคารเรียนรวม UB",
+      "UB",
+      "ub"
+    ],
+    "latitude": 19.0285,
+    "longitude": 99.896
+  },
+  {
+    "location_id": "LOC_SANGUAN",
+    "canonical_name": "อาคารสงวนเสริมศรี",
+    "aliases": [
+      "สงวน",
+      "อาคารสงวน",
+      "ตึกสงวน",
+      "สงวนเสริมศรี",
+      "อาคารสงวนเสริมศรี"
+    ],
+    "latitude": 19.0385,
+    "longitude": 99.8965
+  }
+]

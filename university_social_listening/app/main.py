@@ -209,6 +209,19 @@ def seed_initial_data():
             db.commit()
             logger.info(f"🏢 Seeded {len(new_blds)} new UP campus buildings successfully.")
 
+        # Synchronize coordinates across duplicate/variant building names (e.g. ICT building)
+        all_bld_objs = db.query(Building).all()
+        ict_master = next((b for b in all_bld_objs if ("ICT" in (b.name or "") or "สารสนเทศ" in (b.name or "")) and b.latitude and abs(float(b.latitude) - 19.027329) < 0.001), None)
+        if not ict_master:
+            ict_master = next((b for b in all_bld_objs if ("ICT" in (b.name or "") or "สารสนเทศ" in (b.name or "")) and b.latitude and b.latitude != 19.0286), None)
+        
+        if ict_master:
+            for b in all_bld_objs:
+                if "ICT" in (b.name or "") or "สารสนเทศ" in (b.name or ""):
+                    b.latitude = ict_master.latitude
+                    b.longitude = ict_master.longitude
+            db.commit()
+
         # Seed Super Admin Account
         admin_email = "superadmin@up.ac.th"
         existing_admin = db.query(User).filter(User.email == admin_email).first()
