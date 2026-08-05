@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchLLMSettings, updateLLMSettings } from '../../services/llmSettingService';
-import { Bot, Plus, Trash2, Save, AlertTriangle, Info, Sliders, Zap, CheckCircle2, MessageSquare, ShieldAlert, MapPin, Compass } from 'lucide-react';
+import api from '../../services/api';
+import { Bot, Plus, Trash2, Save, AlertTriangle, Info, Sliders, Zap, CheckCircle2, MessageSquare, ShieldAlert, MapPin, Compass, Upload, Image } from 'lucide-react';
 
 // ── Default empty state ─────────────────────────────────────────
 const DEFAULT_SETTINGS = {
@@ -142,9 +143,34 @@ const LLMSettings = () => {
   const [saving, setSaving]     = useState(false);
   const [toast, setToast]       = useState({ msg: '', type: '' });
 
+  const fileInputRef = useRef(null);
+  const [uploadingMap, setUploadingMap] = useState(false);
+
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast({ msg: '', type: '' }), 4000);
+  };
+
+  const handleMapImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingMap(true);
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api.post('/settings/upload-map-image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const newUrl = res.data?.data?.url;
+      if (newUrl) {
+        setSettings((s) => ({ ...s, default_map_image_url: newUrl }));
+        showToast('อัปโหลดไฟล์ภาพแผนที่ มพ. สำเร็จเรียบร้อย!', 'success');
+      }
+    } catch (err) {
+      showToast('เกิดข้อผิดพลาดในการอัปโหลดไฟล์ภาพแผนที่', 'error');
+    } finally {
+      setUploadingMap(false);
+    }
   };
 
   const loadData = useCallback(async () => {
@@ -421,8 +447,53 @@ const LLMSettings = () => {
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                    Default Map Image URL (ที่อยู่ไฟล์ภาพผังแนะนำสถานที่)
+                    Default Map Image & Upload (ภาพผังแนะนำสถานที่ มพ.)
                   </label>
+                  
+                  {/* Image Preview & Upload Box */}
+                  <div className="mb-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row items-center gap-4">
+                    <div className="w-full md:w-48 h-32 bg-slate-200 rounded-xl overflow-hidden border border-slate-300 relative group flex items-center justify-center">
+                      {settings.default_map_image_url ? (
+                        <img
+                          src={settings.default_map_image_url.startsWith('http') ? settings.default_map_image_url : `https://university-social-listening-platform.onrender.com${settings.default_map_image_url}`}
+                          alt="Campus Map Preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.src = 'https://university-social-listening-platform.onrender.com/static/campus_map.jpg';
+                          }}
+                        />
+                      ) : (
+                        <Image className="text-slate-400" size={32} />
+                      )}
+                    </div>
+                    
+                    <div className="flex-1 space-y-2 text-center md:text-left">
+                      <p className="text-xs font-semibold text-slate-700">อัปโหลดไฟล์ภาพแผนที่ผัง มพ. ใหม่</p>
+                      <p className="text-xs text-slate-500">รองรับไฟล์ภาพ .png, .jpg, .webp (ระบบจะตั้งเป็นภาพแผนที่เริ่มต้นให้อัตโนมัติ)</p>
+                      
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleMapImageUpload}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingMap}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+                      >
+                        {uploadingMap ? (
+                          <><div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Uploading...</>
+                        ) : (
+                          <><Upload size={14} /> อัปโหลดรูปภาพแผนที่ใหม่ (Upload Map Image)</>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
                   <input
                     type="text"
                     value={settings.default_map_image_url || ''}
@@ -431,7 +502,7 @@ const LLMSettings = () => {
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 transition-shadow bg-slate-50 font-mono"
                   />
                   <p className="text-xs text-slate-500 mt-1">
-                    ที่อยู่ไฟล์ภาพแผนที่ มพ. ในโฟลเดอร์ static (เช่น <code className="bg-slate-100 px-1 rounded text-slate-700">/static/campus_map.jpg</code>)
+                    URL หรือที่อยู่ไฟล์ภาพแผนที่ มพ. (เช่น <code className="bg-slate-100 px-1 rounded text-slate-700">/static/campus_map.jpg</code>)
                   </p>
                 </div>
 

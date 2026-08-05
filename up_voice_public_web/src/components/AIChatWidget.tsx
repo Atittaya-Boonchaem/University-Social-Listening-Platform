@@ -88,8 +88,9 @@ interface AIChatWidgetProps {
 
 const isLocationQuery = (text: string, customKeywords?: string[]) => {
   const lower = text.toLowerCase();
-  const keywords = (customKeywords && customKeywords.length > 0) ? customKeywords : LOCATION_KEYWORDS;
-  return keywords.some(keyword => lower.includes(keyword.toLowerCase()));
+  const validCustom = (customKeywords || []).filter(k => k && !k.includes(''));
+  const keywords = Array.from(new Set([...LOCATION_KEYWORDS, ...validCustom]));
+  return keywords.some(keyword => keyword && lower.includes(keyword.toLowerCase()));
 };
 
 const toAbsoluteUrl = (rawUrl?: string) => {
@@ -142,9 +143,13 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
       });
   }, []);
 
-  useEffect(() => {
+  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading]);
 
   const handleSend = async () => {
     if (!inputText.trim()) return;
@@ -187,13 +192,16 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
         'ขอบคุณครับ ระบบได้รับข้อมูลแล้ว';
 
       const combinedText = `${userText} ${replyText}`;
-      const locationIntent =
-        mapConfig.is_auto_map_enabled &&
-        (data.intent === 'location_inquiry' ||
-         data.is_inquiry === true ||
-         isLocationQuery(combinedText, mapConfig.map_trigger_keywords));
-
       let rawImgUrl = data.map_image || data.extracted_data?.map_image;
+
+      const isLocationInquiry =
+        Boolean(rawImgUrl) ||
+        data.intent === 'location_inquiry' ||
+        data.is_inquiry === true ||
+        isLocationQuery(combinedText, mapConfig.map_trigger_keywords);
+
+      const locationIntent =
+        mapConfig.is_auto_map_enabled && isLocationInquiry;
 
       if (!rawImgUrl && locationIntent) {
         rawImgUrl = mapConfig.default_map_image_url || CAMPUS_MAP_PATH;
@@ -215,6 +223,7 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
       // สำคัญมาก:
       // ถ้าเป็น inquiry / location question ห้ามเอาไปกรอกฟอร์มแจ้งปัญหา
       const shouldAutofill =
+        !isLocationInquiry &&
         Boolean(data.is_complete) &&
         Boolean(extracted) &&
         !data.is_inquiry &&

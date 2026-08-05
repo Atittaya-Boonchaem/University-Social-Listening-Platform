@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import shutil
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
@@ -218,4 +221,40 @@ def update_llm_settings(
         success=True,
         message="LLM settings updated",
         data={"item": data}
+    )
+
+
+@router.post("/upload-map-image", response_model=StandardResponse)
+async def upload_map_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_super_admin(current_user, db)
+    
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only image files are allowed")
+
+    ext = os.path.splitext(file.filename)[1] or ".jpg"
+    filename = f"campus_map_{uuid.uuid4().hex[:8]}{ext}"
+    static_dir = "./static"
+    os.makedirs(static_dir, exist_ok=True)
+    file_path = os.path.join(static_dir, filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    map_url = f"/static/{filename}"
+
+    # Auto-update LLMSetting default_map_image_url in DB
+    setting = get_safe_llm_setting(db)
+    if setting:
+        setting.default_map_image_url = map_url
+        setting.updated_by = current_user.user_id
+        db.commit()
+
+    return StandardResponse(
+        success=True,
+        message="Map image uploaded successfully",
+        data={"url": map_url}
     )
