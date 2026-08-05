@@ -726,9 +726,16 @@ Respond STRICTLY with a valid JSON object:
         reply_text = parsed_data.get("reply", "")
         
         map_img = resolve_map_image(combined_user_text + " " + reply_text, extracted_loc)
-        if map_img or parsed_data.get("is_inquiry"):
+        
+        # Check if user text contains location inquiry keywords
+        is_loc_q = any(kw in combined_user_text.lower() for kw in ["ไปทางไหน", "อยู่ไหน", "อยู่ตรงไหน", "ไปยังไง", "ตึก", "อาคาร", "คณะ", "เรียนรวม", "บรรยายรวม", "วิทย์", "สงวน", "ict", "อุบาลี", "หอสมุด"])
+        
+        if map_img or parsed_data.get("is_inquiry") or parsed_data.get("intent") == "location_inquiry" or is_loc_q:
             map_img_url = map_img or "/static/campus_map.jpg"
             parsed_data["map_image"] = map_img_url
+            parsed_data["is_inquiry"] = True
+            parsed_data["intent"] = "location_inquiry"
+            parsed_data["is_complete"] = False
             if "extracted_data" in parsed_data and parsed_data["extracted_data"]:
                 parsed_data["extracted_data"]["map_image"] = map_img_url
 
