@@ -440,11 +440,11 @@ class LLMSettingResponse(BaseModel):
     setting_id: int
     banned_words: Optional[List[str]] = None
     banned_patterns: Optional[List[str]] = None
-    is_auto_ban_enabled: bool
-    is_auto_routing_enabled: bool
-    auto_ban_duration_days: int
-    confidence_threshold: Optional[float] = None
-    max_warnings_before_ban: int
+    is_auto_ban_enabled: Optional[bool] = True
+    is_auto_routing_enabled: Optional[bool] = True
+    auto_ban_duration_days: Optional[int] = 7
+    confidence_threshold: Optional[float] = 0.85
+    max_warnings_before_ban: Optional[int] = 1
     chatbot_persona: Optional[str] = None
     chatbot_questions: Optional[List[str]] = None
     chatbot_opening_message: Optional[str] = None
@@ -452,7 +452,7 @@ class LLMSettingResponse(BaseModel):
     is_auto_map_enabled: Optional[bool] = True
     map_trigger_keywords: Optional[List[str]] = None
     default_map_image_url: Optional[str] = "/static/campus_map.jpg"
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

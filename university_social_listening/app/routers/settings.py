@@ -96,17 +96,26 @@ def get_llm_settings(
         db.commit()
         db.refresh(setting)
 
-    # Convert to response schema
-    data = LLMSettingResponse.model_validate(setting).model_dump()
-    # Handle None values for JSON columns
-    data["banned_words"] = data.get("banned_words") or []
-    data["banned_patterns"] = data.get("banned_patterns") or []
-    data["chatbot_questions"] = data.get("chatbot_questions") or []
-    data["map_trigger_keywords"] = data.get("map_trigger_keywords") or DEFAULT_MAP_KEYWORDS
-    if data.get("is_auto_map_enabled") is None:
-        data["is_auto_map_enabled"] = True
-    if not data.get("default_map_image_url"):
-        data["default_map_image_url"] = "/static/campus_map.jpg"
+    # Convert to dictionary with safe defaults
+    raw_dict = {
+        "setting_id": setting.setting_id,
+        "banned_words": setting.banned_words or [],
+        "banned_patterns": setting.banned_patterns or [],
+        "is_auto_ban_enabled": setting.is_auto_ban_enabled if setting.is_auto_ban_enabled is not None else True,
+        "is_auto_routing_enabled": setting.is_auto_routing_enabled if setting.is_auto_routing_enabled is not None else True,
+        "auto_ban_duration_days": setting.auto_ban_duration_days if setting.auto_ban_duration_days is not None else 7,
+        "confidence_threshold": float(setting.confidence_threshold) if setting.confidence_threshold is not None else 0.85,
+        "max_warnings_before_ban": setting.max_warnings_before_ban if setting.max_warnings_before_ban is not None else 1,
+        "chatbot_persona": setting.chatbot_persona or "",
+        "chatbot_questions": setting.chatbot_questions or [],
+        "chatbot_opening_message": setting.chatbot_opening_message or "",
+        "is_auto_map_enabled": setting.is_auto_map_enabled if setting.is_auto_map_enabled is not None else True,
+        "map_trigger_keywords": setting.map_trigger_keywords or DEFAULT_MAP_KEYWORDS,
+        "default_map_image_url": setting.default_map_image_url or "/static/campus_map.jpg",
+        "updated_at": setting.updated_at
+    }
+
+    data = LLMSettingResponse.model_validate(raw_dict).model_dump()
 
     return StandardResponse(
         success=True,
@@ -166,15 +175,25 @@ def update_llm_settings(
     db.commit()
     db.refresh(setting)
 
-    data = LLMSettingResponse.model_validate(setting).model_dump()
-    data["banned_words"] = data.get("banned_words") or []
-    data["banned_patterns"] = data.get("banned_patterns") or []
-    data["chatbot_questions"] = data.get("chatbot_questions") or []
-    data["map_trigger_keywords"] = data.get("map_trigger_keywords") or DEFAULT_MAP_KEYWORDS
-    if data.get("is_auto_map_enabled") is None:
-        data["is_auto_map_enabled"] = True
-    if not data.get("default_map_image_url"):
-        data["default_map_image_url"] = "/static/campus_map.jpg"
+    raw_dict = {
+        "setting_id": setting.setting_id,
+        "banned_words": setting.banned_words or [],
+        "banned_patterns": setting.banned_patterns or [],
+        "is_auto_ban_enabled": setting.is_auto_ban_enabled if setting.is_auto_ban_enabled is not None else True,
+        "is_auto_routing_enabled": setting.is_auto_routing_enabled if setting.is_auto_routing_enabled is not None else True,
+        "auto_ban_duration_days": setting.auto_ban_duration_days if setting.auto_ban_duration_days is not None else 7,
+        "confidence_threshold": float(setting.confidence_threshold) if setting.confidence_threshold is not None else 0.85,
+        "max_warnings_before_ban": setting.max_warnings_before_ban if setting.max_warnings_before_ban is not None else 1,
+        "chatbot_persona": setting.chatbot_persona or "",
+        "chatbot_questions": setting.chatbot_questions or [],
+        "chatbot_opening_message": setting.chatbot_opening_message or "",
+        "is_auto_map_enabled": setting.is_auto_map_enabled if setting.is_auto_map_enabled is not None else True,
+        "map_trigger_keywords": setting.map_trigger_keywords or DEFAULT_MAP_KEYWORDS,
+        "default_map_image_url": setting.default_map_image_url or "/static/campus_map.jpg",
+        "updated_at": setting.updated_at
+    }
+
+    data = LLMSettingResponse.model_validate(raw_dict).model_dump()
 
     return StandardResponse(
         success=True,
