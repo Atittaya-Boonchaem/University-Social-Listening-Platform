@@ -958,6 +958,10 @@ def update_user(
         
     new_role = payload.get("role")
     if new_role:
+        existing_name = get_display_name(user_id, db)
+        if not existing_name or "User #" in existing_name or existing_name == "66022332":
+            existing_name = target.email.split('@')[0] if target.email else f"User {user_id}"
+
         db.query(SuperAdmin).filter(SuperAdmin.user_id == user_id).delete()
         db.query(CategoryAdmin).filter(CategoryAdmin.user_id == user_id).delete()
         db.query(Student).filter(Student.user_id == user_id).delete()
@@ -966,20 +970,23 @@ def update_user(
         
         if new_role == "super_admin":
             db.add(SuperAdmin(user_id=user_id, is_active=True))
-            db.add(Staff(user_id=user_id, employee_id=f"EMP-{user_id}", staff_name="System Administrator", staff_role="Super Admin"))
+            db.add(Staff(user_id=user_id, employee_id=f"ADM-{user_id:03d}", staff_name=existing_name, staff_role="Super Admin"))
         elif new_role == "category_admin":
             cat_id = payload.get("category_id")
             if not cat_id and payload.get("categories"):
                 cat_id = payload["categories"][0]
             db.add(CategoryAdmin(user_id=user_id, category_id=cat_id, is_active=True))
-            db.add(Staff(user_id=user_id, employee_id=f"EMP-{user_id}", staff_name="Category Admin", staff_role="Category Admin"))
+            db.add(Staff(user_id=user_id, employee_id=f"ADM-{user_id:03d}", staff_name=existing_name, staff_role="Category Admin"))
         elif new_role == "staff":
-            db.add(Staff(user_id=user_id, employee_id=f"EMP-{user_id}", staff_name="Staff User", staff_role="Staff"))
+            db.add(Staff(user_id=user_id, employee_id=f"EMP-{user_id:04d}", staff_name=existing_name, staff_role="Staff"))
         elif new_role == "student":
             from datetime import date
-            db.add(Student(user_id=user_id, student_id=f"6600{user_id:04d}", student_name="Student User", year=1, birthdate=date(2000, 1, 1), gender="Male"))
+            db.add(Student(user_id=user_id, student_id=f"6600{user_id:04d}", student_name=existing_name, year=1, birthdate=date(2000, 1, 1), gender="Male"))
         elif new_role == "public":
-            db.add(PublicUser(user_id=user_id, first_name="Public", last_name="User"))
+            names = existing_name.split(" ", 1)
+            f_name = names[0]
+            l_name = names[1] if len(names) > 1 else ""
+            db.add(PublicUser(user_id=user_id, first_name=f_name, last_name=l_name))
             
     if new_role == "category_admin" or (get_user_role(user_id, db) == "category_admin"):
         cat_id = payload.get("category_id")

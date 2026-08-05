@@ -83,7 +83,7 @@ function InfoRow({ icon, label, value, wide }: { icon: string; label: string; va
 }
 
 export default function ProfilePage() {
-  const roleId = Number(localStorage.getItem('role_id') ?? 0);
+  const [roleId, setRoleId] = useState<number>(Number(localStorage.getItem('role_id') ?? 0));
   const userId = localStorage.getItem('user_id');
   const displayName = localStorage.getItem('display_name') ?? '';
   const email = localStorage.getItem('email') ?? '';
@@ -104,13 +104,36 @@ export default function ProfilePage() {
     if (token) {
       axios.get(`${API_BASE}/users/me`, { headers })
         .then(res => {
-          if (res.data?.success) setProfile(res.data.data?.profile ?? res.data.data ?? null);
+          if (res.data?.success && res.data?.data) {
+            const data = res.data.data;
+            setProfile(data.profile ?? null);
+            
+            const roleMap: Record<string, number> = {
+              student: 1, staff: 2, public: 3, super_admin: 4, category_admin: 5, anonymous: 6
+            };
+            if (data.role && roleMap[data.role]) {
+              const newRId = roleMap[data.role];
+              localStorage.setItem('role_id', String(newRId));
+              setRoleId(newRId);
+            }
+            if (data.display_name) {
+              localStorage.setItem('display_name', data.display_name);
+            }
+          }
         })
         .catch(() => {
           if (userId) {
             axios.get(`${API_BASE}/users/${userId}`, { headers })
               .then(res => {
-                if (res.data?.success) setProfile(res.data.data?.profile ?? null);
+                if (res.data?.success && res.data?.data) {
+                  setProfile(res.data.data.profile ?? null);
+                  const roleMap: Record<string, number> = {
+                    student: 1, staff: 2, public: 3, super_admin: 4, category_admin: 5, anonymous: 6
+                  };
+                  if (res.data.data.role && roleMap[res.data.data.role]) {
+                    setRoleId(roleMap[res.data.data.role]);
+                  }
+                }
               })
               .catch(err => console.error('Profile fetch error:', err));
           }
