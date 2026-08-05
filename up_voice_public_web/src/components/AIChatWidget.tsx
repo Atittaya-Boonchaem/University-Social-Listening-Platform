@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-const CAMPUS_MAP_PATH = '/static/campus_map.jpg';
+const CAMPUS_MAP_PATH = '/campus_map.jpg';
 
 const LOCATION_KEYWORDS = [
   'อยู่ไหน',
@@ -16,8 +16,10 @@ const LOCATION_KEYWORDS = [
   'อาคาร',
   'ตึก',
   'คณะ',
+  'วิทย',
   'วิทย์',
   'ตึกวิทย์',
+  'ดีวิทย',
   'สงวน',
   'ตึกสงวน',
   'ตึกรวม',
@@ -42,8 +44,10 @@ const LOCATION_KEYWORDS = [
   'ไอซีที',
   'สำนัก',
   'โรงพยาบาล',
+  'หอพัก',
   'หอ',
   'โรงอาหาร',
+  'หอสมุด',
   'ce',
   'ub',
   'pk'
@@ -101,7 +105,7 @@ interface AIChatWidgetProps {
 
 const isLocationQuery = (text: string, customKeywords?: string[]) => {
   const lower = text.toLowerCase();
-  const validCustom = (customKeywords || []).filter(k => k && !k.includes(''));
+  const validCustom = (customKeywords || []).filter(k => k && k.trim().length > 0);
   const keywords = Array.from(new Set([...LOCATION_KEYWORDS, ...validCustom]));
   return keywords.some(keyword => keyword && lower.includes(keyword.toLowerCase()));
 };
@@ -110,6 +114,10 @@ const toAbsoluteUrl = (rawUrl?: string) => {
   if (!rawUrl) return undefined;
 
   if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+    return rawUrl;
+  }
+
+  if (rawUrl.startsWith('/campus_map')) {
     return rawUrl;
   }
 
@@ -308,7 +316,10 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
                     alt="Campus Map"
                     className="w-full h-auto object-cover hover:opacity-95 transition-opacity cursor-pointer"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = CAMPUS_MAP_PATH;
+                      const img = e.target as HTMLImageElement;
+                      if (img.src !== CAMPUS_MAP_PATH && !img.src.endsWith(CAMPUS_MAP_PATH)) {
+                        img.src = CAMPUS_MAP_PATH;
+                      }
                     }}
                     onClick={() => window.open(msg.image, '_blank')}
                   />

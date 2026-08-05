@@ -509,14 +509,14 @@ def auto_cluster_problem(problem_id: int, db) -> int | None:
         logger.error(f"auto_cluster_problem error: {e}")
         return None
 
-def resolve_map_image(text: str, location_name: str = "") -> Optional[str]:
+def resolve_map_image(text: str, location_name: str = "", force_check: bool = False) -> Optional[str]:
     combined = (text + " " + location_name).lower()
     
     default_keywords = [
         "อยู่ไหน", "อยู่ตรงไหน", "ไปยังไง", "ไปยังไงได้บ้าง", "ตั้งอยู่ตรงไหน", 
         "ไปอย่างไร", "ทางไหน", "ที่ไหน", "เส้นทาง", "ลงตรงไหน", "ขึ้นรถตรงไหน", 
         "ประตู", "ตึก", "อาคาร", "คณะ", "หอพัก", "แผนผัง", "แผนที่", "ส่งเอกสาร",
-        "สงวน", "ict", "ไอซีที", "สาธิต", "อธิการ", "พญางำเมือง", "วิทย์", "วิศวะ",
+        "สงวน", "ict", "ไอซีที", "สาธิต", "อธิการ", "พญางำเมือง", "วิทย์", "วิทย", "ดีวิทย", "วิศวะ",
         "พยาบาล", "เภสัช", "แพทยศาสตร์", "นิติ", "ศิลปศาสตร์", "วิทยาการจัดการ",
         "สหเวช", "ทันตะ", "เกษตร", "ศูนย์การแพทย์", "รพ.มพ", "หอสมุด", "อุบาลี",
         "ตึกรวม", "อาคารเรียนรวม", "เรียนรวม", "อาคารบรรยายรวม", "ce", "ub", "pk"
@@ -541,9 +541,10 @@ def resolve_map_image(text: str, location_name: str = "") -> Optional[str]:
     except Exception as err:
         logger.error(f"Error querying LLMSetting in resolve_map_image: {err}")
     
-    is_location_query = any(k in combined for k in default_keywords)
-    if not is_location_query:
-        return None
+    if not force_check:
+        is_location_query = any(k in combined for k in default_keywords)
+        if not is_location_query:
+            return None
         
     return map_url
 
@@ -586,12 +587,10 @@ def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
                 "location": "คณะวิทยาศาสตร์" if "วิทย์" in combined_user_text else ("อาคารเรียนรวม (ตึกรวม)" if any(k in combined_user_text for k in ["ตึกรวม", "เรียนรวม"]) else ("คณะเทคโนโลยีสารสนเทศและการสื่อสาร" if ("ict" in combined_user_text.lower() or "ไอซีที" in combined_user_text) else ("อาคารสงวนเสริมศรี" if "สงวน" in combined_user_text else "บริเวณภายในมหาวิทยาลัยพะเยา")))
             }
         }
-        if is_inquiry:
-            res["map_image"] = "/static/campus_map.jpg"
-            res["extracted_data"]["map_image"] = "/static/campus_map.jpg"
-        elif map_img:
+        if map_img:
             res["map_image"] = map_img
-            res["extracted_data"]["map_image"] = map_img
+            if res.get("extracted_data"):
+                res["extracted_data"]["map_image"] = map_img
         return res
 
     from app.database import SessionLocal
@@ -708,11 +707,16 @@ Respond STRICTLY with a valid JSON object:
             parsed_data.get("is_inquiry") is True or
             parsed_data.get("intent") == "location_inquiry"
         )
-        if _is_loc_early:
-            parsed_data["map_image"] = "/static/campus_map.jpg"
+        
+        map_img_resolved = resolve_map_image(combined_user_text, parsed_data.get("reply", ""), force_check=_is_loc_early)
+        if _is_loc_early or map_img_resolved:
             parsed_data["is_inquiry"] = True
             parsed_data["intent"] = "location_inquiry"
             parsed_data["is_complete"] = False
+            if map_img_resolved:
+                parsed_data["map_image"] = map_img_resolved
+                if parsed_data.get("extracted_data"):
+                    parsed_data["extracted_data"]["map_image"] = map_img_resolved
 
         # Location Pipeline & Category Suggestion
         if parsed_data.get("extracted_data"):
@@ -746,12 +750,14 @@ Respond STRICTLY with a valid JSON object:
         # Final location check (also includes AI reply text)
         _combined_final = (combined_user_text + " " + parsed_data.get("reply", "")).lower()
         if any(kw in _combined_final for kw in _LOC_KW) or parsed_data.get("is_inquiry") or parsed_data.get("intent") == "location_inquiry":
-            parsed_data["map_image"] = "/static/campus_map.jpg"
-            parsed_data["is_inquiry"] = True
-            parsed_data["intent"] = "location_inquiry"
-            parsed_data["is_complete"] = False
-            if parsed_data.get("extracted_data"):
-                parsed_data["extracted_data"]["map_image"] = "/static/campus_map.jpg"
+            final_map = resolve_map_image(_combined_final, force_check=True)
+            if final_map:
+                parsed_data["map_image"] = final_map
+                parsed_data["is_inquiry"] = True
+                parsed_data["intent"] = "location_inquiry"
+                parsed_data["is_complete"] = False
+                if parsed_data.get("extracted_data"):
+                    parsed_data["extracted_data"]["map_image"] = final_map
 
         return parsed_data
         
