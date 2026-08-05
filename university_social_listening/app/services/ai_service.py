@@ -575,8 +575,9 @@ def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
             reply_msg = "ขอบคุณสำหรับข้อมูลครับ ระบบได้ปักพิกัดและเตรียมนำข้อมูลลงในแบบฟอร์มให้เรียบร้อยแล้วครับ 🎉" if not is_inquiry else "สถานที่ดังกล่าวตั้งอยู่ในบริเวณมหาวิทยาลัยพะเยา สามารถเดินทางโดยนั่งรถเมล์ มพ. สาย 1 หรือ สาย 2 ตามผังแนะนำสถานที่ได้เลยครับ 📍"
             
         res = {
-            "is_complete": True,
+            "is_complete": False if is_inquiry else True,
             "is_inquiry": is_inquiry,
+            "intent": "location_inquiry" if is_inquiry else "report_issue",
             "reply": reply_msg,
             "extracted_data": {
                 "title": combined_user_text[:40] if len(combined_user_text) > 40 else combined_user_text,
@@ -585,7 +586,10 @@ def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
                 "location": "คณะวิทยาศาสตร์" if "วิทย์" in combined_user_text else ("อาคารเรียนรวม (ตึกรวม)" if any(k in combined_user_text for k in ["ตึกรวม", "เรียนรวม"]) else ("คณะเทคโนโลยีสารสนเทศและการสื่อสาร" if ("ict" in combined_user_text.lower() or "ไอซีที" in combined_user_text) else ("อาคารสงวนเสริมศรี" if "สงวน" in combined_user_text else "บริเวณภายในมหาวิทยาลัยพะเยา")))
             }
         }
-        if map_img:
+        if is_inquiry:
+            res["map_image"] = "/static/campus_map.jpg"
+            res["extracted_data"]["map_image"] = "/static/campus_map.jpg"
+        elif map_img:
             res["map_image"] = map_img
             res["extracted_data"]["map_image"] = map_img
         return res
@@ -690,7 +694,26 @@ Respond STRICTLY with a valid JSON object:
         content = content.strip()
             
         parsed_data = json.loads(content)
-        
+
+        # ── Location detection FIRST (before anything else) ──
+        _user_check = combined_user_text.lower()
+        _LOC_KW = [
+            "ไปทางไหน", "อยู่ไหน", "อยู่ตรงไหน", "ไปยังไง", "ทางไป",
+            "ตึก", "อาคาร", "คณะ", "เรียนรวม", "บรรยายรวม",
+            "วิทย์", "สงวน", "ict", "ไอซีที", "อุบาลี", "หอสมุด",
+            "แผนที่", "แผนผัง", "โรงพยาบาล", "หอพัก", "โรงอาหาร"
+        ]
+        _is_loc_early = (
+            any(kw in _user_check for kw in _LOC_KW) or
+            parsed_data.get("is_inquiry") is True or
+            parsed_data.get("intent") == "location_inquiry"
+        )
+        if _is_loc_early:
+            parsed_data["map_image"] = "/static/campus_map.jpg"
+            parsed_data["is_inquiry"] = True
+            parsed_data["intent"] = "location_inquiry"
+            parsed_data["is_complete"] = False
+
         # Location Pipeline & Category Suggestion
         if parsed_data.get("extracted_data"):
             ext = parsed_data["extracted_data"]
@@ -720,38 +743,25 @@ Respond STRICTLY with a valid JSON object:
             except Exception as cat_err:
                 logger.error(f"Error suggesting category in chat: {cat_err}")
 
-        # Detect location inquiry keywords in user text or AI reply
-        combined_check = (combined_user_text + " " + parsed_data.get("reply", "")).lower()
-        LOCATION_KW = [
-            "ไปทางไหน", "อยู่ไหน", "อยู่ตรงไหน", "ไปยังไง", "ทางไป",
-            "ตึก", "อาคาร", "คณะ", "เรียนรวม", "บรรยายรวม",
-            "วิทย์", "สงวน", "ict", "ไอซีที", "อุบาลี", "หอสมุด",
-            "แผนที่", "แผนผัง", "โรงพยาบาล", "หอพัก", "โรงอาหาร"
-        ]
-        is_loc_q = any(kw in combined_check for kw in LOCATION_KW)
-
-        if is_loc_q or parsed_data.get("is_inquiry") or parsed_data.get("intent") == "location_inquiry":
-            map_img_url = "/static/campus_map.jpg"
-            parsed_data["map_image"] = map_img_url
+        # Final location check (also includes AI reply text)
+        _combined_final = (combined_user_text + " " + parsed_data.get("reply", "")).lower()
+        if any(kw in _combined_final for kw in _LOC_KW) or parsed_data.get("is_inquiry") or parsed_data.get("intent") == "location_inquiry":
+            parsed_data["map_image"] = "/static/campus_map.jpg"
             parsed_data["is_inquiry"] = True
             parsed_data["intent"] = "location_inquiry"
             parsed_data["is_complete"] = False
-            if "extracted_data" in parsed_data and parsed_data["extracted_data"]:
-                parsed_data["extracted_data"]["map_image"] = map_img_url
+            if parsed_data.get("extracted_data"):
+                parsed_data["extracted_data"]["map_image"] = "/static/campus_map.jpg"
 
         return parsed_data
         
     except Exception as e:
         logger.error(f"Error in handle_chat_report: {e}")
-        map_img = resolve_map_image(combined_user_text)
-        fallback_res = {
+        return {
             "is_complete": False,
-            "reply": "ขออภัยครับ ระบบเกิดข้อผิดพลาดในการประมวลผล แต่ได้พยายามค้นหาข้อมูลสถานที่ให้ท่านเรียบร้อยแล้ว",
+            "reply": "ขออภัยครับ ระบบเกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งครับ",
             "extracted_data": None
         }
-        if map_img:
-            fallback_res["map_image"] = map_img
-        return fallback_res
 
 def expand_description(text: str) -> str:
     """
