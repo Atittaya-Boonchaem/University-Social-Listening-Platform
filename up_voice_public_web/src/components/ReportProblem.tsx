@@ -50,6 +50,7 @@ export interface Category {
   name: string;
   description?: string;
   requireMap?: boolean;
+  requires_location_privacy?: boolean;
 }
 
 export interface Building {
@@ -168,7 +169,6 @@ export default function ReportProblem({
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [isFetchingData, setIsFetchingData] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isAiSuggesting, setIsAiSuggesting] = useState(false);
   const [isAiExpanding, setIsAiExpanding] = useState(false);
   const [isUserManualCategory, setIsUserManualCategory] = useState(false);
   const [customBuildingName, setCustomBuildingName] = useState('');
@@ -282,36 +282,13 @@ export default function ReportProblem({
     if (data.location_confidence !== undefined) {
       setLocationConfidence(data.location_confidence);
     }
+    if (data.needs_location_confirmation !== undefined) {
+      setNeedsLocationConfirmation(data.needs_location_confirmation);
+    }
     if (data.is_inquiry) {
       showToast('📍 AI ตอบคำถามสถานที่และปักพิกัดบนแผนที่ให้อัตโนมัติเรียบร้อยแล้ว!', 'success');
     } else {
       showToast('✨ AI ช่วยเลือกหมวดหมู่และปักพิกัดตำแหน่งบนแผนที่ให้อัตโนมัติเรียบร้อยแล้ว!', 'success');
-    }
-  };
-
-  const handleAiSuggest = async () => {
-    if (description.trim().length < 10) {
-      showToast('โปรดพิมพ์รายละเอียดปัญหาอย่างน้อย 10 ตัวอักษรก่อนให้ AI ช่วยเลือก', 'warning');
-      return;
-    }
-    
-    setIsAiSuggesting(true);
-    try {
-      const response = await axios.post(`${API_BASE}/problems/ai/suggest-category`, {
-        description: description.trim()
-      });
-      if (response.data?.success && response.data?.data?.category_id) {
-        const suggestedId = String(response.data.data.category_id);
-        setSelectedCategory(suggestedId);
-        showToast('🪄 AI ช่วยเลือกหมวดหมู่ให้แล้ว!', 'success');
-      } else {
-        showToast('AI ไม่สามารถแนะนำหมวดหมู่ได้', 'warning');
-      }
-    } catch (e) {
-      console.error(e);
-      showToast('เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI', 'error');
-    } finally {
-      setIsAiSuggesting(false);
     }
   };
 
