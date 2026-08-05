@@ -3,6 +3,13 @@ import { fetchLLMSettings, updateLLMSettings } from '../../services/llmSettingSe
 import api from '../../services/api';
 import { Bot, Plus, Trash2, Save, AlertTriangle, Info, Sliders, Zap, CheckCircle2, MessageSquare, ShieldAlert, MapPin, Compass, Upload, Image } from 'lucide-react';
 
+const API_ROOT = (import.meta.env.VITE_API_URL || 'https://university-social-listening-platform.onrender.com/api/v1').replace(/\/api\/v1\/?$/, '');
+const toAbsoluteUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${API_ROOT}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
 // ── Default empty state ─────────────────────────────────────────
 const DEFAULT_SETTINGS = {
   is_auto_ban_enabled: true,
@@ -455,11 +462,11 @@ const LLMSettings = () => {
                     <div className="w-full md:w-48 h-32 bg-slate-200 rounded-xl overflow-hidden border border-slate-300 relative group flex items-center justify-center">
                       {settings.default_map_image_url ? (
                         <img
-                          src={settings.default_map_image_url.startsWith('http') ? settings.default_map_image_url : `https://university-social-listening-platform.onrender.com${settings.default_map_image_url}`}
+                          src={toAbsoluteUrl(settings.default_map_image_url)}
                           alt="Campus Map Preview"
                           className="w-full h-full object-cover"
                           onError={(e) => {
-                            e.currentTarget.src = 'https://university-social-listening-platform.onrender.com/static/campus_map.jpg';
+                            e.currentTarget.src = toAbsoluteUrl('/static/campus_map.jpg');
                           }}
                         />
                       ) : (
