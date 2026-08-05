@@ -545,6 +545,13 @@ def resolve_map_image(text: str, location_name: str = "", force_check: bool = Fa
         is_location_query = any(k in combined for k in default_keywords)
         if not is_location_query:
             return None
+
+    if map_url and map_url.startswith("/static/"):
+        rel = map_url.lstrip("/")
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        abs_path = os.path.join(base_dir, rel)
+        if not os.path.exists(abs_path):
+            map_url = "/static/campus_map.jpg"
         
     return map_url
 
