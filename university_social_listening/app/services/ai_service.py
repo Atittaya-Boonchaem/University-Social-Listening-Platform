@@ -720,18 +720,18 @@ Respond STRICTLY with a valid JSON object:
             except Exception as cat_err:
                 logger.error(f"Error suggesting category in chat: {cat_err}")
 
-        # Always resolve map image for location inquiries or extracted locations
-        ext = parsed_data.get("extracted_data") or {}
-        extracted_loc = ext.get("location", "")
-        reply_text = parsed_data.get("reply", "")
-        
-        map_img = resolve_map_image(combined_user_text + " " + reply_text, extracted_loc)
-        
-        # Check if user text contains location inquiry keywords
-        is_loc_q = any(kw in combined_user_text.lower() for kw in ["ไปทางไหน", "อยู่ไหน", "อยู่ตรงไหน", "ไปยังไง", "ตึก", "อาคาร", "คณะ", "เรียนรวม", "บรรยายรวม", "วิทย์", "สงวน", "ict", "อุบาลี", "หอสมุด"])
-        
-        if map_img or parsed_data.get("is_inquiry") or parsed_data.get("intent") == "location_inquiry" or is_loc_q:
-            map_img_url = map_img or "/static/campus_map.jpg"
+        # Detect location inquiry keywords in user text or AI reply
+        combined_check = (combined_user_text + " " + parsed_data.get("reply", "")).lower()
+        LOCATION_KW = [
+            "ไปทางไหน", "อยู่ไหน", "อยู่ตรงไหน", "ไปยังไง", "ทางไป",
+            "ตึก", "อาคาร", "คณะ", "เรียนรวม", "บรรยายรวม",
+            "วิทย์", "สงวน", "ict", "ไอซีที", "อุบาลี", "หอสมุด",
+            "แผนที่", "แผนผัง", "โรงพยาบาล", "หอพัก", "โรงอาหาร"
+        ]
+        is_loc_q = any(kw in combined_check for kw in LOCATION_KW)
+
+        if is_loc_q or parsed_data.get("is_inquiry") or parsed_data.get("intent") == "location_inquiry":
+            map_img_url = "/static/campus_map.jpg"
             parsed_data["map_image"] = map_img_url
             parsed_data["is_inquiry"] = True
             parsed_data["intent"] = "location_inquiry"
