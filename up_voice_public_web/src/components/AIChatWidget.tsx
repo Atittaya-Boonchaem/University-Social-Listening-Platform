@@ -241,14 +241,25 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
 
       const extracted = data.extracted_data;
 
-      // สำคัญมาก:
-      // ถ้าเป็น inquiry / location question ห้ามเอาไปกรอกฟอร์มแจ้งปัญหา
+      // Auto-fill logic:
+      // Trigger auto-fill whenever extracted data is present and it is a problem report or inquiry
+      const isPureLocationInquiry =
+        (data.intent === 'location_inquiry' || data.is_inquiry === true) &&
+        !userText.includes('เสีย') &&
+        !userText.includes('พัง') &&
+        !userText.includes('ชำรุด') &&
+        !userText.includes('ซ่อม') &&
+        !userText.includes('ดับ') &&
+        !userText.includes('ล่ม') &&
+        !userText.includes('ขยะ') &&
+        !userText.includes('เหม็น') &&
+        !userText.includes('แตก') &&
+        !userText.includes('รั่ว') &&
+        !userText.includes('แจ้ง');
+
       const shouldAutofill =
-        !isLocationInquiry &&
-        Boolean(data.is_complete) &&
         Boolean(extracted) &&
-        !data.is_inquiry &&
-        data.intent !== 'location_inquiry';
+        (!isPureLocationInquiry || Boolean(data.is_complete) || Boolean(extracted?.category_name || extracted?.category_id));
 
       if (shouldAutofill && extracted) {
         const fallbackDesc = userText;
@@ -272,7 +283,7 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
           longitude: extracted.longitude,
           location_confidence: extracted.location_confidence,
           needs_location_confirmation: extracted.needs_location_confirmation,
-          is_inquiry: false
+          is_inquiry: isPureLocationInquiry
         });
       }
     } catch (error) {

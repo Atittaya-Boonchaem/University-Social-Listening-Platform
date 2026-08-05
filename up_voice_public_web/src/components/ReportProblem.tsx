@@ -240,19 +240,38 @@ export default function ReportProblem({
   };
 
   const handleAiChatComplete = (data: any) => {
-    if (!data.is_inquiry) {
-      if (data.description && data.description.trim()) {
-        setDescription(data.description);
-      }
-      if (data.title && data.title.trim()) {
-        setTitle(data.title);
+    if (data.description && data.description.trim()) {
+      setDescription(data.description);
+    }
+    if (data.title && data.title.trim()) {
+      setTitle(data.title);
+    }
+
+    // Category matching: Try ID first, then fuzzy name matching
+    let catMatched = false;
+    if (data.category_id) {
+      const foundById = categories.find(c => String(c.id) === String(data.category_id));
+      if (foundById) {
+        setSelectedCategory(String(foundById.id));
+        catMatched = true;
       }
     }
-    if (data.category_id) {
-      setSelectedCategory(String(data.category_id));
-    } else if (data.category_name) {
-      const matchedCat = categories.find(c => c.name.includes(data.category_name) || data.category_name.includes(c.name));
-      if (matchedCat) setSelectedCategory(String(matchedCat.id));
+
+    if (!catMatched && data.category_name) {
+      const targetName = data.category_name.toLowerCase();
+      const matchedCat = categories.find(c => {
+        const cName = c.name.toLowerCase();
+        return cName.includes(targetName) || targetName.includes(cName) ||
+               (cName.includes('อาคาร') && (targetName.includes('อาคาร') || targetName.includes('สิ่งอำนวย'))) ||
+               (cName.includes('เครือข่าย') && (targetName.includes('เครือข่าย') || targetName.includes('เน็ต') || targetName.includes('wi-fi'))) ||
+               (cName.includes('การเรียน') && (targetName.includes('เรียน') || targetName.includes('สอน'))) ||
+               (cName.includes('ความสะอาด') && (targetName.includes('ความสะอาด') || targetName.includes('ขยะ'))) ||
+               (cName.includes('ปลอดภัย') && (targetName.includes('ปลอดภัย') || targetName.includes('จราจร'))) ||
+               (cName.includes('บริการ') && (targetName.includes('บริการ') || targetName.includes('สวัสดิการ')));
+      });
+      if (matchedCat) {
+        setSelectedCategory(String(matchedCat.id));
+      }
     }
     if (data.location && !data.location.includes('ไม่ระบุ') && !data.location.includes('ไม่พบ')) {
       const matchedBuilding = findMatchingBuilding(data.location, buildings);
