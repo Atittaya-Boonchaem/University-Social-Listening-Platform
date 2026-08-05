@@ -1,11 +1,10 @@
 import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
-from app.database import config
+from app.database import engine
 
 def run_upgrade():
-    print(f"Connecting to {config.DATABASE_URL} ...")
-    engine = create_engine(config.DATABASE_URL)
+    print(f"Executing db_upgrade on {engine.url} ...")
     
     queries = [
         # Category table

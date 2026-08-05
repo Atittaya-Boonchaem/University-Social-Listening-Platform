@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import Optional
 from datetime import datetime
 
 from app.database import get_db
@@ -27,6 +28,21 @@ DEFAULT_MAP_KEYWORDS = [
     "ตึกรวม", "อาคารเรียนรวม", "เรียนรวม", "อาคารบรรยายรวม", "ce", "ub", "pk"
 ]
 
+def get_safe_llm_setting(db: Session) -> Optional[LLMSetting]:
+    try:
+        return db.query(LLMSetting).first()
+    except Exception as e:
+        db.rollback()
+        try:
+            from scripts.db_upgrade import run_upgrade
+            run_upgrade()
+        except Exception:
+            pass
+        try:
+            return db.query(LLMSetting).first()
+        except Exception:
+            return None
+
 @router.get("/categories", response_model=StandardResponse)
 def get_settings_categories(db: Session = Depends(get_db)):
     from app.models import Category
@@ -40,20 +56,20 @@ def get_settings_categories(db: Session = Depends(get_db)):
 
 @router.get("/public-llm-settings", response_model=StandardResponse)
 def get_public_llm_settings(db: Session = Depends(get_db)):
-    setting = db.query(LLMSetting).first()
+    setting = get_safe_llm_setting(db)
     opening_msg = "สวัสดีครับ มีปัญหาหรือข้อร้องเรียนอะไร แจ้งผมได้เลยครับ"
     is_map_enabled = True
     map_keywords = DEFAULT_MAP_KEYWORDS
     map_img_url = "/static/campus_map.jpg"
     
     if setting:
-        if setting.chatbot_opening_message:
+        if getattr(setting, "chatbot_opening_message", None):
             opening_msg = setting.chatbot_opening_message
-        if setting.is_auto_map_enabled is not None:
+        if getattr(setting, "is_auto_map_enabled", None) is not None:
             is_map_enabled = setting.is_auto_map_enabled
-        if setting.map_trigger_keywords:
+        if getattr(setting, "map_trigger_keywords", None):
             map_keywords = setting.map_trigger_keywords
-        if setting.default_map_image_url:
+        if getattr(setting, "default_map_image_url", None):
             map_img_url = setting.default_map_image_url
         
     return StandardResponse(
@@ -74,7 +90,7 @@ def get_llm_settings(
 ):
     require_super_admin(current_user, db)
     
-    setting = db.query(LLMSetting).first()
+    setting = get_safe_llm_setting(db)
     if not setting:
         # Fallback if the reset script didn't seed it
         setting = LLMSetting(
@@ -92,27 +108,30 @@ def get_llm_settings(
             map_trigger_keywords=DEFAULT_MAP_KEYWORDS,
             default_map_image_url="/static/campus_map.jpg"
         )
-        db.add(setting)
-        db.commit()
-        db.refresh(setting)
+        try:
+            db.add(setting)
+            db.commit()
+            db.refresh(setting)
+        except Exception:
+            db.rollback()
 
     # Convert to dictionary with safe defaults
     raw_dict = {
-        "setting_id": setting.setting_id,
-        "banned_words": setting.banned_words or [],
-        "banned_patterns": setting.banned_patterns or [],
-        "is_auto_ban_enabled": setting.is_auto_ban_enabled if setting.is_auto_ban_enabled is not None else True,
-        "is_auto_routing_enabled": setting.is_auto_routing_enabled if setting.is_auto_routing_enabled is not None else True,
-        "auto_ban_duration_days": setting.auto_ban_duration_days if setting.auto_ban_duration_days is not None else 7,
-        "confidence_threshold": float(setting.confidence_threshold) if setting.confidence_threshold is not None else 0.85,
-        "max_warnings_before_ban": setting.max_warnings_before_ban if setting.max_warnings_before_ban is not None else 1,
-        "chatbot_persona": setting.chatbot_persona or "",
-        "chatbot_questions": setting.chatbot_questions or [],
-        "chatbot_opening_message": setting.chatbot_opening_message or "",
-        "is_auto_map_enabled": setting.is_auto_map_enabled if setting.is_auto_map_enabled is not None else True,
-        "map_trigger_keywords": setting.map_trigger_keywords or DEFAULT_MAP_KEYWORDS,
-        "default_map_image_url": setting.default_map_image_url or "/static/campus_map.jpg",
-        "updated_at": setting.updated_at
+        "setting_id": getattr(setting, "setting_id", 1),
+        "banned_words": getattr(setting, "banned_words", []) or [],
+        "banned_patterns": getattr(setting, "banned_patterns", []) or [],
+        "is_auto_ban_enabled": getattr(setting, "is_auto_ban_enabled", True) if getattr(setting, "is_auto_ban_enabled", True) is not None else True,
+        "is_auto_routing_enabled": getattr(setting, "is_auto_routing_enabled", True) if getattr(setting, "is_auto_routing_enabled", True) is not None else True,
+        "auto_ban_duration_days": getattr(setting, "auto_ban_duration_days", 7) if getattr(setting, "auto_ban_duration_days", 7) is not None else 7,
+        "confidence_threshold": float(setting.confidence_threshold) if getattr(setting, "confidence_threshold", None) is not None else 0.85,
+        "max_warnings_before_ban": getattr(setting, "max_warnings_before_ban", 1) if getattr(setting, "max_warnings_before_ban", 1) is not None else 1,
+        "chatbot_persona": getattr(setting, "chatbot_persona", "") or "",
+        "chatbot_questions": getattr(setting, "chatbot_questions", []) or [],
+        "chatbot_opening_message": getattr(setting, "chatbot_opening_message", "") or "",
+        "is_auto_map_enabled": getattr(setting, "is_auto_map_enabled", True) if getattr(setting, "is_auto_map_enabled", True) is not None else True,
+        "map_trigger_keywords": getattr(setting, "map_trigger_keywords", DEFAULT_MAP_KEYWORDS) or DEFAULT_MAP_KEYWORDS,
+        "default_map_image_url": getattr(setting, "default_map_image_url", "/static/campus_map.jpg") or "/static/campus_map.jpg",
+        "updated_at": getattr(setting, "updated_at", None)
     }
 
     data = LLMSettingResponse.model_validate(raw_dict).model_dump()
