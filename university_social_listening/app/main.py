@@ -245,6 +245,11 @@ async def startup_event():
     logger.info("🚀 FastAPI v2 — 26-table schema starting...")
     Base.metadata.create_all(bind=engine)
     logger.info("✅ All tables verified/created.")
+    try:
+        from scripts.db_upgrade import run_upgrade
+        run_upgrade()
+    except Exception as e:
+        logger.error(f"Error running db_upgrade: {e}")
     seed_initial_data()
 
 
