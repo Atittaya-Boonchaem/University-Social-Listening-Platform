@@ -440,11 +440,16 @@ export default function ReportProblem({
           for (const b of formatted) {
             const cleanKey = b.name.replace(/^(อาคาร|คณะ|ตึก|ศูนย์)/, '').trim().toLowerCase();
             const existing = uniqueMap.get(cleanKey);
+            const latNum = b.latitude != null ? Number(b.latitude) : null;
+            const lngNum = b.longitude != null ? Number(b.longitude) : null;
             if (!existing) {
               uniqueMap.set(cleanKey, b);
-            } else {
-              // Prefer entry with updated custom coordinates (not 19.0286 default)
-              if (b.latitude && b.longitude && (b.latitude !== 19.0286 || b.longitude !== 99.8958)) {
+            } else if (latNum && lngNum) {
+              const exLat = existing.latitude != null ? Number(existing.latitude) : null;
+              const exLng = existing.longitude != null ? Number(existing.longitude) : null;
+              if (exLat === 19.0286 && exLng === 99.8958) {
+                uniqueMap.set(cleanKey, b);
+              } else if (latNum === 19.027329 && lngNum === 99.8999566) {
                 uniqueMap.set(cleanKey, b);
               }
             }
