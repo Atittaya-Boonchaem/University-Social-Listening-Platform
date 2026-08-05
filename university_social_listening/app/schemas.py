@@ -430,6 +430,10 @@ class LLMSettingUpdate(BaseModel):
     chatbot_persona: Optional[str] = None
     chatbot_questions: Optional[List[str]] = None
     chatbot_opening_message: Optional[str] = None
+    
+    is_auto_map_enabled: Optional[bool] = None
+    map_trigger_keywords: Optional[List[str]] = None
+    default_map_image_url: Optional[str] = None
 
 
 class LLMSettingResponse(BaseModel):
@@ -444,6 +448,10 @@ class LLMSettingResponse(BaseModel):
     chatbot_persona: Optional[str] = None
     chatbot_questions: Optional[List[str]] = None
     chatbot_opening_message: Optional[str] = None
+    
+    is_auto_map_enabled: Optional[bool] = True
+    map_trigger_keywords: Optional[List[str]] = None
+    default_map_image_url: Optional[str] = "/static/campus_map.jpg"
     updated_at: datetime
 
     class Config:

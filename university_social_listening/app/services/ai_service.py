@@ -2,7 +2,7 @@ import os
 import requests
 import logging
 import re
-from typing import List, Dict
+from typing import List, Dict, Optional
 from app.services.location_service import extract_location_pipeline
 
 logger = logging.getLogger(__name__)
@@ -317,7 +317,6 @@ def analyze_sentiment(description: str) -> Dict[str, str]:
 
     api_key = get_typhoon_api_key()
     if not api_key:
-        # Mock behavior
         if "ด่วน" in description or "ไฟลุก" in description or "แตก" in description:
             return {"sentiment": "panicked", "urgency": "critical"}
         if "แย่" in description or "เบื่อ" in description or "โกรธ" in description:
@@ -362,10 +361,6 @@ def analyze_sentiment(description: str) -> Dict[str, str]:
         
     return {"sentiment": "neutral", "urgency": "normal"}
 
-
-# ──────────────────────────────────────────────
-# Cluster AI Summary (Rule-based template)
-# ──────────────────────────────────────────────
 
 def summarize_cluster(problems: List[Dict], category_name: str = "", location: str = "") -> str:
     """
@@ -434,7 +429,6 @@ def auto_cluster_problem(problem_id: int, db) -> int | None:
         now = _dt.datetime.utcnow()
 
         if similar:
-            # AUTO MERGE: Automatically link duplicate problem to oldest similar parent problem
             first_similar_id = similar[0]["id"]
             first_prob = db.query(Problem).filter(Problem.problem_id == first_similar_id).first()
             if first_prob:
@@ -472,7 +466,6 @@ def auto_cluster_problem(problem_id: int, db) -> int | None:
                 ] + [{"title": s.get("title", ""), "description": s.get("description", "")} for s in similar]
                 summary = summarize_cluster(all_for_cluster, cat_name, location)
                 
-                # Calculate confidence score (e.g. 0.92 - 0.98)
                 conf_score = round(0.88 + min(0.10, len(similar) * 0.03), 2)
 
                 new_cluster = ProblemCluster(
@@ -516,64 +509,86 @@ def auto_cluster_problem(problem_id: int, db) -> int | None:
         logger.error(f"auto_cluster_problem error: {e}")
         return None
 
+def resolve_map_image(text: str, location_name: str = "") -> Optional[str]:
+    combined = (text + " " + location_name).lower()
+    
+    default_keywords = [
+        "อยู่ไหน", "อยู่ตรงไหน", "ไปยังไง", "ไปยังไงได้บ้าง", "ตั้งอยู่ตรงไหน", 
+        "ไปอย่างไร", "ทางไหน", "ที่ไหน", "เส้นทาง", "ลงตรงไหน", "ขึ้นรถตรงไหน", 
+        "ประตู", "ตึก", "อาคาร", "คณะ", "หอพัก", "แผนผัง", "แผนที่", "ส่งเอกสาร",
+        "สงวน", "ict", "ไอซีที", "สาธิต", "อธิการ", "พญางำเมือง", "วิทย์", "วิศวะ",
+        "พยาบาล", "เภสัช", "แพทยศาสตร์", "นิติ", "ศิลปศาสตร์", "วิทยาการจัดการ",
+        "สหเวช", "ทันตะ", "เกษตร", "ศูนย์การแพทย์", "รพ.มพ", "หอสมุด", "อุบาลี",
+        "ตึกรวม", "อาคารเรียนรวม", "เรียนรวม", "อาคารบรรยายรวม", "ce", "ub", "pk"
+    ]
+    
+    map_url = "/static/campus_map.jpg"
+    
+    try:
+        from app.database import SessionLocal
+        from app.models import LLMSetting
+        db = SessionLocal()
+        setting = db.query(LLMSetting).first()
+        db.close()
+        
+        if setting:
+            if setting.is_auto_map_enabled is False:
+                return None
+            if setting.map_trigger_keywords and isinstance(setting.map_trigger_keywords, list):
+                default_keywords = [str(k).lower() for k in setting.map_trigger_keywords]
+            if setting.default_map_image_url:
+                map_url = setting.default_map_image_url
+    except Exception as err:
+        logger.error(f"Error querying LLMSetting in resolve_map_image: {err}")
+    
+    is_location_query = any(k in combined for k in default_keywords)
+    if not is_location_query:
+        return None
+        
+    return map_url
+
 def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
     """
-    Analyzes a chat conversation for reporting a problem.
+    Analyzes a chat conversation for reporting a problem or responding to inquiries about campus locations.
     Determines if enough information is gathered, asks follow-up questions if not,
-    or extracts the problem data if complete.
+    or extracts the problem data if complete. Also attaches location map images when needed.
     """
     user_messages = [m.get("content", "") for m in messages if m.get("role") == "user"]
     combined_user_text = " ".join(user_messages)
-
-    # 1. Fast-path for exact campus location inquiries (e.g. Sanguan building)
-    if "สงวน" in combined_user_text:
-        is_inquiry = any(k in combined_user_text for k in ["ไปยังไง", "อยู่ตรงไหน", "ไปยังไงได้บ้าง", "ส่งเอกสาร", "ตั้งอยู่ตรงไหน", "ไปอย่างไร", "ทางไหน", "ที่ไหน"])
-        reply_text = "อาคารสงวนเสริมศรี ตั้งอยู่บริเวณประตู 2 มหาวิทยาลัยพะเยา ใกล้กับโรงเรียนสาธิตมหาวิทยาลัยพะเยา สามารถนั่งรถเมล์ มพ. สาย 2 (PKY/รร.สาธิต) ลงหน้าอาคารสงวนเสริมศรี ได้เลยครับ 📍 (ระบบได้เลือกอาคารสงวนเสริมศรีและปักพิกัดแผนที่ให้อัตโนมัติเรียบร้อยแล้วครับ)"
-        
-        loc_data = extract_location_pipeline("อาคารสงวนเสริมศรี")
-        import os
-        map_img = "https://university-social-listening-platform.onrender.com/static/sanguan_map.png"
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        for folder in ["static", "uploads"]:
-            folder_dir = os.path.join(base_dir, folder)
-            for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]:
-                if os.path.exists(os.path.join(folder_dir, f"sanguan_map{ext}")):
-                    map_img = f"https://university-social-listening-platform.onrender.com/{folder}/sanguan_map{ext}"
-                    break
-
-        return {
-            "is_complete": True,
-            "is_inquiry": is_inquiry,
-            "reply": reply_text,
-            "map_image": map_img,
-            "extracted_data": {
-                "title": combined_user_text[:40] if len(combined_user_text) > 40 else combined_user_text,
-                "description": combined_user_text,
-                "category_name": "การเดินทาง / รถเมล์มพ.",
-                "location": "อาคารสงวนเสริมศรี",
-                "latitude": loc_data.get("latitude", 19.0385),
-                "longitude": loc_data.get("longitude", 99.8965),
-                "location_confidence": 1.0,
-                "needs_location_confirmation": False,
-                "map_image": map_img
-            }
-        }
 
     api_key = get_typhoon_api_key()
     
     # Fallback/Mock mode when no API key is available
     if not api_key:
-        return {
+        map_img = resolve_map_image(combined_user_text)
+        is_inquiry = map_img is not None or any(k in combined_user_text for k in ["ไปยังไง", "อยู่ตรงไหน", "อยู่ที่ไหน", "ทางไหน", "ที่ไหน", "ตึกรวม", "เรียนรวม"])
+        
+        if "วิทย์" in combined_user_text:
+            reply_msg = "คณะวิทยาศาสตร์ (หมายเลข 14 บนแผนผัง) ตั้งอยู่ที่โซนศูนย์กลางของมหาวิทยาลัยพะเยา ใกล้กับอาคารเรียนรวมและอาคารบรรยายรวม สามารถเดินทางมาได้โดยใช้รถเมล์ มพ. สาย 1 หรือสาย 2 ลงที่ป้ายหน้าอาคารบรรยายรวม แล้วเดินต่อไปยังคณะวิทยาศาสตร์ได้เลยครับ 📍"
+        elif "ict" in combined_user_text.lower() or "ไอซีที" in combined_user_text:
+            reply_msg = "คณะเทคโนโลยีสารสนเทศและการสื่อสาร (หมายเลข 1 บนแผนผัง) ตั้งอยู่โซนใจกลางมหาวิทยาลัยพะเยาครับ สามารถเดินทางมาโดยเริ่มจากประตู 2 แล้วนั่งรถเมล์ มพ. สาย 1 หรือ สาย 2 เข้ามายังโซนกลาง campus จะพบตึก ICT อยู่ทางด้านขวาของเส้นทางหลักครับ 📍"
+        elif "สงวน" in combined_user_text:
+            reply_msg = "อาคารสงวนเสริมศรี (หมายเลข 27 บนแผนผัง) ตั้งอยู่บริเวณประตู 2 มหาวิทยาลัยพะเยา ใกล้กับโรงเรียนสาธิตมหาวิทยาลัยพะเยา สามารถนั่งรถเมล์ มพ. สาย 2 ลงหน้าอาคารสงวนเสริมศรี ได้เลยครับ 📍"
+        elif any(k in combined_user_text for k in ["ตึกรวม", "อาคารเรียนรวม", "เรียนรวม", "บรรยายรวม"]):
+            reply_msg = "อาคารเรียนรวมและอาคารบรรยายรวม (โซนศูนย์กลาง ใกล้หมายเลข 14 บนแผนผัง) ตั้งอยู่ใจกลางมหาวิทยาลัยพะเยา ใกล้กับคณะวิทยาศาสตร์และหอสมุด สามารถนั่งรถเมล์ มพ. สาย 1 หรือ สาย 2 มาลงป้ายหน้าอาคารเรียนรวมได้เลยครับ 📍"
+        else:
+            reply_msg = "ขอบคุณสำหรับข้อมูลครับ ระบบได้ปักพิกัดและเตรียมนำข้อมูลลงในแบบฟอร์มให้เรียบร้อยแล้วครับ 🎉" if not is_inquiry else "สถานที่ดังกล่าวตั้งอยู่ในบริเวณมหาวิทยาลัยพะเยา สามารถเดินทางโดยนั่งรถเมล์ มพ. สาย 1 หรือ สาย 2 ตามผังแนะนำสถานที่ได้เลยครับ 📍"
+            
+        res = {
             "is_complete": True,
-            "is_inquiry": True,
-            "reply": "ขอบคุณสำหรับข้อมูลครับ ระบบได้ปักพิกัดและเตรียมนำข้อมูลลงในแบบฟอร์มให้เรียบร้อยแล้วครับ 🎉",
+            "is_inquiry": is_inquiry,
+            "reply": reply_msg,
             "extracted_data": {
                 "title": combined_user_text[:40] if len(combined_user_text) > 40 else combined_user_text,
                 "description": combined_user_text,
                 "category_name": "การเดินทาง / รถเมล์มพ.",
-                "location": "บริเวณภายในมหาวิทยาลัยพะเยา"
+                "location": "คณะวิทยาศาสตร์" if "วิทย์" in combined_user_text else ("อาคารเรียนรวม (ตึกรวม)" if any(k in combined_user_text for k in ["ตึกรวม", "เรียนรวม"]) else ("คณะเทคโนโลยีสารสนเทศและการสื่อสาร" if ("ict" in combined_user_text.lower() or "ไอซีที" in combined_user_text) else ("อาคารสงวนเสริมศรี" if "สงวน" in combined_user_text else "บริเวณภายในมหาวิทยาลัยพะเยา")))
             }
         }
+        if map_img:
+            res["map_image"] = map_img
+            res["extracted_data"]["map_image"] = map_img
+        return res
 
     from app.database import SessionLocal
     from app.models import LLMSetting
@@ -582,34 +597,60 @@ def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
     setting = db.query(LLMSetting).first()
     db.close()
     
-    persona = setting.chatbot_persona if setting and setting.chatbot_persona else "You are a helpful and polite university staff assistant for University of Phayao (UP Connect)."
+    persona = setting.chatbot_persona if setting and setting.chatbot_persona else "คุณคือผู้ช่วย AI UP Connect ประจำมหาวิทยาลัยพะเยา ที่เป็นมิตร สุภาพ มีไหวพริบ คอยแนะนำเส้นทาง สถานที่ และช่วยรับเรื่องแจ้งปัญหา"
     
     system_prompt = f"""{persona}
-คุณคือผู้ช่วยปัญญาประดิษฐ์ระบบ UP Connect ของมหาวิทยาลัยพะเยา
+คุณคือผู้ช่วยปัญญาประดิษฐ์ระบบ UP Connect ของมหาวิทยาลัยพะเยา (University of Phayao)
 
-**คู่มือตำแหน่งสถานที่จริงในมหาวิทยาลัยพะเยา (Official Location Guide):**
-1. **อาคารสงวนเสริมศรี (สงวน / ตึกสงวน)**: ตั้งอยู่ตรงบริเวณ **ประตู 2 มหาวิทยาลัยพะเยา** และอยู่ใกล้กับ **โรงเรียนสาธิตมหาวิทยาลัยพะเยา** สามารถเดินทางด้วยรถเมล์ มพ. สาย 1 หรือ สาย 2 มาลงบริเวณประตู 2 / หน้าอาคารสงวนเสริมศรี ได้เลย (⚠️ อาคารสงวนเสริมศรี อยู่ตรงประตู 2 ใกล้โรงเรียนสาธิตฯ ไม่ใช่ตึก ICT และไม่อยู่ใกล้ตึกอธิการบดี)
-2. **คณะเทคโนโลยีสารสนเทศและการสื่อสาร (ตึก ICT / ไอซีที)**: ตั้งอยู่โซนใจกลาง มพ.
-3. **โรงเรียนสาธิตมหาวิทยาลัยพะเยา**: ตั้งอยู่ใกล้กับอาคารสงวนเสริมศรี บริเวณประตู 2
-4. **อาคารสำนักงานอธิการบดี**: ตั้งอยู่โซนบริหาร ใกล้กับหอประชุมพญางำเมือง
+**คู่มือผังแนะนำสถานที่ 29 จุดในมหาวิทยาลัยพะเยา (Official 29 UP Campus Map Guide):**
+1. คณะเทคโนโลยีสารสนเทศและการสื่อสาร (ตึก ICT / ไอซีที) - โซนใจกลาง มพ.
+2. หอประชุมพญางำเมือง - โซนบริหาร
+3. อาคารสำนักงานอธิการบดี - โซนบริหาร
+4. ศูนย์การแพทย์และโรงพยาบาล มหาวิทยาลัยพะเยา - โซนหน้า มพ.
+5. คณะทันตแพทยศาสตร์
+6. คณะพลังงานและสิ่งแวดล้อม
+7. คณะวิศวกรรมศาสตร์
+8. คณะสหเวชศาสตร์
+9. คณะเภสัชศาสตร์
+10. คณะสถาปัตยกรรมศาสตร์และศิลปกรรมศาสตร์
+11. คณะเกษตรศาสตร์และทรัพยากรธรรมชาติ
+12. คณะแพทยศาสตร์
+13. คณะพยาบาลศาสตร์
+14. คณะวิทยาศาสตร์ (ตึกวิทย์ / อาคารเรียนรวม / ตึกรวม / อาคารบรรยายรวม) - โซนศูนย์กลาง ใกล้อาคารเรียนรวมและอาคารบรรยายรวม
+15. คณะวิทยาศาสตร์การแพทย์
+16. คณะศิลปศาสตร์
+17. ศูนย์บรรณสารและการเรียนรู้ (หอสมุด)
+18. อาคาร 99 ปี พระอุบาลีคุณูปมาจารย์
+19. คณะนิติศาสตร์
+20. คณะวิทยาการจัดการและสารสนเทศศาสตร์
+21. วิทยาลัยการศึกษา
+22. ศูนย์หนังสืออุบลพัธ
+23. คณะรัฐศาสตร์และสังคมศาสตร์
+24. หอนิสิต UP Dorm
+25. หอนิสิต (บพ. 1-18)
+26. สนามกีฬา
+27. อาคารสงวนเสริมศรี (ประตู 2 / ที่ส่งเอกสาร) - บริเวณประตู 2 ใกล้โรงเรียนสาธิตฯ
+28. โรงเรียนสาธิตมหาวิทยาลัยพะเยา - บริเวณประตู 2
+29. พระพุทธภุชการักษ์
 
-**การจำแนกประเภทและตอบคำถาม (Inquiry vs Problem Report):**
-- **หากผู้ใช้ถามสถานที่ / เส้นทาง / การไปส่งเอกสาร (FAQ / Inquiry)**:
-  - ตอบคำถามและบอกทางอย่างถูกต้องแม่นยำภาษาไทยตามคู่มือด้านบน
-  - ตั้งค่า `"is_inquiry": true` และ `"is_complete": true` เพื่อให้ระบบถือว่าเป็นคำถาม FAQ ที่ AI สามารถตอบเสร็จงานได้เลยอัตโนมัติ (Auto-Resolved) โดยไม่ต้องส่งต่อเป็นภาระงานให้ Admin
-- **หากผู้ใช้แจ้งปัญหา/เหตุชำรุด (Problem Report)**:
-  - ตั้งค่า `"is_inquiry": false` และสรุปข้อมูลเรื่องร้องเรียนเข้าแบบฟอร์ม
+**การจำแนกประเภทและการตอบคำถาม:**
+- **หากผู้ใช้ถามสถานที่ / เส้นทาง / การไปส่งเอกสาร / ถามหาตึก อาคาร คณะ / ถามว่าตึกรวม, ตึกวิทย์, ตึกสงวน ไปทางไหน (FAQ / Inquiry)**:
+  - ตอบคำถามและแนะนำเส้นทางอย่างเป็นมิตร สุภาพ เป็นธรรมชาติ ละเอียด และแม่นยำภาษาไทยตามคู่มือด้านบน (ระบุหมายเลขบนแผนผัง สายรถเมล์ มพ. สาย 1 หรือ สาย 2 และจุดลงรถ)
+  - ตั้งค่า `"is_inquiry": true` และ `"is_complete": true`
+- **หากผู้ใช้แจ้งปัญหา/เหตุชำรุด/ร้องเรียน (Problem Report)**:
+  - ถามข้อมูลเพิ่มกรณีข้อมูลยังไม่ครบ หรือสรุปข้อมูลเข้าแบบฟอร์มกรณีข้อมูลครบถ้วน
+  - ตั้งค่า `"is_inquiry": false`
 
 Respond STRICTLY with a valid JSON object:
 {{
   "is_complete": boolean,
   "is_inquiry": boolean,
-  "reply": "string (คำตอบแนะนำเส้นทาง/สถานที่อย่างถูกต้องชัดเจน หรือคำขอบคุณสรุปข้อมูล)",
+  "reply": "string (คำตอบภาษาไทยที่เป็นมิตร สุภาพ ชัดเจน ละเอียด และแนะนำเส้นทางพร้อมระบุหมายเลขสถานที่บนผังแผนที่ 29 จุดได้เป็นธรรมชาติ)",
   "extracted_data": {{
-    "title": "string (หัวข้อเรื่อง)",
-    "description": "string (รายละเอียด)",
-    "category_name": "string (หมวดหมู่ปัญหา)",
-    "location": "string (สถานที่เกิดเหตุเจาะจง เช่น อาคารสงวนเสริมศรี)"
+    "title": "string (หัวข้อเรื่องหรือคำถาม)",
+    "description": "string (รายละเอียดเรื่องหรือคำถาม)",
+    "category_name": "string (หมวดหมู่ปัญหา เช่น การเดินทาง / รถเมล์มพ. หรือ อาคารสถานที่)",
+    "location": "string (สถานที่เจาะจง เช่น คณะวิทยาศาสตร์)"
   }}
 }}"""
 
@@ -650,7 +691,7 @@ Respond STRICTLY with a valid JSON object:
             
         parsed_data = json.loads(content)
         
-        # New: Use Location Pipeline if complete
+        # Location Pipeline & Category Suggestion
         if parsed_data.get("extracted_data"):
             ext = parsed_data["extracted_data"]
             loc_str = ext.get("location", "")
@@ -662,7 +703,6 @@ Respond STRICTLY with a valid JSON object:
                 ext["location_confidence"] = loc_data.get("confidence", 0.0)
                 ext["needs_location_confirmation"] = loc_data.get("needs_confirmation", False)
 
-            # Auto-suggest category using UP Category Classifier
             desc_text = f"{ext.get('title', '')} {ext.get('description', '')} {loc_str}"
             try:
                 from app.database import SessionLocal
@@ -680,15 +720,31 @@ Respond STRICTLY with a valid JSON object:
             except Exception as cat_err:
                 logger.error(f"Error suggesting category in chat: {cat_err}")
 
+        # Always resolve map image for location inquiries or extracted locations
+        ext = parsed_data.get("extracted_data") or {}
+        extracted_loc = ext.get("location", "")
+        reply_text = parsed_data.get("reply", "")
+        
+        map_img = resolve_map_image(combined_user_text + " " + reply_text, extracted_loc)
+        if map_img or parsed_data.get("is_inquiry"):
+            map_img_url = map_img or "/static/campus_map.jpg"
+            parsed_data["map_image"] = map_img_url
+            if "extracted_data" in parsed_data and parsed_data["extracted_data"]:
+                parsed_data["extracted_data"]["map_image"] = map_img_url
+
         return parsed_data
         
     except Exception as e:
         logger.error(f"Error in handle_chat_report: {e}")
-        return {
+        map_img = resolve_map_image(combined_user_text)
+        fallback_res = {
             "is_complete": False,
-            "reply": "ขออภัยครับ ระบบ AI เกิดข้อผิดพลาด ไม่สามารถประมวลผลได้ในขณะนี้",
+            "reply": "ขออภัยครับ ระบบเกิดข้อผิดพลาดในการประมวลผล แต่ได้พยายามค้นหาข้อมูลสถานที่ให้ท่านเรียบร้อยแล้ว",
             "extracted_data": None
         }
+        if map_img:
+            fallback_res["map_image"] = map_img
+        return fallback_res
 
 def expand_description(text: str) -> str:
     """

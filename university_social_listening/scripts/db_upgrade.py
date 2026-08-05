@@ -16,7 +16,12 @@ def run_upgrade():
         "ALTER TABLE problems ADD COLUMN parent_problem_id INT NULL;",
         "ALTER TABLE problems ADD CONSTRAINT fk_problems_parent FOREIGN KEY (parent_problem_id) REFERENCES problems(problem_id);",
         "ALTER TABLE problems ADD COLUMN is_hidden BOOLEAN DEFAULT 0;",
-        "ALTER TABLE problems ADD COLUMN sla_due_date DATETIME NULL;"
+        "ALTER TABLE problems ADD COLUMN sla_due_date DATETIME NULL;",
+        
+        # LLM Settings table
+        "ALTER TABLE llm_settings ADD COLUMN is_auto_map_enabled BOOLEAN DEFAULT 1;",
+        "ALTER TABLE llm_settings ADD COLUMN map_trigger_keywords JSON NULL;",
+        "ALTER TABLE llm_settings ADD COLUMN default_map_image_url VARCHAR(255) DEFAULT '/static/campus_map.jpg';"
     ]
 
     with engine.connect() as conn:

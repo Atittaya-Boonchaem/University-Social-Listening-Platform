@@ -1,7 +1,6 @@
-// src/pages/super-admin/LLMSettings.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { fetchLLMSettings, updateLLMSettings } from '../../services/llmSettingService';
-import { Bot, Plus, Trash2, Save, AlertTriangle, Info, Sliders, Zap, CheckCircle2, MessageSquare, ShieldAlert } from 'lucide-react';
+import { Bot, Plus, Trash2, Save, AlertTriangle, Info, Sliders, Zap, CheckCircle2, MessageSquare, ShieldAlert, MapPin, Compass } from 'lucide-react';
 
 // ── Default empty state ─────────────────────────────────────────
 const DEFAULT_SETTINGS = {
@@ -15,20 +14,27 @@ const DEFAULT_SETTINGS = {
   chatbot_persona: '',
   chatbot_opening_message: '',
   chatbot_questions: [],
+  is_auto_map_enabled: true,
+  map_trigger_keywords: [],
+  default_map_image_url: '/static/campus_map.jpg',
 };
 
 // ── Tag pill for Chatbot Questions ─────────────────────────────
-const WordTag = ({ word, onRemove }) => (
-  <span className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg shadow-sm border bg-emerald-50 border-emerald-100 text-emerald-700">
-    {word}
-    <button
-      onClick={() => onRemove(word)}
-      className="transition-colors text-emerald-400 hover:text-emerald-700"
-    >
-      <Trash2 size={11} />
-    </button>
-  </span>
-);
+const WordTag = ({ word, onRemove, colorScheme = 'emerald' }) => {
+  const bgClass = colorScheme === 'blue' ? 'bg-blue-50 border-blue-100 text-blue-700' : 'bg-emerald-50 border-emerald-100 text-emerald-700';
+  const textClass = colorScheme === 'blue' ? 'text-blue-400 hover:text-blue-700' : 'text-emerald-400 hover:text-emerald-700';
+  return (
+    <span className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg shadow-sm border ${bgClass}`}>
+      {word}
+      <button
+        onClick={() => onRemove(word)}
+        className={`transition-colors ${textClass}`}
+      >
+        <Trash2 size={11} />
+      </button>
+    </span>
+  );
+};
 
 // ── Toggle switch ──────────────────────────────────────────────
 const Toggle = ({ id, checked, onChange, label, sub }) => (
@@ -129,6 +135,7 @@ const LLMSettings = () => {
   const [activeTab, setActiveTab] = useState('chatbot');
   
   const [newQuestion, setNewQuestion] = useState('');
+  const [newMapKeyword, setNewMapKeyword] = useState('');
   const [ruleType, setRuleType] = useState('WORD');
   const [newRuleValue, setNewRuleValue] = useState('');
 
@@ -157,6 +164,9 @@ const LLMSettings = () => {
           chatbot_persona: data.chatbot_persona || '',
           chatbot_opening_message: data.chatbot_opening_message || '',
           chatbot_questions: data.chatbot_questions || [],
+          is_auto_map_enabled: data.is_auto_map_enabled ?? true,
+          map_trigger_keywords: data.map_trigger_keywords || [],
+          default_map_image_url: data.default_map_image_url || '/static/campus_map.jpg',
         });
       }
     } catch (e) {
@@ -177,6 +187,17 @@ const LLMSettings = () => {
   };
   const removeQuestion = (q) => {
     setSettings((s) => ({ ...s, chatbot_questions: s.chatbot_questions.filter((item) => item !== q) }));
+  };
+
+  // Map Keyword Handlers
+  const addMapKeyword = () => {
+    const kw = newMapKeyword.trim();
+    if (!kw || (settings.map_trigger_keywords && settings.map_trigger_keywords.includes(kw))) return;
+    setSettings((s) => ({ ...s, map_trigger_keywords: [...(s.map_trigger_keywords || []), kw] }));
+    setNewMapKeyword('');
+  };
+  const removeMapKeyword = (kw) => {
+    setSettings((s) => ({ ...s, map_trigger_keywords: (s.map_trigger_keywords || []).filter((item) => item !== kw) }));
   };
 
   // Rule Handlers
@@ -218,6 +239,7 @@ const LLMSettings = () => {
         banned_words: data.banned_words || [],
         banned_patterns: data.banned_patterns || [],
         chatbot_questions: data.chatbot_questions || [],
+        map_trigger_keywords: data.map_trigger_keywords || [],
       });
       showToast('AI Configuration saved successfully!');
     } catch (e) {
@@ -274,6 +296,12 @@ const LLMSettings = () => {
             className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-colors ${activeTab === 'chatbot' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
             <MessageSquare size={18} /> Chatbot Config
+          </button>
+          <button
+            onClick={() => setActiveTab('map')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-colors ${activeTab === 'map' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+          >
+            <MapPin size={18} /> Map & Location Config
           </button>
           <button
             onClick={() => setActiveTab('rules')}
@@ -367,6 +395,72 @@ const LLMSettings = () => {
                       className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 text-white text-sm font-semibold hover:bg-slate-900 transition-colors shadow-sm"
                     >
                       <Plus size={15} /> Add Question
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: Map & Location Config */}
+          {activeTab === 'map' && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6 animate-[pageFadeIn_0.2s_ease]">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                <MapPin size={18} className="text-blue-500" />
+                <h3 className="text-base font-bold text-slate-800">Map & Location Response Configuration</h3>
+              </div>
+
+              <div className="space-y-5">
+                <Toggle
+                  id="toggle-auto-map"
+                  checked={settings.is_auto_map_enabled}
+                  onChange={(v) => setSettings((s) => ({ ...s, is_auto_map_enabled: v }))}
+                  label="Enable Auto Map Image Response (เปิดใช้งานแนบรูปแผนที่ มพ. อัตโนมัติ)"
+                  sub="เมื่อผู้ใช้งานถามหาตึก อาคาร คณะ หรือสอบถามเส้นทาง AI จะแนบรูปภาพแผนที่มหาวิทยาลัยพะเยาให้อัตโนมัติ"
+                />
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Default Map Image URL (ที่อยู่ไฟล์ภาพผังแนะนำสถานที่)
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.default_map_image_url || ''}
+                    onChange={(e) => setSettings((s) => ({ ...s, default_map_image_url: e.target.value }))}
+                    placeholder="/static/campus_map.jpg"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 transition-shadow bg-slate-50 font-mono"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    ที่อยู่ไฟล์ภาพแผนที่ มพ. ในโฟลเดอร์ static (เช่น <code className="bg-slate-100 px-1 rounded text-slate-700">/static/campus_map.jpg</code>)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Map Trigger Keywords (คีย์เวิร์ดกระตุ้นการส่งรูปแผนที่)
+                  </label>
+                  <div className="flex flex-wrap gap-2 mb-3 min-h-[44px] p-3 bg-slate-50 rounded-xl border border-slate-200 shadow-inner">
+                    {(!settings.map_trigger_keywords || settings.map_trigger_keywords.length === 0)
+                      ? <p className="text-xs text-slate-400 self-center w-full text-center">No map trigger keywords configured yet</p>
+                      : settings.map_trigger_keywords.map((kw) => (
+                          <WordTag key={kw} word={kw} onRemove={removeMapKeyword} colorScheme="blue" />
+                        ))
+                    }
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="e.g. ตึกรวม, อาคารเรียนรวม, ตึกวิทย์, ตึกสงวน"
+                      value={newMapKeyword}
+                      onChange={(e) => setNewMapKeyword(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addMapKeyword())}
+                      className="flex-1 px-4 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 transition-shadow bg-white"
+                    />
+                    <button
+                      onClick={addMapKeyword}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+                    >
+                      <Plus size={15} /> Add Keyword
                     </button>
                   </div>
                 </div>

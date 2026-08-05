@@ -240,11 +240,13 @@ export default function ReportProblem({
   };
 
   const handleAiChatComplete = (data: any) => {
-    if (data.description && data.description.trim()) {
-      setDescription(data.description);
-    }
-    if (data.title && data.title.trim()) {
-      setTitle(data.title);
+    if (!data.is_inquiry) {
+      if (data.description && data.description.trim()) {
+        setDescription(data.description);
+      }
+      if (data.title && data.title.trim()) {
+        setTitle(data.title);
+      }
     }
     if (data.category_id) {
       setSelectedCategory(String(data.category_id));

@@ -430,6 +430,11 @@ class LLMSetting(Base):
     chatbot_persona = Column(Text, nullable=True)
     chatbot_questions = Column(JSON, nullable=True)
     chatbot_opening_message = Column(Text, nullable=True)
+    
+    # Map Response Configuration
+    is_auto_map_enabled = Column(Boolean, default=True)
+    map_trigger_keywords = Column(JSON, nullable=True)
+    default_map_image_url = Column(String(255), default="/static/campus_map.jpg")
 
     updated_by = Column(Integer, ForeignKey("users.user_id"), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

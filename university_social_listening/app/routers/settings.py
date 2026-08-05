@@ -11,8 +11,21 @@ from pydantic import BaseModel
 
 class PublicLLMSettingResponse(BaseModel):
     chatbot_opening_message: str
+    is_auto_map_enabled: bool = True
+    map_trigger_keywords: list = []
+    default_map_image_url: str = "/static/campus_map.jpg"
 
 router = APIRouter()
+
+DEFAULT_MAP_KEYWORDS = [
+    "อยู่ไหน", "อยู่ตรงไหน", "ไปยังไง", "ไปยังไงได้บ้าง", "ตั้งอยู่ตรงไหน", 
+    "ไปอย่างไร", "ทางไหน", "ที่ไหน", "เส้นทาง", "ลงตรงไหน", "ขึ้นรถตรงไหน", 
+    "ประตู", "ตึก", "อาคาร", "คณะ", "หอพัก", "แผนผัง", "แผนที่", "ส่งเอกสาร",
+    "สงวน", "ict", "ไอซีที", "สาธิต", "อธิการ", "พญางำเมือง", "วิทย์", "วิศวะ",
+    "พยาบาล", "เภสัช", "แพทยศาสตร์", "นิติ", "ศิลปศาสตร์", "วิทยาการจัดการ",
+    "สหเวช", "ทันตะ", "เกษตร", "ศูนย์การแพทย์", "รพ.มพ", "หอสมุด", "อุบาลี",
+    "ตึกรวม", "อาคารเรียนรวม", "เรียนรวม", "อาคารบรรยายรวม", "ce", "ub", "pk"
+]
 
 @router.get("/categories", response_model=StandardResponse)
 def get_settings_categories(db: Session = Depends(get_db)):
@@ -29,13 +42,29 @@ def get_settings_categories(db: Session = Depends(get_db)):
 def get_public_llm_settings(db: Session = Depends(get_db)):
     setting = db.query(LLMSetting).first()
     opening_msg = "สวัสดีครับ มีปัญหาหรือข้อร้องเรียนอะไร แจ้งผมได้เลยครับ"
-    if setting and setting.chatbot_opening_message:
-        opening_msg = setting.chatbot_opening_message
+    is_map_enabled = True
+    map_keywords = DEFAULT_MAP_KEYWORDS
+    map_img_url = "/static/campus_map.jpg"
+    
+    if setting:
+        if setting.chatbot_opening_message:
+            opening_msg = setting.chatbot_opening_message
+        if setting.is_auto_map_enabled is not None:
+            is_map_enabled = setting.is_auto_map_enabled
+        if setting.map_trigger_keywords:
+            map_keywords = setting.map_trigger_keywords
+        if setting.default_map_image_url:
+            map_img_url = setting.default_map_image_url
         
     return StandardResponse(
         success=True,
         message="Public LLM settings retrieved",
-        data={"item": {"chatbot_opening_message": opening_msg}}
+        data={"item": {
+            "chatbot_opening_message": opening_msg,
+            "is_auto_map_enabled": is_map_enabled,
+            "map_trigger_keywords": map_keywords,
+            "default_map_image_url": map_img_url
+        }}
     )
 
 @router.get("/llm-settings", response_model=StandardResponse)
@@ -58,7 +87,10 @@ def get_llm_settings(
             max_warnings_before_ban=1,
             chatbot_persona="You are a helpful and polite university staff assistant. Your goal is to gather information about a problem or issue the user wants to report.",
             chatbot_questions=["The exact problem details (What happened? What is broken?)", "The location (Which building? Which room or area?)"],
-            chatbot_opening_message="สวัสดีครับ มีปัญหาหรือข้อร้องเรียนอะไร แจ้งผมได้เลยครับ (เช่น \"แอร์เสียที่ห้องเรียน\")"
+            chatbot_opening_message="สวัสดีครับ มีปัญหาหรือข้อร้องเรียนอะไร แจ้งผมได้เลยครับ (เช่น \"แอร์เสียที่ห้องเรียน\")",
+            is_auto_map_enabled=True,
+            map_trigger_keywords=DEFAULT_MAP_KEYWORDS,
+            default_map_image_url="/static/campus_map.jpg"
         )
         db.add(setting)
         db.commit()
@@ -70,6 +102,11 @@ def get_llm_settings(
     data["banned_words"] = data.get("banned_words") or []
     data["banned_patterns"] = data.get("banned_patterns") or []
     data["chatbot_questions"] = data.get("chatbot_questions") or []
+    data["map_trigger_keywords"] = data.get("map_trigger_keywords") or DEFAULT_MAP_KEYWORDS
+    if data.get("is_auto_map_enabled") is None:
+        data["is_auto_map_enabled"] = True
+    if not data.get("default_map_image_url"):
+        data["default_map_image_url"] = "/static/campus_map.jpg"
 
     return StandardResponse(
         success=True,
@@ -101,7 +138,10 @@ def update_llm_settings(
         "max_warnings_before_ban": setting.max_warnings_before_ban,
         "chatbot_persona": setting.chatbot_persona,
         "chatbot_questions": setting.chatbot_questions,
-        "chatbot_opening_message": setting.chatbot_opening_message
+        "chatbot_opening_message": setting.chatbot_opening_message,
+        "is_auto_map_enabled": setting.is_auto_map_enabled,
+        "map_trigger_keywords": setting.map_trigger_keywords,
+        "default_map_image_url": setting.default_map_image_url
     }
     
     new_value_audit = {}
@@ -130,6 +170,11 @@ def update_llm_settings(
     data["banned_words"] = data.get("banned_words") or []
     data["banned_patterns"] = data.get("banned_patterns") or []
     data["chatbot_questions"] = data.get("chatbot_questions") or []
+    data["map_trigger_keywords"] = data.get("map_trigger_keywords") or DEFAULT_MAP_KEYWORDS
+    if data.get("is_auto_map_enabled") is None:
+        data["is_auto_map_enabled"] = True
+    if not data.get("default_map_image_url"):
+        data["default_map_image_url"] = "/static/campus_map.jpg"
 
     return StandardResponse(
         success=True,
