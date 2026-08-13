@@ -149,10 +149,21 @@ export default function RegisterPage() {
       }
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        console.error("FastAPI Error Detail:", err.response?.data?.detail || err.response?.data);
-        if (err.response?.data?.detail) {
-          const detail = err.response.data.detail;
+        console.error("FastAPI Error Detail:", err.response?.data);
+        const data = err.response?.data;
+        if (data?.detail) {
+          const detail = data.detail;
           setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        } else if (data?.message) {
+          if (data.message === "User with this email already exists.") {
+            setError("อีเมลของคำเชิญนี้ถูกนำไปลงทะเบียนในระบบเรียบร้อยแล้ว กรุณาไปที่หน้าเข้าสู่ระบบ");
+          } else if (data.message === "Invalid or expired invitation token.") {
+            setError("ลิงก์คำเชิญสมัครสมาชิกไม่ถูกต้องหรือหมดอายุแล้ว");
+          } else if (data.message === "Invitation has already been accepted or revoked.") {
+            setError("คำเชิญสมัครสมาชิกนี้ถูกใช้งานหรือถูกยกเลิกไปแล้ว");
+          } else {
+            setError(data.message);
+          }
         } else {
           setError(err.message);
         }
