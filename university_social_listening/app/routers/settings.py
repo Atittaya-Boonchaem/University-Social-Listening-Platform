@@ -136,6 +136,7 @@ def get_llm_settings(
         "is_auto_map_enabled": getattr(setting, "is_auto_map_enabled", True) if getattr(setting, "is_auto_map_enabled", True) is not None else True,
         "map_trigger_keywords": getattr(setting, "map_trigger_keywords", DEFAULT_MAP_KEYWORDS) or DEFAULT_MAP_KEYWORDS,
         "default_map_image_url": getattr(setting, "default_map_image_url", "/static/campus_map.jpg") or "/static/campus_map.jpg",
+        "category_prompt_rules": getattr(setting, "category_prompt_rules", []) or [],
         "updated_at": getattr(setting, "updated_at", None)
     }
 
@@ -174,7 +175,8 @@ def update_llm_settings(
         "chatbot_opening_message": setting.chatbot_opening_message,
         "is_auto_map_enabled": setting.is_auto_map_enabled,
         "map_trigger_keywords": setting.map_trigger_keywords,
-        "default_map_image_url": setting.default_map_image_url
+        "default_map_image_url": setting.default_map_image_url,
+        "category_prompt_rules": setting.category_prompt_rules
     }
     
     new_value_audit = {}
@@ -214,6 +216,7 @@ def update_llm_settings(
         "is_auto_map_enabled": setting.is_auto_map_enabled if setting.is_auto_map_enabled is not None else True,
         "map_trigger_keywords": setting.map_trigger_keywords or DEFAULT_MAP_KEYWORDS,
         "default_map_image_url": setting.default_map_image_url or "/static/campus_map.jpg",
+        "category_prompt_rules": setting.category_prompt_rules or [],
         "updated_at": setting.updated_at
     }
 
@@ -260,3 +263,111 @@ async def upload_map_image(
         message="Map image uploaded successfully",
         data={"url": map_url}
     )
+
+
+@router.post("/upload-rule-image", response_model=StandardResponse)
+async def upload_rule_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_super_admin(current_user, db)
+    
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only image files are allowed")
+
+    ext = os.path.splitext(file.filename)[1] or ".jpg"
+    filename = f"rule_img_{uuid.uuid4().hex[:8]}{ext}"
+    upload_dir = "./uploads/images"
+    os.makedirs(upload_dir, exist_ok=True)
+    file_path = os.path.join(upload_dir, filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    image_url = f"/uploads/images/{filename}"
+
+    return StandardResponse(
+        success=True,
+        message="Rule image uploaded successfully",
+        data={"url": image_url}
+    )
+
+
+@router.get("/ai-model-metrics", response_model=StandardResponse)
+def get_ai_model_metrics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Returns AI model classification accuracy, evaluation metrics, and confusion matrix for Super Admin.
+    """
+    require_super_admin(current_user, db)
+    metrics_path = os.path.join(os.path.dirname(__file__), "..", "..", "ai_data", "models", "evaluation_metrics.json")
+    
+    if not os.path.exists(metrics_path):
+        return StandardResponse(
+            success=True,
+            message="Model metrics not yet generated. Train model first.",
+            data={
+                "accuracy": 0.0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1_score": 0.0,
+                "total_samples": 0,
+                "last_trained_at": "Never",
+                "confusion_matrix": []
+            }
+        )
+
+    try:
+        import json
+        with open(metrics_path, "r", encoding="utf-8") as f:
+            metrics_data = json.load(f)
+
+        return StandardResponse(
+            success=True,
+            message="Model metrics retrieved successfully",
+            data=metrics_data
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Failed to load metrics: {str(e)}")
+
+
+@router.post("/retrain-category-model", response_model=StandardResponse)
+def retrain_category_model(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Triggers local ML Model training (PyThaiNLP + TF-IDF + Classifier) and saves new evaluation metrics.
+    """
+    require_super_admin(current_user, db)
+    try:
+        from scripts.train_category_model import train_and_evaluate
+        metrics = train_and_evaluate()
+        if not metrics:
+            raise HTTPException(500, "Model training failed due to insufficient dataset.")
+
+        # Log audit trail
+        try:
+            audit = AuditLog(
+                user_id=current_user.user_id,
+                action_type="RETRAIN_AI_MODEL",
+                table_name="ai_models",
+                record_id=1,
+                details=f"Retrained custom ML model. New Accuracy: {metrics.get('accuracy')}%",
+                ip_address="127.0.0.1"
+            )
+            db.add(audit)
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        return StandardResponse(
+            success=True,
+            message=f"Model retrained successfully! Accuracy: {metrics.get('accuracy')}%",
+            data=metrics
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Error retraining model: {str(e)}")

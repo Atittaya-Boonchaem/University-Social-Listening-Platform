@@ -172,6 +172,7 @@ export default function ReportProblem({
   const [isAiExpanding, setIsAiExpanding] = useState(false);
   const [isUserManualCategory, setIsUserManualCategory] = useState(false);
   const [customBuildingName, setCustomBuildingName] = useState('');
+  const [isDescriptionEditable, setIsDescriptionEditable] = useState(false);
 
   // ── Auto AI Category Selection in background when typing description ──
   useEffect(() => {
@@ -745,21 +746,40 @@ export default function ReportProblem({
               <div className="space-y-2">
                 <div className="flex justify-between items-end">
                   <label className="block font-label-md text-label-md text-on-surface-variant font-bold">รายละเอียดปัญหา <span className="text-error">*</span></label>
-                  <button type="button" onClick={handleAiExpand} disabled={isAiExpanding} className="text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-full transition-colors flex items-center gap-1 disabled:opacity-50">
-                    {isAiExpanding ? <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span> : '🪄'}
-                    {isAiExpanding ? 'กำลังเขียน...' : 'ให้ AI ช่วยเขียน'}
+                  <button
+                    type="button"
+                    onClick={() => setIsDescriptionEditable((prev) => !prev)}
+                    className={`text-xs font-bold px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 shadow-sm ${
+                      isDescriptionEditable
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
+                        : 'bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[14px]">
+                      {isDescriptionEditable ? 'check_circle' : 'edit'}
+                    </span>
+                    {isDescriptionEditable ? 'บันทึกการแก้ไข' : 'แก้ไข'}
                   </button>
                 </div>
                 <textarea
-                  className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-xl font-body-md text-body-md p-4 transition-all min-h-[140px] resize-none outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="ระบุรายละเอียดเพิ่มเติมเพื่อช่วยให้เจ้าหน้าที่เข้าใจสถานการณ์ได้ดีขึ้น... (อย่างน้อย 10 ตัวอักษร)"
+                  className={`w-full border rounded-xl font-body-md text-body-md p-4 transition-all min-h-[140px] resize-none outline-none ${
+                    isDescriptionEditable
+                      ? 'bg-surface border-primary focus:ring-2 focus:ring-primary/20'
+                      : 'bg-surface-container-low border-outline-variant/60 text-on-surface-variant cursor-not-allowed opacity-90'
+                  }`}
+                  placeholder="รายละเอียดปัญหาจะถูกสรุปให้อัตโนมัติเมื่อพูดคุยกับ AI แชทด้านบน (หรือกดปุ่ม 'แก้ไข' เพื่อพิมพ์ปรับเปลี่ยนเอง)..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !isDescriptionEditable}
                   maxLength={2000}
                 />
                 <div className="flex justify-between items-center mt-1">
-                  <div className="flex items-center h-5">
+                  <div className="text-xs text-outline">
+                    {!isDescriptionEditable && description && (
+                      <span className="text-primary font-medium flex items-center gap-1">
+                        <span>✨</span> เติมข้อมูลจาก AI แชทให้อัตโนมัติแล้ว (กดปุ่ม 'แก้ไข' ด้านบนหากต้องการปรับแต่ง)
+                      </span>
+                    )}
                   </div>
                   <div className="text-[11px] text-outline text-right">{description.length}/2000</div>
                 </div>
@@ -768,7 +788,7 @@ export default function ReportProblem({
               {/* Image Upload */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <label className="block font-label-md text-label-md text-on-surface-variant font-bold">หลักฐานรูปภาพ <span className="text-outline font-normal">(สูงสุด 1 รูป)</span></label>
+                  <label className="block font-label-md text-label-md text-on-surface-variant font-bold">หลักฐานรูปภาพ <span className="text-outline font-normal">(ถ้ามี)</span></label>
                   {images.length > 0 && <span className="text-[11px] text-outline font-medium">{images.length}/1</span>}
                 </div>
                 

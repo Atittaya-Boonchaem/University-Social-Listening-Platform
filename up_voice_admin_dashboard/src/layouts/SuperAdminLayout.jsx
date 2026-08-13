@@ -250,7 +250,7 @@ const SuperAdminLayout = () => {
           collapsed ? 'pl-[68px]' : 'pl-64'
         }`}
       >
-        <div className="p-6 page-enter">
+        <div className="p-6 w-full page-enter">
           <Outlet />
         </div>
       </main>

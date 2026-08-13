@@ -20,7 +20,8 @@ def run_upgrade():
         # LLM Settings table
         "ALTER TABLE llm_settings ADD COLUMN is_auto_map_enabled BOOLEAN DEFAULT 1;",
         "ALTER TABLE llm_settings ADD COLUMN map_trigger_keywords JSON NULL;",
-        "ALTER TABLE llm_settings ADD COLUMN default_map_image_url VARCHAR(255) DEFAULT '/static/campus_map.jpg';"
+        "ALTER TABLE llm_settings ADD COLUMN default_map_image_url VARCHAR(255) DEFAULT '/static/campus_map.jpg';",
+        "ALTER TABLE llm_settings ADD COLUMN category_prompt_rules JSON NULL;"
     ]
 
     with engine.connect() as conn:

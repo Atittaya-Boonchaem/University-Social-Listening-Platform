@@ -3,7 +3,7 @@
 Pydantic v2 schemas for the 26-table University Social Listening Platform.
 """
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from datetime import datetime, date
 
 
@@ -435,6 +435,8 @@ class LLMSettingUpdate(BaseModel):
     map_trigger_keywords: Optional[List[str]] = None
     default_map_image_url: Optional[str] = None
 
+    category_prompt_rules: Optional[List[Dict[str, Any]]] = None
+
 
 class LLMSettingResponse(BaseModel):
     setting_id: int
@@ -452,6 +454,7 @@ class LLMSettingResponse(BaseModel):
     is_auto_map_enabled: Optional[bool] = True
     map_trigger_keywords: Optional[List[str]] = None
     default_map_image_url: Optional[str] = "/static/campus_map.jpg"
+    category_prompt_rules: Optional[List[Dict[str, Any]]] = None
     updated_at: Optional[datetime] = None
 
     class Config:

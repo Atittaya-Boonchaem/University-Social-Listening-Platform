@@ -70,6 +70,7 @@ interface AIExtractedData {
   location_confidence?: number;
   needs_location_confirmation?: boolean;
   map_image?: string;
+  rule_image?: string;
 }
 
 interface AIChatResponseData {
@@ -78,6 +79,7 @@ interface AIChatResponseData {
   is_complete?: boolean;
   is_inquiry?: boolean;
   map_image?: string;
+  rule_image?: string;
   extracted_data?: AIExtractedData;
 }
 
@@ -103,40 +105,41 @@ interface AIChatWidgetProps {
   onComplete: (data: AICompletionData) => void;
 }
 
-const isLocationQuery = (text: string, customKeywords?: string[]) => {
-  const lower = text.toLowerCase();
-  const validCustom = (customKeywords || []).filter(k => k && k.trim().length > 0);
-  const keywords = Array.from(new Set([...LOCATION_KEYWORDS, ...validCustom]));
-  return keywords.some(keyword => keyword && lower.includes(keyword.toLowerCase()));
-};
-
-const toAbsoluteUrl = (rawUrl?: string) => {
-  if (!rawUrl) return undefined;
-
-  if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
-    return rawUrl;
-  }
-
-  if (rawUrl.startsWith('/campus_map')) {
-    return rawUrl;
-  }
-
-  const apiRoot = API_BASE.replace(/\/api\/v1\/?$/, '');
-  return `${apiRoot}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
-};
-
 export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: 'กำลังโหลดข้อมูล...' }
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [completedData, setCompletedData] = useState<AICompletionData | null>(null);
   const [mapConfig, setMapConfig] = useState<{ is_auto_map_enabled: boolean; map_trigger_keywords: string[]; default_map_image_url: string }>({
     is_auto_map_enabled: true,
     map_trigger_keywords: LOCATION_KEYWORDS,
     default_map_image_url: CAMPUS_MAP_PATH
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const isLocationQuery = (text: string, customKeywords?: string[]) => {
+    const lower = text.toLowerCase();
+    const validCustom = (customKeywords || []).filter(k => k && k.trim().length > 0);
+    const keywords = Array.from(new Set([...LOCATION_KEYWORDS, ...validCustom]));
+    return keywords.some(keyword => keyword && lower.includes(keyword.toLowerCase()));
+  };
+
+  const toAbsoluteUrl = (rawUrl?: string) => {
+    if (!rawUrl) return undefined;
+
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      return rawUrl;
+    }
+
+    if (rawUrl.startsWith('/campus_map')) {
+      return rawUrl;
+    }
+
+    const apiRoot = API_BASE.replace(/\/api\/v1\/?$/, '');
+    return `${apiRoot}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+  };
 
   useEffect(() => {
     axios.get(`${API_BASE}/settings/public-llm-settings`)
@@ -146,7 +149,7 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
           if (item.chatbot_opening_message) {
             setMessages([{ role: 'assistant', content: item.chatbot_opening_message }]);
           } else {
-            setMessages([{ role: 'assistant', content: 'สวัสดีครับ มีปัญหาหรือข้อร้องเรียนอะไร แจ้งผมได้เลยครับ' }]);
+            setMessages([{ role: 'assistant', content: 'สวัสดีครับ ผมคือ AI ช่วยรวบรวมรายละเอียดปัญหา บอกปัญหาที่พบมาได้เลยครับ' }]);
           }
 
           setMapConfig({
@@ -155,12 +158,12 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
             default_map_image_url: item.default_map_image_url || CAMPUS_MAP_PATH
           });
         } else {
-          setMessages([{ role: 'assistant', content: 'สวัสดีครับ มีปัญหาหรือข้อร้องเรียนอะไร แจ้งผมได้เลยครับ' }]);
+          setMessages([{ role: 'assistant', content: 'สวัสดีครับ ผมคือ AI ช่วยรวบรวมรายละเอียดปัญหา บอกปัญหาที่พบมาได้เลยครับ' }]);
         }
       })
       .catch(err => {
         console.error('Failed to fetch public LLM settings', err);
-        setMessages([{ role: 'assistant', content: 'สวัสดีครับ มีปัญหาหรือข้อร้องเรียนอะไร แจ้งผมได้เลยครับ' }]);
+        setMessages([{ role: 'assistant', content: 'สวัสดีครับ ผมคือ AI ช่วยรวบรวมรายละเอียดปัญหา บอกปัญหาที่พบมาได้เลยครับ' }]);
       });
   }, []);
 
@@ -212,37 +215,16 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
         data.reply ||
         'ขอบคุณครับ ระบบได้รับข้อมูลแล้ว';
 
-      const combinedText = `${userText} ${replyText}`;
-      let rawImgUrl = data.map_image || data.extracted_data?.map_image;
-
-      const isLocationInquiry =
-        Boolean(rawImgUrl) ||
-        data.intent === 'location_inquiry' ||
-        data.is_inquiry === true ||
-        isLocationQuery(combinedText, mapConfig.map_trigger_keywords);
-
-      const locationIntent =
-        mapConfig.is_auto_map_enabled && isLocationInquiry;
-
-      if (!rawImgUrl && locationIntent) {
-        rawImgUrl = mapConfig.default_map_image_url || CAMPUS_MAP_PATH;
-      }
-
-      const imgUrl = locationIntent ? toAbsoluteUrl(rawImgUrl) : undefined;
-
       setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
           content: replyText,
-          image: imgUrl
         }
       ]);
 
       const extracted = data.extracted_data;
 
-      // Auto-fill logic:
-      // Trigger auto-fill whenever extracted data is present and it is a problem report or inquiry
       const isPureLocationInquiry =
         (data.intent === 'location_inquiry' || data.is_inquiry === true) &&
         !userText.includes('เสีย') &&
@@ -257,9 +239,15 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
         !userText.includes('รั่ว') &&
         !userText.includes('แจ้ง');
 
+      const isComplete =
+        data.is_complete === true ||
+        (data as any).ready_for_ticket === true ||
+        data.reply?.includes('ข้อมูลเพียงพอสำหรับสร้างรายละเอียด');
+
       const shouldAutofill =
         Boolean(extracted) &&
-        (!isPureLocationInquiry || Boolean(data.is_complete) || Boolean(extracted?.category_name || extracted?.category_id));
+        isComplete &&
+        !isPureLocationInquiry;
 
       if (shouldAutofill && extracted) {
         const fallbackDesc = userText;
@@ -273,7 +261,7 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
             ? generatedDescription.substring(0, 60) + '...'
             : generatedDescription);
 
-        onComplete({
+        const compData: AICompletionData = {
           description: generatedDescription,
           title: generatedTitle,
           category_id: extracted.category_id,
@@ -284,7 +272,10 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
           location_confidence: extracted.location_confidence,
           needs_location_confirmation: extracted.needs_location_confirmation,
           is_inquiry: isPureLocationInquiry
-        });
+        };
+
+        setCompletedData(compData);
+        onComplete(compData);
       }
     } catch (error) {
       console.error(error);
@@ -298,12 +289,21 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
   };
 
   return (
-    <div className="flex flex-col h-[400px] w-full bg-surface-container-low rounded-2xl border border-outline-variant/30 overflow-hidden shadow-sm mt-4">
-      <div className="px-4 py-3 border-b border-outline-variant/30 bg-surface flex items-center gap-2">
-        <span className="material-symbols-outlined text-primary">smart_toy</span>
-        <h3 className="font-label-lg font-bold text-primary">พูดคุยกับ AI เพื่อช่วยกรอกอัตโนมัติ</h3>
+    <div className="flex flex-col h-[420px] w-full bg-surface-container-low rounded-2xl border border-outline-variant/30 overflow-hidden shadow-sm mt-4">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-outline-variant/30 bg-surface flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">
+            🤖
+          </div>
+          <div>
+            <h3 className="font-label-lg font-bold text-primary leading-tight">พูดคุยกับ AI เพื่อแจ้งปัญหา</h3>
+            <p className="text-[11px] text-on-surface-variant font-medium">AI จะสอบถามข้อมูลที่ยังขาดก่อนสรุปรายละเอียดปัญหา</p>
+          </div>
+        </div>
       </div>
 
+      {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -316,26 +316,7 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
             >
               <p className="font-body-sm whitespace-pre-wrap">{msg.content}</p>
 
-              {msg.image && (
-                <div className="mt-3 overflow-hidden rounded-xl border border-outline-variant/40 shadow-sm bg-surface">
-                  <div className="px-3 py-1.5 bg-primary/10 text-primary text-xs font-bold flex items-center gap-1.5 border-b border-outline-variant/20">
-                    <span>🗺️</span>
-                    <span>ผังแนะนำการเดินทาง (Campus Map)</span>
-                  </div>
-                  <img
-                    src={msg.image}
-                    alt="Campus Map"
-                    className="w-full h-auto object-cover hover:opacity-95 transition-opacity cursor-pointer"
-                    onError={(e) => {
-                      const img = e.target as HTMLImageElement;
-                      if (img.src !== CAMPUS_MAP_PATH && !img.src.endsWith(CAMPUS_MAP_PATH)) {
-                        img.src = CAMPUS_MAP_PATH;
-                      }
-                    }}
-                    onClick={() => window.open(msg.image, '_blank')}
-                  />
-                </div>
-              )}
+
             </div>
           </div>
         ))}
@@ -355,6 +336,9 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
         <div ref={messagesEndRef} />
       </div>
 
+
+
+      {/* Composer Input */}
       <div className="p-3 bg-surface border-t border-outline-variant/30">
         <div className="relative flex items-center">
           <input

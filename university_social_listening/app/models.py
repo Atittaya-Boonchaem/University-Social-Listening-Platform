@@ -436,6 +436,9 @@ class LLMSetting(Base):
     map_trigger_keywords = Column(JSON, nullable=True)
     default_map_image_url = Column(String(255), default="/static/campus_map.jpg")
 
+    # Multi-Category AI Prompt Rules (JSON array)
+    category_prompt_rules = Column(JSON, nullable=True)
+
     updated_by = Column(Integer, ForeignKey("users.user_id"), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
