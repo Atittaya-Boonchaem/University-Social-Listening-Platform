@@ -111,35 +111,12 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [completedData, setCompletedData] = useState<AICompletionData | null>(null);
   const [mapConfig, setMapConfig] = useState<{ is_auto_map_enabled: boolean; map_trigger_keywords: string[]; default_map_image_url: string }>({
     is_auto_map_enabled: true,
     map_trigger_keywords: LOCATION_KEYWORDS,
     default_map_image_url: CAMPUS_MAP_PATH
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const isLocationQuery = (text: string, customKeywords?: string[]) => {
-    const lower = text.toLowerCase();
-    const validCustom = (customKeywords || []).filter(k => k && k.trim().length > 0);
-    const keywords = Array.from(new Set([...LOCATION_KEYWORDS, ...validCustom]));
-    return keywords.some(keyword => keyword && lower.includes(keyword.toLowerCase()));
-  };
-
-  const toAbsoluteUrl = (rawUrl?: string) => {
-    if (!rawUrl) return undefined;
-
-    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
-      return rawUrl;
-    }
-
-    if (rawUrl.startsWith('/campus_map')) {
-      return rawUrl;
-    }
-
-    const apiRoot = API_BASE.replace(/\/api\/v1\/?$/, '');
-    return `${apiRoot}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
-  };
 
   useEffect(() => {
     axios.get(`${API_BASE}/settings/public-llm-settings`)
@@ -274,7 +251,6 @@ export default function AIChatWidget({ onComplete }: AIChatWidgetProps) {
           is_inquiry: isPureLocationInquiry
         };
 
-        setCompletedData(compData);
         onComplete(compData);
       }
     } catch (error) {

@@ -169,7 +169,6 @@ export default function ReportProblem({
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [isFetchingData, setIsFetchingData] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isAiExpanding, setIsAiExpanding] = useState(false);
   const [isUserManualCategory, setIsUserManualCategory] = useState(false);
   const [customBuildingName, setCustomBuildingName] = useState('');
   const [isDescriptionEditable, setIsDescriptionEditable] = useState(false);
@@ -312,30 +311,7 @@ export default function ReportProblem({
     }
   };
 
-  const handleAiExpand = async () => {
-    if (description.trim().length < 5) {
-      showToast('โปรดพิมพ์รายละเอียดปัญหาเบื้องต้นก่อนให้ AI ช่วยเขียน', 'warning');
-      return;
-    }
-    
-    setIsAiExpanding(true);
-    try {
-      const response = await axios.post(`${API_BASE}/problems/ai/expand-description`, {
-        description: description.trim()
-      });
-      if (response.data?.success && response.data?.data?.expanded_text) {
-        setDescription(response.data.data.expanded_text);
-        showToast('🪄 AI ช่วยขยายความรายละเอียดปัญหาให้แล้ว!', 'success');
-      } else {
-        showToast('AI ไม่สามารถขยายความได้ในขณะนี้', 'warning');
-      }
-    } catch (e) {
-      console.error(e);
-      showToast('เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI', 'error');
-    } finally {
-      setIsAiExpanding(false);
-    }
-  };
+
 
   // ─── Reset map location when selected building changes ──────────────────────────────────────────────────────────────
   const [images, setImages] = useState<File[]>([]);
