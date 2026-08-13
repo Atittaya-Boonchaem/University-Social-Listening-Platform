@@ -1,4 +1,12 @@
+import sys
 import pandas as pd
+
+# บังคับหน้าต่าง Terminal ให้รองรับ UTF-8
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 # 1. สร้างคลังความรู้ (Rule Dictionary)
 category_rules = {

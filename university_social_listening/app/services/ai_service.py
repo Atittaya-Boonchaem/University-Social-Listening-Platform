@@ -2,10 +2,86 @@ import os
 import requests
 import logging
 import re
+import json
 from typing import List, Dict, Optional, Any
 from app.services.location_service import extract_location_pipeline
 
 logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Campus Location Database (จาก campus_locations.json)
+# สกัดสถานที่ + GPS coordinates จากชื่อย่อ/alias ที่ผู้ใช้พิมพ์
+# ─────────────────────────────────────────────────────────────────────────────
+_CAMPUS_LOCATIONS_CACHE: Optional[List[Dict]] = None
+
+def _load_campus_locations() -> List[Dict]:
+    """โหลด campus_locations.json แบบ cached (โหลดครั้งเดียว)"""
+    global _CAMPUS_LOCATIONS_CACHE
+    if _CAMPUS_LOCATIONS_CACHE is not None:
+        return _CAMPUS_LOCATIONS_CACHE
+    try:
+        json_path = os.path.join(
+            os.path.dirname(__file__), "..", "ai_data", "campus_locations.json"
+        )
+        with open(json_path, encoding="utf-8") as f:
+            _CAMPUS_LOCATIONS_CACHE = json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load campus_locations.json: {e}")
+        _CAMPUS_LOCATIONS_CACHE = []
+    return _CAMPUS_LOCATIONS_CACHE
+
+
+def _extract_location_with_gps(text: str) -> Optional[Dict]:
+    """
+    สกัดชื่อสถานที่และ GPS จาก campus_locations.json โดยใช้ alias matching.
+    คืนค่า: {"name": str, "latitude": float, "longitude": float}
+    หรือ None ถ้าไม่เจอ
+
+    ── หลักการเหมือน Multi-label.py extract_location() ──
+    - ตรวจสอบ canonical_name ก่อน
+    - ตามด้วย aliases ทีละตัว (ยาวกว่า → แม่นกว่า → ตรวจก่อน)
+    - กรอง alias สั้น (<= 2 ตัวอักษร) ยกเว้น shortcode ที่รู้จัก
+    """
+    if not text:
+        return None
+
+    text_lower = text.lower().strip()
+    locations = _load_campus_locations()
+
+    # รู้จัก shortcode ที่สั้นมากแต่ใช้บ่อย
+    known_short_codes = {"ce", "pk", "ub", "ce", "lib"}
+
+    best_match = None
+    best_match_len = 0  # ยาวกว่า = แม่นกว่า
+
+    for loc in locations:
+        canonical = str(loc.get("canonical_name", "")).lower()
+        aliases = [str(a).lower() for a in loc.get("aliases", [])]
+
+        all_names = [canonical] + aliases
+        # เรียงจากยาวไปสั้น เพื่อจับ alias ที่เจาะจงกว่าก่อน
+        all_names_sorted = sorted(set(all_names), key=len, reverse=True)
+
+        for alias in all_names_sorted:
+            alias = alias.strip()
+            if not alias:
+                continue
+            # กรอง alias สั้นเกิน (ยกเว้น shortcode ที่รู้จัก)
+            if len(alias) <= 2 and alias not in known_short_codes:
+                continue
+            if alias in text_lower and len(alias) > best_match_len:
+                best_match = loc
+                best_match_len = len(alias)
+                break  # จับได้แล้ว ไปสถานที่ถัดไป
+
+    if best_match:
+        return {
+            "name": best_match.get("canonical_name", ""),
+            "latitude": best_match.get("latitude"),
+            "longitude": best_match.get("longitude"),
+            "location_id": best_match.get("location_id", ""),
+        }
+    return None
 
 def get_typhoon_api_key():
     return os.getenv("TYPHOON_API_KEY", "")
@@ -65,14 +141,14 @@ def suggest_category(text: str, categories_list: List[Dict]) -> int:
         text_str = str(text)
 
         rule_map = {
-            31: ["รถเมล์", "รถเมล์มอ", "รถมอ", "รถไฟฟ้า", "รอรถ", "รอนาน", "รถเต็ม", "ป้ายรถเมล์", "คิวรถ", "ตารางรถ", "สายรถ", "ท่ารถ", "ไม่จอดรับ", "รถไม่มา", "รถติด", "รถเสีย", "รถมอเตอร์ไซค์", "รถเมล์สาย", "รถเมล์ไม่มา", "รถเมล์เสีย", "รถเมล์ติด", "รถเมล์เต็ม"],
-            32: ["พัง", "ชำรุด", "ประตูพัง", "หลังคารั่ว", "ไฟดับ", "น้ำไม่ไหล", "แอร์ไม่เย็น", "เครื่องปรับอากาศ", "ลิฟต์ค้าง", "หลอดไฟขาด", "แอร์", "ประปา", "ลิฟต์"],
-            33: ["สกปรก", "ขยะล้น", "เหม็น", "ถังขยะเต็ม", "ไม่ทำความสะอาด", "หญ้ารก", "กิ่งไม้หัก", "ต้นไม้ล้ม", "หมาจรจัด", "ทำความสะอาด"],
+            31: ["รถเมล์", "รถเมล์มอ", "รมอ", "รถมอ", "รถไฟฟ้า", "รอรถ", "รอนาน", "รถเต็ม", "ป้ายรถเมล์", "คิวรถ", "ตารางรถ", "สายรถ", "ท่ารถ", "ไม่จอดรับ", "รถไม่มา", "รถติด", "รถเสีย", "รถมอเตอร์ไซค์", "รถเมล์สาย", "รถเมล์ไม่มา", "รถเมล์เสีย", "รถเมล์ติด", "รถเมล์เต็ม"],
+            32: ["พัง", "ชำรุด", "ประตูพัง", "หลังคารั่ว", "ไฟดับ", "น้ำไม่ไหล", "แอร์ไม่เย็น", "เครื่องปรับอากาศ", "ลิฟต์ค้าง", "หลอดไฟขาด", "แอร์", "ประปา", "ลิฟต์", "ไฟฟ้าดับ", "คอมพิวเตอร์", "มืด", "ไฟไม่ติด", "ซ่อม"],
+            33: ["สกปรก", "ขยะล้น", "เหม็น", "ถังขยะเต็ม", "ไม่ทำความสะอาด", "หญ้ารก", "กิ่งไม้หัก", "ต้นไม้ล้ม", "หมาจรจัด", "ทำความสะอาด", "ขยะ"],
             34: ["ตารางเรียน", "วันสอบ", "เกรด", "หน่วยกิต", "วิชา", "ดรอปเรียน", "ติดต่ออาจารย์", "ขอสอบชดเชย", "อาจารย์"],
             35: ["ข้าว", "อาหาร", "กิน", "จาน", "ช้อน", "โรงอาหาร", "น้ำดื่ม", "ร้าน"],
             36: ["รถชน", "ขโมย", "อันตราย", "รปภ.", "หมวกกันน็อคหาย", "หมวกกันน็อกหาย", "จอดรถขวาง", "ทางมืด", "เปลี่ยว", "ไม่มีไฟกิ่ง", "รปภ"],
-            37: ["เน็ตหลุด", "ไวไฟเข้าไม่ได้", "เน็ตช้า", "หลุดบ่อย", "ระบบล่ม", "เข้าเว็บไม่ได้", "ลืมรหัสผ่าน", "ลงทะเบียนไม่ได้"],
-            38: ["ทุนการศึกษา", "กิจกรรม", "บัตรนิสิต", "สอบถามหน่อยครับ", "ขอคำแนะนำ", "อยากทราบว่า", "ของหาย", "ลืมของ", "ตามหาของ"]
+            37: ["เน็ตหลุด", "ไวไฟเข้าไม่ได้", "เน็ตช้า", "หลุดบ่อย", "ระบบล่ม", "เข้าเว็บไม่ได้", "ลืมรหัสผ่าน", "ลงทะเบียนไม่ได้", "อินเทอร์เน็ต"],
+            38: ["ทุนการศึกษา", "กิจกรรม", "บัตรนิสิต", "สอบถามหน่อยครับ", "ขอคำแนะนำ", "อยากทราบว่า", "ของหาย", "ลืมของ", "ตามหาของ", "เสียงดัง"]
         }
 
         scores = {cat_id: 0 for cat_id in rule_map}
@@ -518,13 +594,27 @@ _BUS_PROBLEM_KW = [
 ]
 
 _UP_LOCATION_KW = [
-    "ict", "ไอซีที", "วิทย์", "วิทยาศาสตร์", "วิศวะ", "วิศวกรรม", "สงวน",
-    "เรียนรวม", "บรรยายรวม", "อธิการ", "พญางำเมือง", "โรงพยาบาล", "รพ",
-    "หอพัก", "บพ", "up dorm", "หอสมุด", "อุบาลี", "สาธิต", "เกษตร",
-    "พยาบาล", "เภสัช", "แพทยศาสตร์", "นิติ", "ศิลปศาสตร์", "วิทยาการจัดการ",
-    "สหเวช", "ทันตะ", "ศูนย์การแพทย์", "สนามกีฬา", "สนาม", "โรงอาหาร",
+    # อาคาร shortcode
+    "ict", "ICT", "ไอซีที", "ce", "CE", "ub", "UB", "pk", "PK", "pky", "PKY",
+    # คณะและอาคาร
+    "วิทย์", "วิทยาศาสตร์", "ตึกวิทย์", "คณะวิทย์",
+    "วิศวะ", "วิศวกรรม", "สงวน", "สงวนเสริมศรี",
+    "เรียนรวม", "บรรยายรวม", "อาคารเรียนรวม", "ตึกเรียนรวม",
+    "อธิการ", "อธิการบดี", "พญางำเมือง", "หอประชุม",
+    "โรงพยาบาล", "รพ", "ศูนย์การแพทย์", "รพ.มพ",
+    "หอพัก", "บพ", "up dorm", "updorm",
+    "หอ 1", "หอ 2", "หอ 3", "หอ 4", "หอ 5", "หอ 6", "หอ 7", "หอ 8",
+    "หอ 9", "หอ 10", "หอ 11", "หอ 12", "หอ 13", "หอ 14", "หอ 15",
+    "หอ 16", "หอ 17", "หอ 18",
+    "หอสมุด", "ห้องสมุด", "อุบาลี", "บรรณสาร",
+    "สาธิต", "เกษตร", "ภักดี", "พัชรกิตติยาภา",
+    "พยาบาล", "เภสัช", "แพทยศาสตร์", "แพทย์",
+    "นิติ", "ศิลปศาสตร์", "วิทยาการจัดการ",
+    "สหเวช", "ทันตะ", "ทันตแพทย์",
+    "สนามกีฬา", "สนาม", "โรงอาหาร",
+    # ประตู
     "ประตู 1", "ประตู 2", "ประตู 3", "ประตู1", "ประตู2", "ประตู3",
-    "ประตูหนึ่ง", "ประตูสอง", "ประตูสาม", "ce", "ub", "pk"
+    "ประตูหนึ่ง", "ประตูสอง", "ประตูสาม",
 ]
 
 _UP_TIME_KW = [
@@ -662,6 +752,10 @@ def _rule_extract_issue(messages: List[Dict[str, str]]) -> Dict[str, str]:
     location_patterns = [
         ("ict", "อาคาร ICT"),
         ("ไอซีที", "อาคาร ICT"),
+        ("ตึกไอซีที", "อาคาร ICT"),
+        ("ce", "อาคารเรียนรวม CE"),
+        ("pky", "อาคารเรียนรวม PKY"),
+        ("ภักดี", "อาคารเรียนรวม PKY"),
         ("สงวน", "อาคารสงวนเสริมศรี"),
         ("เรียนรวม", "อาคารเรียนรวม"),
         ("บรรยายรวม", "อาคารบรรยายรวม"),
@@ -669,7 +763,10 @@ def _rule_extract_issue(messages: List[Dict[str, str]]) -> Dict[str, str]:
         ("วิศวกรรม", "คณะวิศวกรรมศาสตร์"),
         ("วิทยาศาสตร์", "คณะวิทยาศาสตร์"),
         ("วิทย์", "คณะวิทยาศาสตร์"),
+        ("ตึกวิทย์", "คณะวิทยาศาสตร์"),
         ("หอสมุด", "ศูนย์บรรณสารและการเรียนรู้"),
+        ("ห้องสมุด", "ศูนย์บรรณสารและการเรียนรู้"),
+        ("lib", "ศูนย์บรรณสารและการเรียนรู้"),
         ("โรงอาหาร", "โรงอาหาร"),
         ("ประตู 2", "ประตู 2"),
         ("ประตู2", "ประตู 2"),
@@ -753,7 +850,12 @@ def _validate_issue(issue: Dict[str, str], combined_user_text: str) -> List[str]
 
     has_bldg = _has_known_building(all_text)
     has_rm = _has_room_or_floor(all_text)
-    has_specific_location = bool(where) and (has_bldg or has_rm or len(where) >= 4)
+    # Fix: ถ้ามี building keyword ในข้อความ ถือว่าระบุสถานที่แล้ว แม้ LLM จะไม่สกัด where field
+    has_specific_location = (
+        (bool(where) and (has_bldg or has_rm or len(where) >= 4))
+        or has_bldg  # รู้จักสถานที่จาก keyword เช่น pky, ict, ce ในข้อความ
+        or has_rm   # หรือระบุห้อง/ชั้น
+    )
     if not has_specific_location:
         missing.append("where")
 
@@ -1249,6 +1351,14 @@ def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
         issue = _rule_extract_issue(messages)
         category = {"name": "Other", "confidence": 0.0}
 
+    # 1b) GPS Pre-fill: ถ้า LLM ไม่สกัด where field ให้ค้นหาจาก campus_locations.json
+    # เช่น ผู้ใช้พิมพ์ "ลิฟต์ค้างที่ตึก pky" → LLM เอา what="ลิฟต์ค้าง" แต่ where=""
+    if not issue.get("where"):
+        gps_pre = _extract_location_with_gps(combined_user_text)
+        if gps_pre:
+            issue["where"] = gps_pre["name"]
+            logger.info(f"Pre-filled issue['where'] from campus_locations: {gps_pre['name']}")
+
     # 2) Backend validation is authoritative.
     user_msgs = [m for m in messages if m.get("role") == "user"]
     user_msg_count = len(user_msgs)
@@ -1259,8 +1369,8 @@ def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
     dont_know_terms = ["ไม่ทราบ", "ไม่รู้", "ไม่แน่ใจ", "ทั่วไป", "บริเวณทั่วไป", "พื้นที่ทั่วไป", "รอบตึก"]
     user_indicated_dont_know = any(k in latest_msg for k in dont_know_terms)
 
-    # Force complete if user answered 2+ turns and we have core issue & location
-    if (user_msg_count >= 2 or user_indicated_dont_know) and issue.get("what") and (issue.get("where") or _has_known_building(combined_user_text)):
+    # Force complete if user answered 3+ turns or indicated don't know and we have core issue & location
+    if (user_msg_count >= 3 or user_indicated_dont_know) and issue.get("what") and (issue.get("where") or _has_known_building(combined_user_text)):
         missing_fields = []
 
     ready = len(missing_fields) == 0
@@ -1402,6 +1512,27 @@ def handle_chat_report(messages: List[Dict[str, str]]) -> dict:
                 result["extracted_data"]["needs_location_confirmation"] = loc_data.get("needs_confirmation", False)
     except Exception as loc_err:
         logger.error(f"Location pipeline error in handle_chat_report: {loc_err}")
+
+    # 5b) GPS Fallback: ถ้า location pipeline ไม่คืน lat/lng
+    #     ให้ใช้ campus_locations.json แทน (เหมือนที่ Multi-label.py ทำ)
+    try:
+        has_gps = (
+            result["extracted_data"].get("latitude") is not None
+            and result["extracted_data"].get("longitude") is not None
+        )
+        if not has_gps:
+            # ค้นหาจากข้อความทั้งหมดของผู้ใช้ + where field
+            gps_match = _extract_location_with_gps(combined_user_text)
+            if gps_match:
+                result["extracted_data"]["latitude"] = gps_match["latitude"]
+                result["extracted_data"]["longitude"] = gps_match["longitude"]
+                # ถ้าชื่อสถานที่ที่จับได้ยาว/ชัดกว่า ให้ใช้แทน
+                if not result["extracted_data"].get("location") or len(gps_match["name"]) > len(result["extracted_data"].get("location", "")):
+                    result["extracted_data"]["location"] = gps_match["name"]
+                result["extracted_data"]["gps_source"] = "campus_locations_json"
+                logger.info(f"GPS resolved from campus_locations.json: {gps_match['name']} ({gps_match['latitude']}, {gps_match['longitude']})")
+    except Exception as gps_err:
+        logger.error(f"GPS fallback error in handle_chat_report: {gps_err}")
 
     # 6) Category suggestion from the FULL gathered issue.
     try:
