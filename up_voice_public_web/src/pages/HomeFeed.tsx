@@ -369,9 +369,23 @@ export default function HomeFeed() {
   const userId = localStorage.getItem('user_id') ? Number(localStorage.getItem('user_id')) : null;
   const isPrivileged = roleId === 2 || roleId === 4;
 
-  const [problems, setProblems] = useState<Problem[]>([]);
+  const [problems, setProblems] = useState<Problem[]>(() => {
+    try {
+      const cached = sessionStorage.getItem('cached_problems_' + activeTab);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [categories, setCategories] = useState<{id: number; name: string; icon: string}[]>([{ id: 0, name: 'ทั้งหมด', icon: '📋' }]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    try {
+      const cached = sessionStorage.getItem('cached_problems_' + activeTab);
+      return !cached || JSON.parse(cached).length === 0;
+    } catch {
+      return true;
+    }
+  });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<0 | 1>(0);
@@ -382,7 +396,16 @@ export default function HomeFeed() {
   const { toasts, push: pushToast } = useToast();
 
   const fetchProblems = useCallback(async (tab: 0 | 1 = activeTab, silent = false) => {
-    if (!silent) setIsLoading(true);
+    const hasCache = (() => {
+      try {
+        const c = sessionStorage.getItem('cached_problems_' + tab);
+        return !!(c && JSON.parse(c).length > 0);
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!silent && !hasCache) setIsLoading(true);
     else setIsRefreshing(true);
     setError(null);
 
@@ -398,13 +421,21 @@ export default function HomeFeed() {
       );
 
       if (res.data.success) {
-        setProblems(extractItems(res.data.data));
+        const items = extractItems(res.data.data);
+        setProblems(items);
+        try {
+          sessionStorage.setItem('cached_problems_' + tab, JSON.stringify(items));
+        } catch {
+          // Ignore storage quota
+        }
       } else {
         setError(res.data.message ?? 'เกิดข้อผิดพลาดในการโหลดข้อมูล');
       }
     } catch (err) {
       console.error('🚨 ดึงข้อมูลไม่ได้:', err);
-      setError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+      if (!hasCache) {
+        setError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+      }
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);

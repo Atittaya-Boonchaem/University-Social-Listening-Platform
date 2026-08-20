@@ -133,7 +133,14 @@ def compute_sla_status(created_at, sla_due_date=None):
     return {"level": "red", "label": "SLA Breached", "days_open": days_open}
 
 
-def serialize_problem(p: Problem, db: Session, current_user: Optional[User] = None) -> dict:
+def serialize_problem(
+    p: Problem,
+    db: Session,
+    current_user: Optional[User] = None,
+    like_count: Optional[int] = None,
+    is_liked: Optional[bool] = None,
+    author_data: Optional[dict] = None,
+) -> dict:
     """Convert a Problem ORM object into a serialisable dict."""
     # Status & visibility (use ORM relationships if loaded, else query)
     status_name = p.status.status_name if p.status else "UNKNOWN"
@@ -142,20 +149,22 @@ def serialize_problem(p: Problem, db: Session, current_user: Optional[User] = No
     category_name = p.category.category_name if p.category else ""
 
     # Likes
-    like_count = db.query(func.count(ProblemLike.like_id)).filter(
-        ProblemLike.problem_id == p.problem_id
-    ).scalar() or 0
+    if like_count is None:
+        like_count = db.query(func.count(ProblemLike.like_id)).filter(
+            ProblemLike.problem_id == p.problem_id
+        ).scalar() or 0
 
-    is_liked = False
-    if current_user:
-        is_liked = (
-            db.query(ProblemLike)
-            .filter(
-                ProblemLike.problem_id == p.problem_id,
-                ProblemLike.user_id == current_user.user_id,
+    if is_liked is None:
+        is_liked = False
+        if current_user:
+            is_liked = (
+                db.query(ProblemLike)
+                .filter(
+                    ProblemLike.problem_id == p.problem_id,
+                    ProblemLike.user_id == current_user.user_id,
+                )
+                .first() is not None
             )
-            .first() is not None
-        )
 
     # Attachments
     attachments = [
@@ -164,7 +173,9 @@ def serialize_problem(p: Problem, db: Session, current_user: Optional[User] = No
         for a in (p.attachments or [])
     ]
 
-    author_data = get_author_info(p.user_id, db)
+    if author_data is None:
+        author_data = get_author_info(p.user_id, db)
+
     sla = compute_sla_status(p.created_at, p.sla_due_date)
     return {
         "id": p.problem_id,
@@ -201,6 +212,96 @@ def serialize_problem(p: Problem, db: Session, current_user: Optional[User] = No
         "author_name": author_data.get("display_name", "Unknown") if author_data else "Unknown",
         "attachments": attachments,
     }
+
+
+def batch_serialize_problems(
+    problems: List[Problem],
+    db: Session,
+    current_user: Optional[User] = None
+) -> List[dict]:
+    """Batch-serializes problems in O(1) database roundtrips to eliminate N+1 latency."""
+    if not problems:
+        return []
+
+    problem_ids = [p.problem_id for p in problems]
+    user_ids = list(set(p.user_id for p in problems if p.user_id))
+
+    # 1. Batch fetch Like counts
+    likes_counts_query = (
+        db.query(ProblemLike.problem_id, func.count(ProblemLike.like_id))
+        .filter(ProblemLike.problem_id.in_(problem_ids))
+        .group_by(ProblemLike.problem_id)
+        .all()
+    )
+    likes_map = {pid: count for pid, count in likes_counts_query}
+
+    # 2. Batch fetch User Likes
+    user_likes_set = set()
+    if current_user:
+        user_liked_records = (
+            db.query(ProblemLike.problem_id)
+            .filter(
+                ProblemLike.problem_id.in_(problem_ids),
+                ProblemLike.user_id == current_user.user_id,
+            )
+            .all()
+        )
+        user_likes_set = {r[0] for r in user_liked_records}
+
+    # 3. Batch fetch Author Data
+    authors_map = {}
+    if user_ids:
+        users = db.query(User).filter(User.user_id.in_(user_ids)).all()
+        user_dict = {u.user_id: u for u in users}
+
+        students = db.query(Student).filter(Student.user_id.in_(user_ids)).all()
+        student_dict = {s.user_id: s for s in students}
+
+        staffs = db.query(Staff).filter(Staff.user_id.in_(user_ids)).all()
+        staff_dict = {s.user_id: s for s in staffs}
+
+        public_users = db.query(PublicUser).filter(PublicUser.user_id.in_(user_ids)).all()
+        public_dict = {p.user_id: p for p in public_users}
+
+        from app.models import AnonymousUser
+        anons = db.query(AnonymousUser).filter(AnonymousUser.user_id.in_(user_ids)).all()
+        anon_dict = {a.user_id: a for a in anons}
+
+        for uid in user_ids:
+            if uid in student_dict:
+                st = student_dict[uid]
+                authors_map[uid] = {"user_id": uid, "display_name": st.student_name, "role": "student", "student_id": st.student_id}
+            elif uid in staff_dict:
+                stf = staff_dict[uid]
+                authors_map[uid] = {"user_id": uid, "display_name": stf.staff_name, "role": "staff"}
+            elif uid in public_dict:
+                pub = public_dict[uid]
+                authors_map[uid] = {"user_id": uid, "display_name": f"{pub.first_name} {pub.last_name}", "role": "public"}
+            elif uid in anon_dict:
+                anon = anon_dict[uid]
+                ip = anon.raw_ip or anon.hashed_ip
+                if ip and ip != "anonymous_guest":
+                    parts = ip.split(".")
+                    display = f"ไม่ระบุตัวตน (IP: *.*.{parts[2]}.{parts[3]})" if len(parts) == 4 else f"ไม่ระบุตัวตน (IP: {ip[:8]}...)"
+                else:
+                    display = "ไม่ระบุตัวตน (IP: *.*.0.0)"
+                authors_map[uid] = {"user_id": uid, "display_name": display, "role": "anonymous"}
+            elif uid in user_dict:
+                authors_map[uid] = {"user_id": uid, "display_name": user_dict[uid].email or "Unknown", "role": "unknown"}
+            else:
+                authors_map[uid] = {"user_id": uid, "display_name": "Unknown", "role": "unknown"}
+
+    return [
+        serialize_problem(
+            p,
+            db,
+            current_user,
+            like_count=likes_map.get(p.problem_id, 0),
+            is_liked=(p.problem_id in user_likes_set) if current_user else False,
+            author_data=authors_map.get(p.user_id),
+        )
+        for p in problems
+    ]
 
 
 # ──────────────────────────────────────────────
@@ -582,9 +683,8 @@ async def list_problems(
     """
     query = (
         db.query(Problem)
-        .join(Category, Problem.category_id == Category.category_id)
         .options(
-            contains_eager(Problem.category),
+            joinedload(Problem.category),
             joinedload(Problem.status),
             joinedload(Problem.visibility),
             joinedload(Problem.attachments),
@@ -641,7 +741,7 @@ async def list_problems(
         if cat_admin and cat_admin.category_id:
             query = query.filter(Problem.category_id == cat_admin.category_id)
 
-    total = query.count()
+    total = query.with_entities(func.count(Problem.problem_id)).scalar() or 0
     skip = (page - 1) * page_size
     problems = query.order_by(Problem.created_at.desc()).offset(skip).limit(page_size).all()
 
@@ -652,7 +752,7 @@ async def list_problems(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "items": [serialize_problem(p, db, current_user) for p in problems],
+            "items": batch_serialize_problems(problems, db, current_user),
         },
     )
 
@@ -684,7 +784,7 @@ async def get_my_problems(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "items": [serialize_problem(p, db, current_user) for p in problems],
+            "items": batch_serialize_problems(problems, db, current_user),
         },
     )
 

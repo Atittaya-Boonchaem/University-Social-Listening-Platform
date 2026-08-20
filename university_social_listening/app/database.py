@@ -73,6 +73,8 @@ engine = create_engine(
     config.DATABASE_URL,
     connect_args=connect_args,
     echo=config.DEBUG,
+    pool_size=10,
+    max_overflow=20,
     pool_pre_ping=True,
     pool_recycle=300,
 )

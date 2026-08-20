@@ -17,6 +17,7 @@ import OnboardingPage from './pages/OnboardingPage';
 import RegisterPage from './pages/RegisterPage';
 import IssueDetailPage from './pages/IssueDetailPage';
 import SsoSuccessPage from './pages/SsoSuccessPage';
+import ReportIssuePage from './pages/ReportIssuePage';
 
 function parseJwt(token: string) {
   try {
@@ -109,6 +110,7 @@ function App() {
             />
             <Route path="/tracking" element={<TrackingPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/report-issue" element={<ReportIssuePage />} />
 
         {/* Catch-all inside protected layout */}
             <Route path="*" element={<Navigate to="/" replace />} />
