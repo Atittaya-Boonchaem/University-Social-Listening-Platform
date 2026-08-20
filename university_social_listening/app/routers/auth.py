@@ -673,27 +673,25 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
             if prefix and prefix[0].isdigit():
                 existing_st = db.query(Student).filter(Student.student_id == prefix).first()
                 if existing_st:
-                    existing_st.user_id = user.user_id
-                    if display_name and "Demo" not in display_name:
-                        existing_st.student_name = display_name
-                else:
-                    student = Student(
-                        user_id=user.user_id,
-                        student_id=prefix,
-                        student_name=display_name,
-                    )
-                    db.add(student)
+                    db.delete(existing_st)
+                    db.flush()
+                student = Student(
+                    user_id=user.user_id,
+                    student_id=prefix,
+                    student_name=display_name,
+                )
+                db.add(student)
             else:
                 existing_stf = db.query(Staff).filter(Staff.employee_id == f"SSO-{prefix}").first()
                 if existing_stf:
-                    existing_stf.user_id = user.user_id
-                else:
-                    staff = Staff(
-                        user_id=user.user_id,
-                        employee_id=f"SSO-{prefix}",
-                        staff_name=display_name,
-                    )
-                    db.add(staff)
+                    db.delete(existing_stf)
+                    db.flush()
+                staff = Staff(
+                    user_id=user.user_id,
+                    employee_id=f"SSO-{prefix}",
+                    staff_name=display_name,
+                )
+                db.add(staff)
             
             db.commit()
             db.refresh(user)
