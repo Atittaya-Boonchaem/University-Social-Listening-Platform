@@ -1,0 +1,45 @@
+{
+  "architectures": [
+    "CamembertForSequenceClassification"
+  ],
+  "attention_probs_dropout_prob": 0.3,
+  "bos_token_id": 0,
+  "classifier_dropout": null,
+  "dtype": "float32",
+  "eos_token_id": 2,
+  "gradient_checkpointing": false,
+  "hidden_act": "gelu",
+  "hidden_dropout_prob": 0.3,
+  "hidden_size": 768,
+  "id2label": {
+    "0": "traffic",
+    "1": "safety",
+    "2": "cleaning",
+    "3": "building",
+    "4": "education",
+    "5": "network"
+  },
+  "initializer_range": 0.02,
+  "intermediate_size": 3072,
+  "label2id": {
+    "building": 3,
+    "cleaning": 2,
+    "education": 4,
+    "network": 5,
+    "safety": 1,
+    "traffic": 0
+  },
+  "layer_norm_eps": 1e-12,
+  "max_position_embeddings": 512,
+  "model_type": "camembert",
+  "num_attention_head": 12,
+  "num_attention_heads": 12,
+  "num_hidden_layers": 12,
+  "pad_token_id": 1,
+  "position_embedding_type": "absolute",
+  "problem_type": "multi_label_classification",
+  "transformers_version": "4.57.6",
+  "type_vocab_size": 1,
+  "use_cache": true,
+  "vocab_size": 25005
+}

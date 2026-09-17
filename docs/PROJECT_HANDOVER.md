@@ -429,7 +429,7 @@ The file `01_database_schema.sql` represents the **full planned schema**. Below 
 
 ```bash
 # 1. Navigate to the backend folder
-cd university_social_listening
+cd backend/university_social_listening
 
 # 2. Copy and configure environment
 cp .env.example .env
@@ -457,7 +457,7 @@ curl http://localhost:8000/health
 
 ```bash
 # 1. Navigate to the backend folder
-cd university_social_listening
+cd backend/university_social_listening
 
 # 2. Create and activate a virtual environment
 python -m venv venv

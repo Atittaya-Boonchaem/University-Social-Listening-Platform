@@ -1,0 +1,5 @@
+# Install these in the backend environment for WangchanBERTa inference.
+torch>=2.2.0
+transformers>=4.40.0
+sentencepiece>=0.1.99
+safetensors>=0.4.0

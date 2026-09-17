@@ -1,0 +1,14 @@
+{
+  "core_thresholds": {
+    "traffic": 0.5,
+    "safety": 0.5,
+    "cleaning": 0.5,
+    "building": 0.5,
+    "education": 0.5,
+    "network": 0.5
+  },
+  "other_rule": "fallback_when_no_core_label_selected",
+  "other_score": "1-max_core_score",
+  "borderline_low": 0.4,
+  "borderline_high": 0.6
+}

@@ -1,0 +1,28 @@
+{
+  "study_status": "preliminary_experiment",
+  "production_ready": false,
+  "model_name": "airesearch/wangchanberta-base-att-spm-uncased",
+  "n_training_examples": 70,
+  "n_folds": 5,
+  "epochs_requested": 8,
+  "random_seed": 42,
+  "max_length": 128,
+  "core_labels": [
+    "traffic",
+    "safety",
+    "cleaning",
+    "building",
+    "education",
+    "network"
+  ],
+  "all_labels": [
+    "traffic",
+    "safety",
+    "cleaning",
+    "building",
+    "education",
+    "network",
+    "other"
+  ],
+  "other_rule": "fallback only; never simultaneous with core labels"
+}
