@@ -74,9 +74,14 @@ connect_args = {}
 if config.DB_SSL or "tidbcloud" in config.DB_HOST:
     try:
         import certifi
-        connect_args["ssl"] = {"ca": certifi.where(), "ssl_mode": "VERIFY_IDENTITY"}
+        import ssl as _ssl
+        ssl_ctx = _ssl.create_default_context(cafile=certifi.where())
+        ssl_ctx.check_hostname = True
+        ssl_ctx.verify_mode = _ssl.CERT_REQUIRED
+        connect_args["ssl"] = ssl_ctx
     except Exception:
-        connect_args["ssl"] = {"ssl_mode": "VERIFY_IDENTITY"}
+        # Fallback: minimal SSL without cert verification
+        connect_args["ssl"] = {"check_hostname": False}
 
 engine = create_engine(
     config.DATABASE_URL,
