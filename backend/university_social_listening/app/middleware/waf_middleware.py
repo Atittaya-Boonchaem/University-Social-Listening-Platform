@@ -81,9 +81,13 @@ class WAFSecurityMiddleware(BaseHTTPMiddleware):
             or (request.client.host if request.client else "127.0.0.1")
         )
 
-        # Skip scanning for static docs or swagger assets
+        # Skip scanning for static docs, uploads, and OAuth SSO callbacks (authorization codes contain dots, dashes, and high-entropy base64)
         path = request.url.path
-        if path in ["/docs", "/redoc", "/openapi.json"] or path.startswith("/uploads/"):
+        if (
+            path in ["/docs", "/redoc", "/openapi.json"]
+            or path.startswith("/uploads/")
+            or path.startswith("/api/v1/auth/sso/callback")
+        ):
             response = await call_next(request)
             return self._attach_security_headers(response)
 
