@@ -28,44 +28,81 @@ export async function fetchTimeSeries() {
   return res.data?.data ?? null;
 }
 
+// In-memory cache & in-flight request deduplication to prevent redundant network trips to cloud database
+const problemsCache = new Map();
+const inFlightRequests = new Map();
+const CACHE_TTL_MS = 30000; // 30 seconds fresh cache
+
+export function invalidateProblemsCache() {
+  problemsCache.clear();
+  inFlightRequests.clear();
+}
+
 /**
  * Fetch paginated problem list.
  * Automatically pages through all results if fetchAll=true.
  * Each item already has is_deleted filtered server-side.
  *
  * @param {object} params - { page, page_size, visibility_name, category_id, status_name }
- * @param {boolean} fetchAll - If true, accumulates all pages (max 5 pages / 500 items safety cap)
+ * @param {boolean} fetchAll - If true, accumulates all pages (max 3 pages / 300 items safety cap)
  */
 export async function fetchProblems(params = {}, fetchAll = false) {
-  if (!fetchAll) {
-    const res = await api.get('/problems/list', { params });
-    return res.data?.data ?? { items: [], total: 0 };
+  const cacheKey = JSON.stringify({ params, fetchAll });
+
+  // 1. Check fresh cache
+  const cached = problemsCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+    return cached.data;
   }
 
-  // Paginate through all results (safety cap: 5 pages × 100)
-  let page = 1;
-  const page_size = 100;
-  let allItems = [];
-
-  while (page <= 5) {
-    const res = await api.get('/problems/list', {
-      params: { ...params, page, page_size },
-    }).catch(() => null);
-
-    const payload = res?.data?.data;
-    if (!payload) break;
-
-    const items = payload.items || [];
-    allItems = [...allItems, ...items];
-
-    if (allItems.length >= payload.total || items.length === 0) break;
-    page++;
+  // 2. Deduplicate concurrent in-flight requests
+  if (inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey);
   }
 
-  return {
-    items: allItems.filter((p) => !p.is_deleted),
-    total: allItems.length,
-  };
+  const fetchPromise = (async () => {
+    try {
+      if (!fetchAll) {
+        const res = await api.get('/problems/list', { params });
+        const data = res.data?.data ?? { items: [], total: 0 };
+        problemsCache.set(cacheKey, { data, timestamp: Date.now() });
+        return data;
+      }
+
+      // Paginate through all results (safety cap: 3 pages × 100)
+      let page = 1;
+      const page_size = 100;
+      let allItems = [];
+
+      while (page <= 3) {
+        const res = await api.get('/problems/list', {
+          params: { ...params, page, page_size },
+        }).catch(() => null);
+
+        const payload = res?.data?.data;
+        if (!payload) break;
+
+        const items = payload.items || [];
+        allItems = [...allItems, ...items];
+
+        if (allItems.length >= payload.total || items.length === 0) break;
+        page++;
+      }
+
+      const result = {
+        items: allItems.filter((p) => !p.is_deleted),
+        total: allItems.length,
+      };
+
+      problemsCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      return result;
+    } finally {
+      inFlightRequests.delete(cacheKey);
+    }
+  })();
+
+  inFlightRequests.set(cacheKey, fetchPromise);
+  return fetchPromise;
 }
 
 /**
@@ -137,6 +174,7 @@ export async function fetchCategoryProblems(params = {}) {
  * @param {string} [notes]        - optional admin note logged in status history
  */
 export async function updateProblemStatus(problemId, newStatusName, notes = '') {
+  invalidateProblemsCache();
   const res = await api.patch(`/problems/${problemId}/status`, null, {
     params: { new_status_name: newStatusName, ...(notes ? { notes } : {}) },
   });

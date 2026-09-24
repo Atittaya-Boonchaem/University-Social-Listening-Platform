@@ -74,9 +74,40 @@ def get_status_by_name(db: Session, name: str) -> Status:
 
 
 def get_visibility_by_name(db: Session, name: str) -> VisibilityType:
-    v = db.query(VisibilityType).filter(VisibilityType.visibility_name == name.upper()).first()
+    from sqlalchemy import or_, func
+    name_clean = (name or "").strip().lower()
+    if name_clean in ["internal", "staff_only"]:
+        v = db.query(VisibilityType).filter(
+            or_(
+                func.lower(VisibilityType.visibility_name) == "staff_only",
+                func.lower(VisibilityType.visibility_name) == "internal",
+                VisibilityType.visibility_id == 2
+            )
+        ).first()
+        if v:
+            return v
+    elif name_clean in ["public"]:
+        v = db.query(VisibilityType).filter(
+            or_(
+                func.lower(VisibilityType.visibility_name) == "public",
+                VisibilityType.visibility_id == 1
+            )
+        ).first()
+        if v:
+            return v
+    elif name_clean in ["anonymous"]:
+        v = db.query(VisibilityType).filter(
+            or_(
+                func.lower(VisibilityType.visibility_name) == "anonymous",
+                VisibilityType.visibility_id == 3
+            )
+        ).first()
+        if v:
+            return v
+
+    v = db.query(VisibilityType).filter(func.lower(VisibilityType.visibility_name) == name_clean).first()
     if not v:
-        v = db.query(VisibilityType).filter(VisibilityType.visibility_name == name).first()
+        v = db.query(VisibilityType).filter(VisibilityType.visibility_name == name.upper()).first()
     if not v:
         v = VisibilityType(visibility_name=name.upper(), description="Visibility")
         db.add(v)
@@ -91,27 +122,28 @@ def get_author_info(user_id: int, db: Session) -> Optional[dict]:
         return None
     student = db.query(Student).filter(Student.user_id == user_id).first()
     if student:
-        return {"user_id": user_id, "display_name": student.student_name, "role": "student", "student_id": student.student_id}
+        year = str(student.student_id)[:2] if (student.student_id and len(str(student.student_id)) >= 2) else "66"
+        return {"user_id": user_id, "display_name": f"นิสิต มพ. {year}", "role": "student", "student_id": student.student_id}
     stf = db.query(Staff).filter(Staff.user_id == user_id).first()
     if stf:
-        return {"user_id": user_id, "display_name": stf.staff_name, "role": "staff"}
+        return {"user_id": user_id, "display_name": "บุคลากร", "role": "staff"}
     pub = db.query(PublicUser).filter(PublicUser.user_id == user_id).first()
     if pub:
-        return {"user_id": user_id, "display_name": f"{pub.first_name} {pub.last_name}", "role": "public"}
+        return {"user_id": user_id, "display_name": "บุคคลทั่วไป", "role": "public"}
     from app.models import AnonymousUser
     anon = db.query(AnonymousUser).filter(AnonymousUser.user_id == user_id).first()
     if anon:
-        ip = anon.raw_ip or anon.hashed_ip
-        if ip and ip != "anonymous_guest":
-            parts = ip.split(".")
-            if len(parts) == 4:
-                display = f"ไม่ระบุตัวตน (IP: *.*.{parts[2]}.{parts[3]})"
-            else:
-                display = f"ไม่ระบุตัวตน (IP: {ip[:8]}...)"
-        else:
-            display = "ไม่ระบุตัวตน (IP: *.*.0.0)"
-        return {"user_id": user_id, "display_name": display, "role": "anonymous"}
-    return {"user_id": user_id, "display_name": user.email or "Unknown", "role": "unknown"}
+        return {"user_id": user_id, "display_name": "ผู้แจ้งไม่ประสงค์ออกนาม", "role": "anonymous"}
+    r = (user.role or "").lower()
+    if "staff" in r or "admin" in r or "officer" in r:
+        disp = "บุคลากร"
+    elif "alumni" in r:
+        disp = "ศิษย์เก่า มพ."
+    elif "parent" in r:
+        disp = "ผู้ปกครอง"
+    else:
+        disp = "บุคคลทั่วไป"
+    return {"user_id": user_id, "display_name": disp, "role": user.role or "unknown"}
 
 
 def require_admin_or_staff(user: User, db: Session) -> None:
@@ -222,6 +254,9 @@ def serialize_problem(
     }
 
 
+_AUTHORS_CACHE = {}
+
+
 def batch_serialize_problems(
     problems: List[Problem],
     db: Session,
@@ -256,48 +291,59 @@ def batch_serialize_problems(
         )
         user_likes_set = {r[0] for r in user_liked_records}
 
-    # 3. Batch fetch Author Data
-    authors_map = {}
-    if user_ids:
-        users = db.query(User).filter(User.user_id.in_(user_ids)).all()
+    # 3. Batch fetch Author Data with in-memory caching
+    authors_map = {uid: _AUTHORS_CACHE[uid] for uid in user_ids if uid in _AUTHORS_CACHE}
+    missing_uids = [uid for uid in user_ids if uid not in authors_map]
+
+    if missing_uids:
+        users = db.query(User).filter(User.user_id.in_(missing_uids)).all()
         user_dict = {u.user_id: u for u in users}
 
-        students = db.query(Student).filter(Student.user_id.in_(user_ids)).all()
+        students = db.query(Student).filter(Student.user_id.in_(missing_uids)).all()
         student_dict = {s.user_id: s for s in students}
 
-        staffs = db.query(Staff).filter(Staff.user_id.in_(user_ids)).all()
+        staffs = db.query(Staff).filter(Staff.user_id.in_(missing_uids)).all()
         staff_dict = {s.user_id: s for s in staffs}
 
-        public_users = db.query(PublicUser).filter(PublicUser.user_id.in_(user_ids)).all()
+        public_users = db.query(PublicUser).filter(PublicUser.user_id.in_(missing_uids)).all()
         public_dict = {p.user_id: p for p in public_users}
 
         from app.models import AnonymousUser
-        anons = db.query(AnonymousUser).filter(AnonymousUser.user_id.in_(user_ids)).all()
+        anons = db.query(AnonymousUser).filter(AnonymousUser.user_id.in_(missing_uids)).all()
         anon_dict = {a.user_id: a for a in anons}
 
-        for uid in user_ids:
+        for uid in missing_uids:
             if uid in student_dict:
                 st = student_dict[uid]
-                authors_map[uid] = {"user_id": uid, "display_name": st.student_name, "role": "student", "student_id": st.student_id}
+                year = str(st.student_id)[:2] if (st.student_id and len(str(st.student_id)) >= 2) else "66"
+                info = {"user_id": uid, "display_name": f"นิสิต มพ. {year}", "role": "student", "student_id": st.student_id}
             elif uid in staff_dict:
                 stf = staff_dict[uid]
-                authors_map[uid] = {"user_id": uid, "display_name": stf.staff_name, "role": "staff"}
+                info = {"user_id": uid, "display_name": "บุคลากร", "role": "staff"}
             elif uid in public_dict:
                 pub = public_dict[uid]
-                authors_map[uid] = {"user_id": uid, "display_name": f"{pub.first_name} {pub.last_name}", "role": "public"}
+                info = {"user_id": uid, "display_name": "บุคคลทั่วไป", "role": "public"}
             elif uid in anon_dict:
-                anon = anon_dict[uid]
-                ip = anon.raw_ip or anon.hashed_ip
-                if ip and ip != "anonymous_guest":
-                    parts = ip.split(".")
-                    display = f"ไม่ระบุตัวตน (IP: *.*.{parts[2]}.{parts[3]})" if len(parts) == 4 else f"ไม่ระบุตัวตน (IP: {ip[:8]}...)"
-                else:
-                    display = "ไม่ระบุตัวตน (IP: *.*.0.0)"
-                authors_map[uid] = {"user_id": uid, "display_name": display, "role": "anonymous"}
+                info = {"user_id": uid, "display_name": "ผู้แจ้งไม่ประสงค์ออกนาม", "role": "anonymous"}
             elif uid in user_dict:
-                authors_map[uid] = {"user_id": uid, "display_name": user_dict[uid].email or "Unknown", "role": "unknown"}
+                u = user_dict[uid]
+                r = (u.role or "").lower()
+                if "staff" in r or "admin" in r or "officer" in r:
+                    disp = "บุคลากร"
+                elif "student" in r:
+                    disp = "นิสิต มพ. 66"
+                elif "alumni" in r:
+                    disp = "ศิษย์เก่า มพ."
+                elif "parent" in r:
+                    disp = "ผู้ปกครอง"
+                else:
+                    disp = "บุคคลทั่วไป"
+                info = {"user_id": uid, "display_name": disp, "role": u.role or "unknown"}
             else:
-                authors_map[uid] = {"user_id": uid, "display_name": "Unknown", "role": "unknown"}
+                info = {"user_id": uid, "display_name": "บุคคลทั่วไป", "role": "unknown"}
+
+            _AUTHORS_CACHE[uid] = info
+            authors_map[uid] = info
 
     return [
         serialize_problem(
@@ -538,16 +584,19 @@ async def create_problem(
         if not cat:
             raise HTTPException(404, f"Category {category_id} not found")
 
-    # Resolve FK lookups
-    status_obj = get_status_by_name(db, "OPEN")
+    # Check privileges
+    is_privileged = bool(
+        db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
+        or db.query(SuperAdmin).filter(SuperAdmin.user_id == current_user.user_id).first()
+        or db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id).first()
+    )
+
+    # Resolve FK lookups: All newly reported problems enter PENDING_REVIEW for category admin verification
+    initial_status_name = "PENDING_REVIEW"
+    status_obj = get_status_by_name(db, initial_status_name)
     
     # Ensure students/anonymous cannot create internal visibility problems
-    if visibility_name == "internal":
-        is_privileged = bool(
-            db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
-            or db.query(SuperAdmin).filter(SuperAdmin.user_id == current_user.user_id).first()
-            or db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id).first()
-        )
+    if visibility_name.lower() in ["internal", "staff_only"]:
         if not is_privileged:
             visibility_name = "public"
             
@@ -645,9 +694,27 @@ async def create_problem(
         problem_id=problem.problem_id,
         status_id=status_obj.status_id,
         changed_by=problem_user_id,
-        notes="Problem created",
+        notes="Problem created (Awaiting Category Admin verification)",
     )
     db.add(history)
+
+    # Send Notification to Category Admins of this category for moderation
+    try:
+        from app.models import CategoryAdmin, Notification
+        cat_admins = db.query(CategoryAdmin).filter(
+            CategoryAdmin.category_id == category_id,
+            CategoryAdmin.is_active == True
+        ).all()
+        for ca in cat_admins:
+            db.add(Notification(
+                user_id=ca.user_id,
+                title="มีคำร้องใหม่รอการตรวจสอบและอนุมัติ",
+                message=f"คำร้อง #{problem.ticket_id}: {problem.title[:45]} รอยืนยันจากแอดมินหมวดหมู่",
+                is_read=False
+            ))
+    except Exception as e:
+        logger.error(f"Error creating category admin notifications: {e}")
+
     db.commit()
 
     # Eager-load for serialization
@@ -718,6 +785,12 @@ async def list_problems(
         .filter(Problem.is_deleted == False)
     )
 
+    # For all public & internal feeds: problems awaiting review (PENDING_REVIEW) must NOT appear on the feed
+    from sqlalchemy import or_, func
+    pending_stat = db.query(Status).filter(func.lower(Status.status_name) == "pending_review").first()
+    if pending_stat:
+        query = query.filter(Problem.status_id != pending_stat.status_id)
+
     # Determine if requester is admin/staff (can see hidden posts)
     is_admin = False
     if current_user:
@@ -726,30 +799,62 @@ async def list_problems(
             or db.query(SuperAdmin).filter(SuperAdmin.user_id == current_user.user_id, SuperAdmin.is_active == True).first()
             or db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
         )
-    # Non-admins cannot see quarantined (hidden) posts
     if not is_admin:
         query = query.filter(Problem.is_hidden == False)
 
-    # Visibility gate: only staff/admin can see internal problems
-    vis = db.query(VisibilityType).filter(
-        VisibilityType.visibility_name == visibility_name
-    ).first()
-    if vis:
-        is_privileged = False
-        if current_user:
-            is_privileged = bool(
-                db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
-                or db.query(SuperAdmin).filter(
-                    SuperAdmin.user_id == current_user.user_id, SuperAdmin.is_active == True
-                ).first()
-            )
-        if visibility_name == "internal" and not is_privileged:
-            # Fall back to public for unprivileged users
-            vis = db.query(VisibilityType).filter(
-                VisibilityType.visibility_name == "public"
+    # Visibility gate:
+    # 0 = public (visibility_id 1), 1 = internal / staff_only (visibility_id 2)
+    v_clean = (visibility_name or "").strip().lower()
+    is_privileged = False
+    if current_user:
+        is_privileged = bool(
+            db.query(Staff).filter(Staff.user_id == current_user.user_id).first()
+            or db.query(SuperAdmin).filter(
+                SuperAdmin.user_id == current_user.user_id, SuperAdmin.is_active == True
             ).first()
-        if vis:
-            query = query.filter(Problem.visibility_id == vis.visibility_id)
+            or db.query(CategoryAdmin).filter(
+                CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True
+            ).first()
+        )
+
+    if v_clean in ["internal", "staff_only"]:
+        if is_privileged:
+            # Query STAFF_ONLY (id=2)
+            vis = db.query(VisibilityType).filter(
+                or_(
+                    func.lower(VisibilityType.visibility_name) == "staff_only",
+                    func.lower(VisibilityType.visibility_name) == "internal",
+                    VisibilityType.visibility_id == 2
+                )
+            ).first()
+            if vis:
+                query = query.filter(Problem.visibility_id == vis.visibility_id)
+            else:
+                query = query.filter(Problem.visibility_id == 2)
+        else:
+            # Fall back to public for unprivileged users
+            pub_vis = db.query(VisibilityType).filter(
+                or_(
+                    func.lower(VisibilityType.visibility_name) == "public",
+                    VisibilityType.visibility_id == 1
+                )
+            ).first()
+            if pub_vis:
+                query = query.filter(Problem.visibility_id == pub_vis.visibility_id)
+            else:
+                query = query.filter(Problem.visibility_id == 1)
+    else:
+        # Strictly PUBLIC problems only for public feed
+        pub_vis = db.query(VisibilityType).filter(
+            or_(
+                func.lower(VisibilityType.visibility_name) == "public",
+                VisibilityType.visibility_id == 1
+            )
+        ).first()
+        if pub_vis:
+            query = query.filter(Problem.visibility_id == pub_vis.visibility_id)
+        else:
+            query = query.filter(Problem.visibility_id == 1)
 
     if category_id:
         from sqlalchemy import or_, cast, String
@@ -1262,6 +1367,41 @@ def merge_duplicate_problems(
         success=True,
         message=f"Ticket #{child_id} successfully merged into #{parent_id}",
         data={"parent_id": parent_id, "child_id": child_id},
+    )
+
+
+@router.post("/unmerge-duplicate", response_model=StandardResponse, tags=[TAG_CATEGORY_ADMIN])
+def unmerge_duplicate_problem(
+    child_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_or_staff(current_user, db)
+    child = db.query(Problem).filter(Problem.problem_id == child_id).first()
+    if not child:
+        raise HTTPException(404, f"Ticket #{child_id} not found")
+
+    parent_id = child.parent_problem_id
+    child.parent_problem_id = None
+    child.is_hidden = False
+
+    # Restore status to OPEN
+    open_status = get_status_by_name(db, "OPEN")
+    if open_status:
+        child.status_id = open_status.status_id
+
+    db.add(ProblemStatusHistory(
+        problem_id=child.problem_id,
+        status_id=child.status_id,
+        changed_by=current_user.user_id,
+        notes=f"แยกตั๋วออกจากกลุ่มคำร้องหลัก #{parent_id}",
+    ))
+    db.commit()
+
+    return StandardResponse(
+        success=True,
+        message=f"แยกตั๋ว #{child_id} ออกจากกลุ่มสำเร็จ",
+        data={"child_id": child_id, "previous_parent_id": parent_id},
     )
 
 

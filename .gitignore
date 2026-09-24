@@ -5,3 +5,4 @@ node_modules/
 *.db
 backend/university_social_listening/uploads/
 backend/university_social_listening/app/ai_data/
+.idea/

@@ -651,6 +651,7 @@ def get_current_user_profile(
                 "department": stf.department,
                 "position": stf.position,
                 "office_location": stf.office_location,
+                "phone": stf.phone,
             }
         else:
             pub = db.query(PublicUser).filter(PublicUser.user_id == current_user.user_id).first()

@@ -20,6 +20,7 @@ import GlobalHeatmap           from './pages/super-admin/GlobalHeatmap';
 import SAUserManagement        from './pages/super-admin/UserManagement';
 import CategoryAdminInvites    from './pages/super-admin/CategoryAdminInvites';
 import LLMSettings             from './pages/super-admin/LLMSettings';
+import LLMRoutingHistory       from './pages/super-admin/LLMRoutingHistory';
 import CategoryManagement      from './pages/super-admin/CategoryManagement';
 import BuildingManagement      from './pages/super-admin/BuildingManagement';
 
@@ -201,7 +202,8 @@ function App() {
           <Route index                  element={<GlobalDashboard />} />
           <Route path="users"           element={<SAUserManagement />} />
           <Route path="category-admins" element={<CategoryAdminInvites />} />
-          <Route path="llm-settings"    element={<LLMSettings />} />
+          <Route path="llm-settings"        element={<LLMSettings />} />
+          <Route path="llm-routing-history" element={<LLMRoutingHistory />} />
           <Route path="categories"      element={<CategoryManagement />} />
           <Route path="buildings"       element={<BuildingManagement />} />
           <Route path="global-heatmap"  element={<GlobalHeatmap />} />

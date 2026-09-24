@@ -78,8 +78,6 @@ function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
 
 // ─── App Component ────────────────────────────────────────────────────────────
 function App() {
-  const roleId = Number(localStorage.getItem('role_id') ?? 0);
-
   return (
     <BrowserRouter>
       <Routes>
@@ -98,7 +96,6 @@ function App() {
               path="/report"
               element={
                 <ReportProblem
-                  roleId={roleId}
                   onSuccess={() => {
                     console.log('Problem submitted!');
                   }}

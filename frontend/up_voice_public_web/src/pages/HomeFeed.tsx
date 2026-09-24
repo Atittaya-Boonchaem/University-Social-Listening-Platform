@@ -1,128 +1,77 @@
 /**
  * HomeFeed.tsx
  *
- * React + TypeScript migration of Flutter's HomeScreen.
- * Faithfully reproduces:
- *  - Problem list fetched from /api/v1/problems/list?visibility=<type>
- *  - Staff/Admin tabs (roleId 2 or 4): "ฟีดสาธารณะ" | "ข่าวสารภายใน"
- *  - Horizontal category chip filter (with live counts)
- *  - Privacy masking: every author shown as "ไม่ระบุตัวตน" regardless of actual author
- *  - Image rendering with correct URL normalisation (mirrors the Flutter regex fix)
- *  - Left accent border: red for internal posts, UP Purple for public
- *  - Building / location pill
- *  - Upvote toggle with optimistic UI + server reconciliation
- *  - Delete button visible only for own posts (author_id === userId)
- *  - Delete confirmation modal
- *  - Thai Buddhist-calendar timestamp: "2 ก.ค. 2569 เวลา 13:55 น."
- *  - Pull-to-refresh (via a Refresh button on web)
+ * Modern Feed & Issue Tracking Portal for UP Connect (University of Phayao)
+ * - Hero Banner with University Royal Purple Gradient & Gold CTA
+ * - Live Category Filter Pills with real counts from API
+ * - Status Filter & Sorting (Latest, Upvotes, Urgency)
+ * - Feed Cards powered by Real Database Records
+ * - Analytical Sidebar (Live Status Summary, Campus Hotspots, Emergency Hotlines, PDPA)
+ * - Real-time Upvote & Search Support
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { NavLink, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── API Constants ────────────────────────────────────────────────────────────
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
-
-// ─── TypeScript Interfaces ────────────────────────────────────────────────────
+// ─── Interfaces ───────────────────────────────────────────────────────────────
 export interface Problem {
   id: number;
   problem_id?: number;
+  ticket_id?: string | null;
   title: string;
   description: string | null;
   image_url?: string | null;
   image?: string | null;
   photo?: string | null;
   attachments?: { file_url: string }[];
-  visibility: 'public' | 'internal';
-  visibility_name?: 'public' | 'internal';
-  is_staff_only: boolean;
+  visibility: 'public' | 'internal' | 'PUBLIC' | 'INTERNAL';
+  visibility_id?: number;
+  visibility_name?: string;
+  is_staff_only?: boolean;
   created_at: string;
-  author_id: number | null;
-  upvote_count: number;
+  user_id?: number | null;
+  author_id?: number | null;
+  upvote_count?: number;
   like_count?: number;
-  is_upvoted_by_me: boolean;
+  is_upvoted_by_me?: boolean;
   is_liked_by_me?: boolean;
   author_name?: string;
   author?: {
     user_id: number;
     display_name: string;
     role: string;
+    student_id?: string;
   };
   category_id: number | null;
-  category: Category | null;
-  building: Building | null;
-  location: string | null;
-  building_name?: string | null;
   category_name?: string | null;
+  category?: {
+    id?: number;
+    category_id?: number;
+    name?: string;
+    category_name?: string;
+  } | null;
+  building_name?: string | null;
+  building?: { id?: number; name?: string } | null;
+  location?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  status_name?: string;
+  status_color?: string;
+  updated_at?: string | null;
+  llm_analysis?: any;
 }
 
-export interface Category {
+export interface CategoryItem {
   id: number;
   name: string;
-}
-
-export interface Building {
-  id: number;
-  name: string;
-}
-
-interface ApiProblemListResponse {
-  success: boolean;
-  data: {
-    items: Problem[];
-    total?: number;
-  } | Problem[];
-  message?: string;
+  ticket_prefix?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Extract items from either { data: { items } } or { data: [] } shape */
-function extractItems(data: ApiProblemListResponse['data']): Problem[] {
-  if (Array.isArray(data)) return data;
-  if (data && 'items' in data && Array.isArray(data.items)) return data.items;
-  return [];
-}
-
-/**
- * Mirrors Flutter's _formatDateTime:
- *  - Appends 'Z' if no timezone suffix (treats as UTC → converts to local +7)
- *  - Returns Thai Buddhist calendar date string
- */
-function formatDateTime(rawDate: string | null | undefined): string {
-  if (!rawDate) return '';
-  try {
-    const dateString = rawDate.endsWith('Z') || rawDate.includes('+')
-      ? rawDate
-      : rawDate + 'Z'; // force UTC interpretation
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return '';
-
-    const thaiMonths = [
-      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
-    ];
-    const day = date.getDate();
-    const month = thaiMonths[date.getMonth()];
-    const year = date.getFullYear() + 543; // CE → BE
-    const hh = String(date.getHours()).padStart(2, '0');
-    const mm = String(date.getMinutes()).padStart(2, '0');
-    return `${day} ${month} ${year} เวลา ${hh}:${mm} น.`;
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Normalises image URLs — mirrors the Flutter regex fix exactly:
- *   1. Absolute URLs kept as-is
- *   2. Relative paths get base prepended
- *   3. Ensures uploads/images/ not uploads/images/images/
- */
 function resolveImageUrl(raw: string | null | undefined): string | null {
   if (!raw || raw.trim() === '') return null;
   if (raw.startsWith('http')) return raw;
@@ -130,612 +79,606 @@ function resolveImageUrl(raw: string | null | undefined): string | null {
   return `${API_BASE.replace('/api/v1', '')}/${cleaned}`;
 }
 
-// ─── Toast (reuse the same tiny pattern from ReportProblem) ──────────────────
-type ToastVariant = 'success' | 'error';
+function formatThaiRelativeTime(rawDate: string | null | undefined): string {
+  if (!rawDate) return '';
+  try {
+    const dateString = rawDate.endsWith('Z') || rawDate.includes('+') ? rawDate : rawDate + 'Z';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
 
-interface ToastMsg { id: number; msg: string; variant: ToastVariant; }
+    if (diffMin < 1) return 'เมื่อสักครู่';
+    if (diffMin < 60) return `เมื่อ ${diffMin} นาทีที่แล้ว`;
+    if (diffHour < 24) return `เมื่อ ${diffHour} ชั่วโมงที่แล้ว`;
+    if (diffDay === 1) return 'เมื่อวานนี้';
+    if (diffDay < 7) return `เมื่อ ${diffDay} วันที่แล้ว`;
 
-function useToast() {
-  const [toasts, setToasts] = useState<ToastMsg[]>([]);
-  const counter = useRef(0);
-  const push = useCallback((msg: string, variant: ToastVariant = 'error') => {
-    const id = ++counter.current;
-    setToasts(p => [...p, { id, msg, variant }]);
-    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3500);
-  }, []);
-  return { toasts, push };
-}
-
-function ToastStack({ toasts }: { toasts: ToastMsg[] }) {
-  return (
-    <div className="fixed bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 w-[90vw] max-w-sm pointer-events-none">
-      {toasts.map(t => (
-        <div key={t.id} className={`flex items-center gap-2 px-4 py-3 rounded-xl shadow-xl text-sm font-medium text-white animate-[slideUp_0.3s_ease-out_forwards] ${t.variant === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
-          <span>{t.variant === 'success' ? '✅' : '❌'}</span>
-          <span>{t.msg}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Delete confirmation modal ────────────────────────────────────────────────
-function DeleteModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={onCancel}>
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div
-        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-            <span className="text-xl">🗑️</span>
-          </div>
-          <div>
-            <h3 className="font-bold text-slate-800 text-base">ยืนยันการลบโพสต์</h3>
-            <p className="text-sm text-slate-500 mt-0.5">คุณแน่ใจหรือไม่ว่าต้องการลบโพสต์นี้?</p>
-          </div>
-        </div>
-        <div className="flex gap-3 mt-1">
-          <button
-            onClick={onCancel}
-            className="flex-1 h-10 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
-          >
-            ยกเลิก
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold transition shadow-md shadow-red-200"
-          >
-            ลบโพสต์
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Individual Problem Card ──────────────────────────────────────────────────
-function ProblemCard({
-  problem,
-  userId,
-  onDeleteRequest,
-}: {
-  problem: Problem;
-  userId: number | null;
-  onUpvote: (id: number) => void;
-  onDeleteRequest: (id: number) => void;
-}) {
-  const navigate = useNavigate();
-  const isOwn = userId !== null && problem.author_id === userId;
-  const isInternal = problem.visibility === 'internal' || problem.visibility_name === 'internal';
-  
-  const problemId = problem.problem_id ?? problem.id;
-  
-  // Use exact author name or fallback to generic role for the tag
-  let authorTag = 'ไม่ระบุตัวตน';
-  if (problem.author?.role === 'student' || problem.author_name?.includes('นิสิต')) {
-    const studentId = (problem.author as any)?.student_id;
-    if (studentId && typeof studentId === 'string' && studentId.length >= 2) {
-      authorTag = `นิสิตมพ${studentId.substring(0, 2)}`;
-    } else {
-      authorTag = 'นิสิต';
-    }
+    const thaiMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const d = date.getDate();
+    const m = thaiMonths[date.getMonth()];
+    const y = date.getFullYear() + 543;
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    return `${d} ${m} ${y} ${hh}:${mm} น.`;
+  } catch {
+    return '';
   }
-  else if (problem.author?.role === 'staff' || problem.author_name?.includes('บุคลากร')) authorTag = 'บุคลากร';
-
-  let rawImages: string[] = [];
-  if ((problem as any).images) rawImages = (problem as any).images;
-  else if ((problem as any).imageUrls) rawImages = (problem as any).imageUrls;
-  else if (problem.attachments && problem.attachments.length > 0) rawImages = problem.attachments.map(a => a.file_url);
-  else {
-    const single = problem.image_url || problem.image || problem.photo;
-    if (single) rawImages = [single];
-  }
-  const images = rawImages.map(url => resolveImageUrl(url)).filter(Boolean) as string[];
-
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  return (
-    <article
-      onClick={() => navigate(`/issue/${problemId}`, { state: { problem } })}
-      className="glass-card ambient-shadow rounded-xl p-5 relative group overflow-hidden transition-all duration-300 hover:translate-y-[-2px] mb-stack-sm cursor-pointer"
-    >
-      {/* Profile Badge (Top Left) */}
-      <div className="absolute top-0 left-0">
-        <span className={`${isInternal ? 'bg-secondary' : 'bg-primary'} text-white text-[10px] font-bold px-3 py-1 rounded-br-lg tracking-wider uppercase`}>
-          {authorTag}
-        </span>
-      </div>
-
-      {/* Delete Action */}
-      {isOwn && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onDeleteRequest(problemId); }}
-          className="absolute top-4 right-4 p-2 text-outline-variant hover:text-error hover:bg-error-container/20 rounded-full transition-colors opacity-0 group-hover:opacity-100"
-        >
-          <span className="material-symbols-outlined text-[20px]">delete</span>
-        </button>
-      )}
-
-      <div className="mt-6 flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <div className={`px-2 py-0.5 ${isInternal ? 'bg-secondary-container/30 text-on-secondary-fixed-variant' : 'bg-tertiary-container/20 text-on-tertiary-container'} rounded text-[11px] font-bold`}>
-            {problem.category_name || (problem.category as any)?.category_name || problem.category?.name || 'หมวดหมู่ทั่วไป'}
-          </div>
-          <span className="text-[12px] text-outline italic">{formatDateTime(problem.created_at)}</span>
-        </div>
-        
-        <div className="mt-1">
-          <p className={`font-body-md text-body-md text-on-surface leading-relaxed whitespace-pre-wrap ${!isExpanded ? 'line-clamp-3' : ''}`}>
-            {problem.description || problem.title || 'ไม่มีรายละเอียด'}
-          </p>
-          {(problem.description || problem.title || '').length > 100 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
-              className="text-primary hover:underline cursor-pointer text-sm font-medium mt-1 inline-block"
-            >
-              {isExpanded ? 'ย่อความ...' : 'อ่านเพิ่มเติม...'}
-            </button>
-          )}
-        </div>
-
-        {/* Mock Image for now, or actual image */}
-        {images.length > 0 && (
-          <div className="w-full rounded-lg overflow-hidden bg-surface-container-highest mt-2 flex justify-center max-h-80">
-            <img src={images[0]} alt="Problem attachment" className="w-full h-full object-contain" />
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="mt-4 pt-4 border-t border-outline-variant/30 flex justify-between items-center">
-          <div className="flex items-center gap-2 text-primary">
-            <span className="material-symbols-outlined text-[18px]">location_on</span>
-            <span className="text-label-sm font-label-sm">{problem.building_name || problem.building?.name || problem.location || 'พิกัดมหาวิทยาลัยพะเยา'}</span>
-          </div>
-          
-          <div className="flex items-center gap-1">
-            {(() => {
-              const s = (problem as any).status_name || (problem as any).status?.status_name || 'OPEN';
-              if (s === 'IN_PROGRESS') {
-                return (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-                    <span className="text-label-sm font-label-sm text-primary">กำลังดำเนินการ</span>
-                  </>
-                );
-              }
-              if (s === 'RESOLVED' || s === 'CLOSED') {
-                return (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                    <span className="text-label-sm font-label-sm text-green-600">แก้ไขสำเร็จ</span>
-                  </>
-                );
-              }
-              return (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
-                  <span className="text-label-sm font-label-sm text-tertiary">รอดำเนินการ</span>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      </div>
-    </article>
-  );
 }
 
-// ─── Loading Skeleton ─────────────────────────────────────────────────────────
-function SkeletonCard() {
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 mb-4 animate-pulse">
-      <div className="flex items-center justify-between mb-4">
-        <div className="h-6 w-32 bg-slate-100 rounded-full" />
-        <div className="h-6 w-20 bg-slate-100 rounded-lg" />
-      </div>
-      <div className="flex gap-2 mb-3">
-        <div className="h-4 w-4 bg-slate-100 rounded-full" />
-        <div className="h-4 w-24 bg-slate-100 rounded-full" />
-      </div>
-      <div className="space-y-2 mt-4">
-        <div className="h-5 w-3/4 bg-slate-100 rounded" />
-        <div className="h-32 w-full bg-slate-100 rounded-xl" />
-        <div className="h-3 w-full bg-slate-100 rounded" />
-        <div className="h-3 w-40 bg-slate-100 rounded" />
-        <div className="h-4 w-3/4 bg-slate-100 rounded" />
-        <div className="h-3 w-full bg-slate-100 rounded" />
-        <div className="h-3 w-5/6 bg-slate-100 rounded" />
-        <hr className="border-slate-100" />
-      </div>
-    </div>
-  );
+
+function getTicketCode(problem: Problem): string {
+  if (problem.ticket_id) return problem.ticket_id;
+  const pid = problem.problem_id || problem.id;
+  return `UP-CASE-${pid}`;
 }
 
-// ─── Main HomeFeed Component ──────────────────────────────────────────────────
-// ─── HomeFeed Component ────────────────────────────────────────────────────────
-// หน้าที่: แสดงหน้ารายการปัญหา/ข้อร้องเรียนทั้งหมด (หน้าหลักของแอป)
-// การทำงานหลัก:
-// 1. ดึงข้อมูลและแสดงรายการปัญหาจาก API (ฟีดสาธารณะ และ ฟีดข่าวสารภายในสำหรับบุคลากร)
-// 2. จัดการเรื่อง Role-Based Visibility (บุคลากรและแอดมินเท่านั้นถึงจะเห็นแท็บ 'ข่าวสารภายใน')
-// 3. กรองปัญหาตามหมวดหมู่ (Category Filter)
-// 4. รองรับการกดโหวต (Upvote) และการลบโพสต์ของตัวเอง
-// 5. นำเสนอข้อมูลในรูปแบบการ์ด พร้อมการปกปิดตัวตน (แสดงชื่อผู้แจ้งเป็น "ไม่ระบุตัวตน" เสมอในหน้าฟีด)
 export default function HomeFeed() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlSearch = searchParams.get('search') || '';
+
   const roleId = Number(localStorage.getItem('role_id') ?? 0);
-  const userId = localStorage.getItem('user_id') ? Number(localStorage.getItem('user_id')) : null;
   const isPrivileged = roleId === 2 || roleId === 4;
 
-  const [problems, setProblems] = useState<Problem[]>(() => {
-    try {
-      const cached = sessionStorage.getItem('cached_problems_' + activeTab);
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [categories, setCategories] = useState<{id: number; name: string; icon: string}[]>([{ id: 0, name: 'ทั้งหมด', icon: '📋' }]);
-  const [isLoading, setIsLoading] = useState<boolean>(() => {
-    try {
-      const cached = sessionStorage.getItem('cached_problems_' + activeTab);
-      return !cached || JSON.parse(cached).length === 0;
-    } catch {
-      return true;
-    }
-  });
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<0 | 1>(0);
-  const [selectedCategoryId, setSelectedCategoryId] = useState(0);
-  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [problems, setProblems] = useState<Problem[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<0 | 1>(0); // 0 = Public, 1 = Internal (Staff)
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedLocation, setSelectedLocation] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<string>('latest');
+  const [expandedMap, setExpandedMap] = useState<Record<number, boolean>>({});
 
-  const { toasts, push: pushToast } = useToast();
-
-  const fetchProblems = useCallback(async (tab: 0 | 1 = activeTab, silent = false) => {
-    const hasCache = (() => {
-      try {
-        const c = sessionStorage.getItem('cached_problems_' + tab);
-        return !!(c && JSON.parse(c).length > 0);
-      } catch {
-        return false;
-      }
-    })();
-
-    if (!silent && !hasCache) setIsLoading(true);
-    else setIsRefreshing(true);
-    setError(null);
-
-    try {
-      const visibility = tab === 0 ? 'public' : 'internal';
-      const token = localStorage.getItem('access_token');
-      const res = await axios.get<ApiProblemListResponse>(
-        `${API_BASE}/problems/list`,
-        {
-          params: { visibility_name: visibility },
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        }
-      );
-
-      if (res.data.success) {
-        const items = extractItems(res.data.data);
-        setProblems(items);
-        try {
-          sessionStorage.setItem('cached_problems_' + tab, JSON.stringify(items));
-        } catch {
-          // Ignore storage quota
-        }
-      } else {
-        setError(res.data.message ?? 'เกิดข้อผิดพลาดในการโหลดข้อมูล');
-      }
-    } catch (err) {
-      console.error('🚨 ดึงข้อมูลไม่ได้:', err);
-      if (!hasCache) {
-        setError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
-      }
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    fetchProblems(activeTab, false);
-    setSelectedCategoryId(0);
-  }, [activeTab, fetchProblems]);
-
-  const getCategoryCount = useCallback((catId: number) => {
-    if (catId === 0) return problems.length;
-    return problems.filter(p => p.category_id === catId || p.category?.id === catId).length;
+  // ─── Extract Unique Locations ───────────────────────────────────────────────
+  const locations = useMemo(() => {
+    const locSet = new Set<string>();
+    problems.forEach(p => {
+      const loc = p.building_name || p.location;
+      if (loc && loc.trim()) locSet.add(loc.trim());
+    });
+    return Array.from(locSet).sort();
   }, [problems]);
 
-  const visibleChips = useMemo(
-    () => categories.filter(c => c.id === 0 || getCategoryCount(c.id) > 0),
-    [categories, getCategoryCount]
-  );
-
-  const displayProblems = useMemo(() => {
-    if (selectedCategoryId === 0) return problems;
-    return problems.filter(p => p.category_id === selectedCategoryId || p.category?.id === selectedCategoryId);
-  }, [problems, selectedCategoryId]);
-
-  const handleUpvote = async (pid: number) => {
-    if (!localStorage.getItem('access_token')) {
-      pushToast('กรุณาเข้าสู่ระบบก่อนแสดงความรู้สึก', 'error');
-      return;
-    }
-    
-    setProblems(prev =>
-      prev.map(p => {
-        if ((p.problem_id ?? p.id) === pid) {
-          const wasUpvoted = p.is_upvoted_by_me || p.is_liked_by_me;
-          const currentCount = (p.upvote_count ?? 0) + (p.like_count ?? 0);
-          return {
-            ...p,
-            is_liked_by_me: !wasUpvoted,
-            is_upvoted_by_me: !wasUpvoted,
-            like_count: wasUpvoted ? Math.max(0, currentCount - 1) : currentCount + 1,
-            upvote_count: 0
-          };
-        }
-        return p;
-      })
-    );
-
-    try {
-      const res = await axios.post(`${API_BASE}/problems/${pid}/like`, {}, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
-      });
-      if (!res.data.success) throw new Error();
-    } catch {
-      pushToast('ไม่สามารถบันทึกข้อมูลได้', 'error');
-      fetchProblems(activeTab, true);
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteTargetId) return;
-    setIsDeleting(true);
-    try {
-      const token = localStorage.getItem('access_token');
-      const res = await axios.delete(`${API_BASE}/problems/${deleteTargetId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.data.success) {
-        pushToast('ลบโพสต์สำเร็จ', 'success');
-        setProblems(prev => prev.filter(p => (p.problem_id ?? p.id) !== deleteTargetId));
-      } else {
-        pushToast(res.data.message ?? 'เกิดข้อผิดพลาดในการลบโพสต์', 'error');
-      }
-    } catch (err) {
-      pushToast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
-    } finally {
-      setIsDeleting(false);
-      setDeleteTargetId(null);
-    }
-  };
-
+  // ─── Fetch Categories ────────────────────────────────────────────────────────
   useEffect(() => {
-    let cancelled = false;
-    async function loadCats() {
+    async function loadCategories() {
       try {
         const token = localStorage.getItem('access_token');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const res = await axios.get(`${API_BASE}/problems/categories`, { headers });
-        if (!cancelled && res.data.success) {
-          const items = Array.isArray(res.data.data) ? res.data.data : res.data.data.items;
-          const formatted = items.map((c: any) => ({
+        if (res.data.success && res.data.data?.items) {
+          const formatted = res.data.data.items.map((c: any) => ({
             id: c.category_id ?? c.id,
             name: c.category_name ?? c.name,
-            icon: '🏷️'
+            ticket_prefix: c.ticket_prefix,
           }));
-          setCategories([{ id: 0, name: 'ทั้งหมด', icon: '📋' }, ...formatted]);
+          setCategories(formatted);
         }
       } catch (err) {
         console.error('Failed to load categories', err);
       }
     }
-    loadCats();
-    return () => { cancelled = true; };
+    loadCategories();
   }, []);
 
+  // ─── Fetch Problems ──────────────────────────────────────────────────────────
+  const fetchProblems = useCallback(async (tab: 0 | 1 = activeTab) => {
+    setIsLoading(true);
+    try {
+      const visibility = tab === 0 ? 'public' : 'internal';
+      const token = localStorage.getItem('access_token');
+      const res = await axios.get(`${API_BASE}/problems/list`, {
+        params: { visibility_name: visibility, page_size: 100 },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (res.data.success) {
+        let items: Problem[] = [];
+        if (Array.isArray(res.data.data)) {
+          items = res.data.data;
+        } else if (res.data.data?.items && Array.isArray(res.data.data.items)) {
+          items = res.data.data.items;
+        }
+        setProblems(items);
+      }
+    } catch (err) {
+      console.error('Failed to load problems', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    fetchProblems(activeTab);
+  }, [activeTab, fetchProblems]);
+
+
+  // ─── Filtering & Sorting Logic ───────────────────────────────────────────────
+  const filteredProblems = useMemo(() => {
+    let result = [...problems];
+
+    // 0. Strict Tab Visibility Filter
+    if (activeTab === 1) {
+      // Internal News (Staff Only)
+      result = result.filter(p => {
+        const v = (p.visibility_name || p.visibility || '').toUpperCase();
+        return v === 'STAFF_ONLY' || v === 'INTERNAL' || p.visibility_id === 2 || p.is_staff_only === true;
+      });
+    } else {
+      // Public Feed
+      result = result.filter(p => {
+        const v = (p.visibility_name || p.visibility || '').toUpperCase();
+        return (v === 'PUBLIC' || !v || p.visibility_id === 1) && v !== 'STAFF_ONLY' && v !== 'INTERNAL' && p.visibility_id !== 2;
+      });
+    }
+
+    // 1. Text Search Filter (URL query)
+    if (urlSearch.trim()) {
+      const q = urlSearch.toLowerCase();
+      result = result.filter(
+        p =>
+          (p.title && p.title.toLowerCase().includes(q)) ||
+          (p.description && p.description.toLowerCase().includes(q)) ||
+          (p.building_name && p.building_name.toLowerCase().includes(q)) ||
+          (p.category_name && p.category_name.toLowerCase().includes(q)) ||
+          (p.ticket_id && p.ticket_id.toLowerCase().includes(q))
+      );
+    }
+
+    // 2. Category Filter
+    if (selectedCategory !== 'all') {
+      result = result.filter(p => {
+        const catId = p.category_id || p.category?.id;
+        const catName = p.category_name || p.category?.category_name || p.category?.name;
+        return String(catId) === selectedCategory || catName === selectedCategory;
+      });
+    }
+
+    // 3. Location Filter
+    if (selectedLocation !== 'all') {
+      result = result.filter(p => {
+        const loc = p.building_name || p.location;
+        return loc === selectedLocation;
+      });
+    }
+
+    // 4. Status Filter
+    if (statusFilter !== 'all') {
+      result = result.filter(p => {
+        const s = (p.status_name || 'OPEN').toUpperCase();
+        if (statusFilter === 'pending') return s === 'OPEN' || s === 'PENDING' || s === 'RECEIVED';
+        if (statusFilter === 'in_progress') return s === 'IN_PROGRESS' || s === 'INVESTIGATING';
+        if (statusFilter === 'resolved') return s === 'RESOLVED' || s === 'CLOSED';
+        return true;
+      });
+    }
+
+    // 5. Sorting
+    if (sortBy === 'latest') {
+      result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    } else if (sortBy === 'upvotes') {
+      result.sort((a, b) => (b.like_count ?? b.upvote_count ?? 0) - (a.like_count ?? a.upvote_count ?? 0));
+    } else if (sortBy === 'urgent') {
+      // Prioritize urgent or unresolved
+      result.sort((a, b) => {
+        const statusOrder: Record<string, number> = { OPEN: 1, IN_PROGRESS: 2, RESOLVED: 3, CLOSED: 4 };
+        const aVal = statusOrder[(a.status_name || 'OPEN').toUpperCase()] || 99;
+        const bVal = statusOrder[(b.status_name || 'OPEN').toUpperCase()] || 99;
+        return aVal - bVal;
+      });
+    }
+
+    return result;
+  }, [problems, urlSearch, selectedCategory, selectedLocation, statusFilter, sortBy]);
+
+  // ─── Category Counts ────────────────────────────────────────────────────────
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: problems.length };
+    problems.forEach(p => {
+      const catId = p.category_id || p.category?.id;
+      const catName = p.category_name || p.category?.category_name || p.category?.name;
+      if (catId) counts[String(catId)] = (counts[String(catId)] || 0) + 1;
+      if (catName) counts[catName] = (counts[catName] || 0) + 1;
+    });
+    return counts;
+  }, [problems]);
+
+
   return (
-    <>
-      {/* TopAppBar */}
-      <header className="md:hidden fixed top-0 left-0 w-full z-50 flex justify-between items-center px-4 h-16 bg-surface-container-low shadow-sm transition-colors duration-200 ease-in-out">
-        <div className="flex items-center gap-3">
-          <span className="material-symbols-outlined text-primary">hub</span>
-          <h1 className="font-headline-lg-mobile text-headline-lg-mobile font-bold text-primary">UP Connect</h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <button className="p-2 rounded-full hover:bg-surface-variant/50 transition-colors">
-            <span className="material-symbols-outlined text-on-surface-variant">search</span>
-          </button>
-          <div className="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-xs">
-            {localStorage.getItem('display_name')?.substring(0, 2).toUpperCase() || 'UP'}
-          </div>
-        </div>
-      </header>
+    <div className="w-full flex flex-col bg-[#FAF8FF]">
+      
+      {/* ── Ambient Hero Section with University Royal Purple Gradient ── */}
+      <section className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 md:px-8 py-5 md:py-7">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#4B267D] via-[#3B1B67] to-[#250849] p-6 sm:p-8 lg:p-12 shadow-xl text-white">
+          {/* Subtle Decorative Background Glow Elements */}
+          <div className="absolute -right-16 -top-24 w-96 h-96 rounded-full bg-[#fed65b]/15 blur-3xl pointer-events-none" />
+          <div className="absolute left-1/3 -bottom-20 w-80 h-80 rounded-full bg-[#d7baff]/10 blur-2xl pointer-events-none" />
 
-      <div className="min-h-screen bg-surface pt-24 md:pt-8 pb-8 px-4">
-        <div className="max-w-[600px] mx-auto pb-20 md:pb-0">
-          
-          {/* ── Page header ── */}
-          <section className="mb-stack-lg">
-            <h2 className="font-headline-lg text-headline-lg text-primary mb-2">รายการปัญหาล่าสุด</h2>
-            <p className="font-body-md text-body-md text-on-surface-variant">รายงานปัญหาและการปรับปรุงภายในมหาวิทยาลัยพะเยา</p>
-          </section>
-
-          {/* ── Tabs (Logged in users only) ── */}
-          {isPrivileged && (
-            <div className="mb-4">
-              <div className="flex items-end gap-1 border-b border-outline-variant/30">
-                <button
-                  id="tab-public"
-                  onClick={() => { setActiveTab(0); }}
-                  className={`px-4 pb-2.5 text-label-md font-label-md border-b-2 transition-colors -mb-px ${
-                    activeTab === 0
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-on-surface-variant hover:text-primary'
-                  }`}
-                >
-                  🌐 ฟีดสาธารณะ
-                </button>
-              <button
-                id="tab-internal"
-                onClick={() => { setActiveTab(1); }}
-                className={`px-4 pb-2.5 text-label-md font-label-md border-b-2 transition-colors -mb-px ${
-                  activeTab === 1
-                    ? 'border-secondary text-secondary'
-                    : 'border-transparent text-on-surface-variant hover:text-secondary'
-                }`}
-              >
-                🔒 ข่าวสารภายใน
-              </button>
-
-              {/* Spacer + Refresh */}
-              <div className="ml-auto pb-1">
-                <button
-                  onClick={() => fetchProblems(activeTab, true)}
-                  disabled={isRefreshing}
-                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-[#2B164D] transition disabled:opacity-50"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
-                    className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}>
-                    <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
-                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                  </svg>
-                  รีเฟรช
-                </button>
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 lg:gap-12">
+            <div className="max-w-2xl space-y-4">
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/15 backdrop-blur-md text-[#fed65b] text-xs font-bold uppercase tracking-wide">
+                <span className="material-symbols-outlined text-[16px] text-[#fed65b]">verified</span>
+                ระบบฟีดและติดตามปัญหา มหาวิทยาลัยพะเยา
               </div>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-extrabold tracking-tight text-white leading-tight">
+                ร่วมกันแจ้ง ร่วมกันแก้<br />เพื่อมหาวิทยาลัยที่ดีขึ้น
+              </h1>
+              <p className="text-sm sm:text-base text-slate-200/90 leading-relaxed font-normal">
+                ศูนย์กลางรับฟังเสียงนิสิต ตรวจสอบ และติดตามการแก้ไขปัญหาในมหาวิทยาลัยพะเยา ทุกเสียงขับเคลื่อนการเปลี่ยนแปลงจริงอย่างโปร่งใสและตรวจสอบได้
+              </p>
+            </div>
+
+            {/* Action Callouts */}
+            <div className="flex flex-col sm:flex-row lg:flex-col gap-3 shrink-0 lg:w-72">
+              <NavLink
+                to="/report"
+                className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-[#D4AF37] hover:bg-[#c39e2a] active:scale-[0.98] text-[#1e1300] font-bold text-base shadow-md transition-all duration-150"
+              >
+                <span className="material-symbols-outlined text-[22px] font-bold">add_circle</span>
+                แจ้งปัญหาใหม่
+              </NavLink>
+
+              {isPrivileged && (
+                <div className="flex rounded-xl bg-white/10 p-1 border border-white/20">
+                  <button
+                    onClick={() => setActiveTab(0)}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                      activeTab === 0 ? 'bg-white text-[#340866] shadow-sm' : 'text-white/80 hover:text-white'
+                    }`}
+                  >
+                    🌐 ฟีดสาธารณะ
+                  </button>
+                  <button
+                    onClick={() => setActiveTab(1)}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                      activeTab === 1 ? 'bg-white text-[#340866] shadow-sm' : 'text-white/80 hover:text-white'
+                    }`}
+                  >
+                    🔒 ข่าวสารภายใน
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-        )}
-
-        {/* Refresh button for non-staff */}
-        {!isPrivileged && (
-          <div className="flex justify-end mb-3">
-            <button
-              onClick={() => fetchProblems(0, true)}
-              disabled={isRefreshing}
-              className="flex items-center gap-1 text-xs text-slate-400 hover:text-[#2B164D] transition disabled:opacity-50"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
-                className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}>
-                <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-              </svg>
-              รีเฟรช
-            </button>
-          </div>
-        )}
-
-        {/* ── Category filter chips ── */}
-        {!isLoading && problems.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-2 mb-5 scrollbar-none">
-            {visibleChips.map(cat => {
-              const isSelected = selectedCategoryId === cat.id;
-              const count = getCategoryCount(cat.id);
-              return (
-                <button
-                  key={cat.id}
-                  id={`cat-chip-${cat.id}`}
-                  onClick={() => setSelectedCategoryId(cat.id)}
-                  className={`
-                    flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-label-md font-label-md transition-all duration-200
-                    ${isSelected
-                      ? 'bg-primary text-white shadow-md'
-                      : 'bg-white border border-outline-variant/50 text-on-surface-variant hover:border-primary hover:text-primary'
-                    }
-                  `}
-                >
-                  {cat.icon} {cat.name} ({count})
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── Error state ── */}
-        {error && !isLoading && (
-          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-            <span className="text-5xl">😵</span>
-            <p className="text-slate-600 font-medium">{error}</p>
-            <button
-              onClick={() => fetchProblems(activeTab, false)}
-              className="mt-2 px-5 py-2 rounded-xl bg-[#2B164D] text-white text-sm font-semibold hover:bg-[#3d2268] transition"
-            >
-              ลองอีกครั้ง
-            </button>
-          </div>
-        )}
-
-        {/* ── Loading skeletons ── */}
-        {isLoading && (
-          <div>
-            {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
-          </div>
-        )}
-
-        {/* ── Empty state ── */}
-        {!isLoading && !error && displayProblems.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
-            <span className="text-5xl">📭</span>
-            <p className="text-slate-500 font-medium">ไม่พบโพสต์ในหมวดหมู่นี้</p>
-            {selectedCategoryId !== 0 && (
-              <button
-                onClick={() => setSelectedCategoryId(0)}
-                className="text-xs text-[#2B164D] underline underline-offset-2"
-              >
-                ดูทั้งหมด
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* ── Problem cards ── */}
-        {!isLoading && !error && displayProblems.map(problem => {
-          const pid = problem.problem_id ?? problem.id;
-          return (
-            <ProblemCard
-              key={pid}
-              problem={problem}
-              userId={userId}
-              onUpvote={handleUpvote}
-              onDeleteRequest={id => setDeleteTargetId(id)}
-            />
-          );
-        })}
         </div>
+      </section>
+
+      {/* ── Primary Layout: Feed ── */}
+      <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 md:px-8 flex flex-col gap-5 pb-12">
+          
+          {/* Interactive Filter & Dropdown Navigation Bar */}
+          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200/80 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#340866] text-[22px]">tune</span>
+                <h2 className="text-base sm:text-lg font-bold text-[#131b2e]">ค้นหาและคัดกรองปัญหา</h2>
+              </div>
+              {(selectedCategory !== 'all' || selectedLocation !== 'all' || statusFilter !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory('all');
+                    setSelectedLocation('all');
+                    setStatusFilter('all');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-800 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                  ล้างตัวกรองทั้งหมด
+                </button>
+              )}
+            </div>
+
+            {/* Dropdown Filters Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              
+              {/* 1. Category Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-[#340866]">category</span>
+                  หมวดหมู่ปัญหา
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedCategory}
+                    onChange={e => setSelectedCategory(e.target.value)}
+                    className="w-full bg-[#f2f3ff] text-slate-700 text-xs font-semibold rounded-xl px-3 py-2.5 border border-slate-200/80 focus:outline-none focus:border-[#4B267D] focus:ring-1 focus:ring-[#4B267D] cursor-pointer appearance-none pr-8"
+                  >
+                    <option value="all">ทุกหมวดหมู่ ({problems.length})</option>
+                    {categories.map(cat => {
+                      const count = categoryCounts[String(cat.id)] || categoryCounts[cat.name] || 0;
+                      return (
+                        <option key={cat.id} value={String(cat.id)}>
+                          {cat.name} ({count})
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[18px] text-slate-400 pointer-events-none">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+
+              {/* 2. Location Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-[#340866]">location_on</span>
+                  สถานที่ / อาคาร
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedLocation}
+                    onChange={e => setSelectedLocation(e.target.value)}
+                    className="w-full bg-[#f2f3ff] text-slate-700 text-xs font-semibold rounded-xl px-3 py-2.5 border border-slate-200/80 focus:outline-none focus:border-[#4B267D] focus:ring-1 focus:ring-[#4B267D] cursor-pointer appearance-none pr-8"
+                  >
+                    <option value="all">ทุกสถานที่ ({locations.length})</option>
+                    {locations.map((loc, i) => (
+                      <option key={i} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[18px] text-slate-400 pointer-events-none">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+
+              {/* 3. Status Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-[#340866]">verified</span>
+                  สถานะการดำเนินงาน
+                </label>
+                <div className="relative">
+                  <select
+                    value={statusFilter}
+                    onChange={e => setStatusFilter(e.target.value)}
+                    className="w-full bg-[#f2f3ff] text-slate-700 text-xs font-semibold rounded-xl px-3 py-2.5 border border-slate-200/80 focus:outline-none focus:border-[#4B267D] focus:ring-1 focus:ring-[#4B267D] cursor-pointer appearance-none pr-8"
+                  >
+                    <option value="all">ทุกสถานะ</option>
+                    <option value="pending">รับเรื่องแล้ว / รอดำเนินการ</option>
+                    <option value="in_progress">กำลังดำเนินการ</option>
+                    <option value="resolved">แก้ไขเสร็จสิ้น</option>
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[18px] text-slate-400 pointer-events-none">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+
+              {/* 4. Sort Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-[#340866]">sort</span>
+                  เรียงลำดับตาม
+                </label>
+                <div className="relative">
+                  <select
+                    value={sortBy}
+                    onChange={e => setSortBy(e.target.value)}
+                    className="w-full bg-[#f2f3ff] text-slate-700 text-xs font-semibold rounded-xl px-3 py-2.5 border border-slate-200/80 focus:outline-none focus:border-[#4B267D] focus:ring-1 focus:ring-[#4B267D] cursor-pointer appearance-none pr-8"
+                  >
+                    <option value="latest">เรียงตาม: ล่าสุด</option>
+                    <option value="upvotes">จำนวนคนร่วมแจ้งสูงสุด</option>
+                    <option value="urgent">ความเร่งด่วน</option>
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[18px] text-slate-400 pointer-events-none">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          {/* ── Loading State ── */}
+          {isLoading && (
+            <div className="flex flex-col gap-4">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 animate-pulse space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div className="h-6 w-32 bg-slate-200 rounded-full" />
+                    <div className="h-6 w-24 bg-slate-200 rounded-full" />
+                  </div>
+                  <div className="h-4 w-48 bg-slate-200 rounded" />
+                  <div className="h-12 w-full bg-slate-200 rounded" />
+                  <div className="h-8 w-full bg-slate-100 rounded-lg" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Empty State ── */}
+          {!isLoading && filteredProblems.length === 0 && (
+            <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-slate-200/80 flex flex-col items-center justify-center gap-3">
+              <span className="material-symbols-outlined text-5xl text-slate-300">
+                {activeTab === 1 ? 'lock' : 'feed'}
+              </span>
+              <p className="text-base font-bold text-slate-700">
+                {activeTab === 1 ? 'ยังไม่มีข่าวสารหรือข้อร้องเรียนภายในสำหรับบุคลากร' : 'ไม่พบรายการปัญหาตามเงื่อนไขที่เลือก'}
+              </p>
+              <p className="text-xs text-slate-400">
+                {activeTab === 1 ? 'เฉพาะโพสต์ที่บุคลากรตั้งค่าเป็น "ข่าวสารภายใน" เท่านั้นที่จะแสดงในแท็บนี้' : 'ลองเปลี่ยนหมวดหมู่ คำค้นหา หรือตัวกรองสถานะ'}
+              </p>
+              {activeTab === 0 && (
+                <button
+                  onClick={() => { setSelectedCategory('all'); setStatusFilter('all'); }}
+                  className="mt-2 px-4 py-2 text-xs font-bold text-[#340866] bg-[#f2f3ff] rounded-xl hover:bg-[#eaedff] transition"
+                >
+                  ล้างตัวกรองทั้งหมด
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* ── Feed Cards ── */}
+          {!isLoading && filteredProblems.map(problem => {
+            const pid = problem.problem_id || problem.id;
+            const isExpanded = !!expandedMap[pid];
+            const ticketCode = getTicketCode(problem);
+            const relativeTime = formatThaiRelativeTime(problem.created_at);
+
+            // Raw images extraction
+            let rawImages: string[] = [];
+            if ((problem as any).images) rawImages = (problem as any).images;
+            else if (problem.attachments && problem.attachments.length > 0) rawImages = problem.attachments.map(a => a.file_url);
+            else if (problem.image_url || problem.image || problem.photo) rawImages = [problem.image_url || problem.image || problem.photo!];
+            const images = rawImages.map(url => resolveImageUrl(url)).filter(Boolean) as string[];
+
+            // Author Badge logic
+            const authorRole = problem.author?.role || '';
+            const authorName = problem.author?.display_name || problem.author_name || '';
+            const isStudent = authorRole === 'student' || authorName.includes('นิสิต');
+            const isStaff = authorRole === 'staff' || authorName.includes('บุคลากร');
+            const isAnon = authorRole === 'anonymous' || authorName.includes('ไม่ประสงค์') || authorName.includes('ไม่ระบุ');
+
+            // Status Badge logic
+            const statusUpper = (problem.status_name || 'OPEN').toUpperCase();
+            const isInProgress = statusUpper === 'IN_PROGRESS' || statusUpper === 'INVESTIGATING';
+            const isResolved = statusUpper === 'RESOLVED' || statusUpper === 'CLOSED';
+
+            return (
+              <article
+                key={pid}
+                onClick={() => navigate(`/issue/${pid}`, { state: { problem } })}
+                className="feed-ticket-card relative bg-white rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-all duration-200 border border-slate-200/80 cursor-pointer group"
+              >
+                <div className="flex flex-col gap-3.5">
+                  
+                  {/* Header Badges: Reporter + Status */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isStudent && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#340866] text-white text-xs font-bold shadow-xs">
+                          <span className="material-symbols-outlined text-[15px]">school</span>
+                          {authorName.includes('นิสิต') ? authorName : 'นิสิต มพ.'}
+                        </span>
+                      )}
+                      {isStaff && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#4B267D] text-white text-xs font-bold shadow-xs">
+                          <span className="material-symbols-outlined text-[15px]">apartment</span>
+                          บุคลากร มพ.
+                        </span>
+                      )}
+                      {isAnon && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#dae2fd] text-[#131b2e] text-xs font-bold">
+                          <span className="material-symbols-outlined text-[15px]">person_off</span>
+                          ไม่ระบุตัวตน (Anonymous)
+                        </span>
+                      )}
+                      {!isStudent && !isStaff && !isAnon && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">
+                          <span className="material-symbols-outlined text-[15px]">person</span>
+                          {authorName || 'ผู้แจ้งทั่วไป'}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Status Chip */}
+                    <div>
+                      {isInProgress && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold">
+                          <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                          กำลังดำเนินการ
+                        </span>
+                      )}
+                      {isResolved && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold">
+                          <span className="material-symbols-outlined text-[16px] text-emerald-600 font-bold">check_circle</span>
+                          แก้ไขเสร็จสิ้น
+                        </span>
+                      )}
+                      {!isInProgress && !isResolved && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 text-xs font-bold">
+                          <span className="w-2 h-2 rounded-full bg-amber-500" />
+                          รับเรื่องแล้ว / รอดำเนินการ
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Metadata Timestamp & Location */}
+                  <div className="flex flex-wrap items-center gap-2 text-slate-500 text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-slate-400">schedule</span>
+                    <span>{relativeTime}</span>
+                    <span className="text-slate-300">•</span>
+                    <span className="material-symbols-outlined text-[16px] text-slate-400">location_on</span>
+                    <span className="font-semibold text-slate-700">
+                      {problem.building_name || problem.location || 'มหาวิทยาลัยพะเยา'}
+                    </span>
+                  </div>
+
+                  {/* Title & Body Content */}
+                  <div className="space-y-1">
+                    {problem.title && (
+                      <h3 className="text-base font-bold text-[#131b2e] leading-snug group-hover:text-[#340866] transition-colors">
+                        {problem.title}
+                      </h3>
+                    )}
+                    <p className={`text-sm text-slate-600 leading-relaxed font-normal ${!isExpanded ? 'line-clamp-3' : ''}`}>
+                      {problem.description || problem.title || 'ไม่มีรายละเอียดเพิ่มเติม'}
+                    </p>
+                    {(problem.description || '').length > 180 && (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          setExpandedMap(p => ({ ...p, [pid]: !p[pid] }));
+                        }}
+                        className="text-xs font-bold text-[#340866] hover:underline inline-block mt-0.5"
+                      >
+                        {isExpanded ? 'ย่อเนื้อหา' : 'อ่านเพิ่มเติม...'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Attachment Images */}
+                  {images.length > 0 && (
+                    <div className="w-full rounded-xl overflow-hidden bg-slate-50 border border-slate-100 max-h-72 flex items-center justify-center">
+                      <img
+                        src={images[0]}
+                        alt="รูปภาพประกอบเรื่องร้องเรียน"
+                        className="w-full h-full object-cover max-h-72 transition-transform duration-200 group-hover:scale-[1.01]"
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
+
+                  {/* Responsible Category & Case Info Meta Strip */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 bg-[#f2f3ff]/70 rounded-xl px-3.5 py-2.5 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-slate-500 font-medium">หมวดหมู่ที่รับผิดชอบ:</span>
+                      <span className="px-2.5 py-0.5 rounded-lg bg-white text-[#340866] font-bold shadow-xs border border-slate-200/60">
+                        {problem.category_name || 'ทั่วไป'}
+                      </span>
+                    </div>
+                    <div className="font-mono text-slate-500 font-medium">
+                      รหัสเคส: {ticketCode}
+                    </div>
+                  </div>
+
+                  {/* Action Footer */}
+                  <div className="flex items-center justify-end pt-1">
+                    {/* View Details Link */}
+                    <span className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-[#340866] group-hover:translate-x-0.5 transition-transform">
+                      ดูรายละเอียด
+                      <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                    </span>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
       </div>
 
-      {/* ── Delete confirmation modal ── */}
-      {deleteTargetId !== null && !isDeleting && (
-        <DeleteModal
-          onConfirm={confirmDelete}
-          onCancel={() => setDeleteTargetId(null)}
-        />
-      )}
-      {isDeleting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="w-10 h-10 border-4 border-white border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-
-      {/* ── Toasts ── */}
-      <ToastStack toasts={toasts} />
-
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .scrollbar-none::-webkit-scrollbar { display: none; }
-        .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
-    </>
+    </div>
   );
 }

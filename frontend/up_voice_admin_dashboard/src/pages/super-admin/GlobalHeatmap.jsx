@@ -23,12 +23,25 @@ const StatCard = ({ label, value, sub, gradient, icon: Icon }) => (
   </div>
 );
 
+const PHAYAO_BOUNDS = [
+  [18.9600, 99.8200],
+  [19.1200, 99.9800],
+];
+
 // ── Map Component with Category Colors ─────────────────────────
 const HeatmapPlaceholder = ({ geoPoints }) => {
   const center = [19.0289, 99.8967]; // University of Phayao
   return (
     <div className="relative w-full h-full rounded-b-2xl overflow-hidden" style={{ zIndex: 0 }}>
-      <MapContainer center={center} zoom={15} style={{ height: '100%', width: '100%' }}>
+      <MapContainer
+        center={center}
+        zoom={15}
+        minZoom={13}
+        maxZoom={18}
+        maxBounds={PHAYAO_BOUNDS}
+        maxBoundsViscosity={1.0}
+        style={{ height: '100%', width: '100%' }}
+      >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'

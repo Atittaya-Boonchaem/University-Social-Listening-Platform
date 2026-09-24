@@ -38,6 +38,17 @@ export async function mergeDuplicate(parentId, childId) {
 }
 
 /**
+ * Unmerge a duplicate ticket (child) from its parent.
+ * POST /problems/unmerge-duplicate?child_id=Y
+ */
+export async function unmergeDuplicate(childId) {
+  const res = await api.post('/problems/unmerge-duplicate', null, {
+    params: { child_id: childId },
+  });
+  return res.data;
+}
+
+/**
  * Get top N SLA-breached (or at-risk) tickets.
  * GET /problems/analytics/sla-breached?limit=N
  */

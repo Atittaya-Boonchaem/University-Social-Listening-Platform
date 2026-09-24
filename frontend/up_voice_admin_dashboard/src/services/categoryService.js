@@ -40,3 +40,27 @@ export async function deleteCategory(categoryId) {
   const res = await api.delete(`/problems/categories/${categoryId}`);
   return res.data;
 }
+
+/**
+ * Trigger AI model retraining (Continuous Learning / Self-learning).
+ * POST /api/v1/settings/retrain-category-model
+ */
+export async function retrainCategoryModel() {
+  const res = await api.post('/settings/retrain-category-model');
+  return res.data;
+}
+
+/**
+ * Upload AI Training Data CSV for a specific category.
+ * POST /api/v1/problems/categories/:id/import-data
+ */
+export async function importCategoryData(categoryId, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await api.post(`/problems/categories/${categoryId}/import-data`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return res.data;
+}

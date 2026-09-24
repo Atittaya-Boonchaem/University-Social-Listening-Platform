@@ -621,7 +621,7 @@ def login_anonymous(request: Request, db: Session = Depends(get_db)):
 # ──────────────────────────────────────────────
 @router.post("/sso/demo-student", response_model=StandardResponse)
 def demo_student_sso(db: Session = Depends(get_db)):
-    """API สำหรับเข้าสู่ระบบสิทธิ์นิสิตแบบจำลอง (Demo SSO)"""
+    """API สำหรับเข้าสู่ระบบสิทธิ์นิสิตแบบจำลอง (Demo Student SSO)"""
     student = db.query(Student).filter(Student.user_id != None).first()
     user = None
     if student:
@@ -631,7 +631,7 @@ def demo_student_sso(db: Session = Depends(get_db)):
         user = User(email="student@up.ac.th", is_active=True)
         db.add(user)
         db.flush()
-        student = Student(user_id=user.user_id, student_id="66027179", student_name="นิสิตทดสอบระบบ (SSO Demo)", year=2, gender="male")
+        student = Student(user_id=user.user_id, student_id="66022332", student_name="นิสิตทดสอบระบบ (SSO Demo)", year=2, gender="male")
         db.add(student)
         db.commit()
     
@@ -651,7 +651,70 @@ def demo_student_sso(db: Session = Depends(get_db)):
                 "user_id": user.user_id,
                 "email": user.email or "student@up.ac.th",
                 "role": "student",
+                "role_id": "1",
                 "display_name": student.student_name if student else "นิสิตทดสอบระบบ",
+                "student_id": student.student_id if student else None,
+                "profile": {
+                    "student_id": student.student_id if student else None,
+                    "student_name": student.student_name if student else None,
+                    "faculty_id": student.faculty_id if student else None,
+                    "year": student.year if student else None,
+                    "gender": student.gender if student else None,
+                }
+            }
+        }
+    )
+
+
+@router.post("/sso/demo-staff", response_model=StandardResponse)
+def demo_staff_sso(db: Session = Depends(get_db)):
+    """API สำหรับเข้าสู่ระบบสิทธิ์บุคลากรแบบจำลอง (Demo Staff SSO)"""
+    staff = db.query(Staff).filter(Staff.employee_id.like("EXEC%") | Staff.employee_id.like("EMP%")).first()
+    if not staff:
+        staff = db.query(Staff).first()
+    user = None
+    if staff:
+        user = db.query(User).filter(User.user_id == staff.user_id).first()
+
+    if not user:
+        user = User(email="staff@up.ac.th", is_active=True)
+        db.add(user)
+        db.flush()
+        staff = Staff(
+            user_id=user.user_id,
+            employee_id="EMP-510001",
+            staff_name="ดร.วราพงษ์ คล่องแคล่ว",
+            department="กองแผนงานและพัฒนาบุคลากร",
+            position="เจ้าหน้าที่บริหารงานทั่วไป",
+        )
+        db.add(staff)
+        db.commit()
+
+    token = create_access_token({
+        "user_id": user.user_id,
+        "role": "staff",
+        "email": user.email or "staff@up.ac.th",
+        "display_name": staff.staff_name if staff else "บุคลากรทดสอบระบบ",
+    })
+    return StandardResponse(
+        success=True,
+        message="เข้าสู่ระบบสิทธิ์บุคลากรสำเร็จ",
+        data={
+            "access_token": token,
+            "token_type": "bearer",
+            "user": {
+                "user_id": user.user_id,
+                "email": user.email or "staff@up.ac.th",
+                "role": "staff",
+                "role_id": "2",
+                "display_name": staff.staff_name if staff else "บุคลากรทดสอบระบบ",
+                "profile": {
+                    "employee_id": staff.employee_id if staff else "EMP-510001",
+                    "staff_name": staff.staff_name if staff else "บุคลากรทดสอบระบบ",
+                    "department": staff.department if staff else None,
+                    "position": staff.position if staff else None,
+                    "office_location": staff.office_location if staff else None,
+                }
             }
         }
     )

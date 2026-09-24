@@ -27,6 +27,7 @@ const LS = {
     else if (u['role_id'] != null) roleId = Number(u['role_id']);
 
     localStorage.setItem('role_id', String(roleId));
+    if (roleStr) localStorage.setItem('role', roleStr);
 
     if (u['id'] != null) localStorage.setItem('user_id', String(u['id']));
     else if (u['user_id'] != null) localStorage.setItem('user_id', String(u['user_id']));
@@ -357,7 +358,7 @@ export default function LoginPage() {
       const adminUrl = import.meta.env.VITE_ADMIN_DASHBOARD_URL || (isLocal ? 'http://localhost:5173' : 'https://university-social-listening-platfor-olive.vercel.app');
       window.location.href = `${adminUrl}/sso?token=${token}`;
     } else {
-      navigate('/');
+      navigate('/profile');
     }
   }
 
@@ -373,7 +374,7 @@ export default function LoginPage() {
       } else {
         setAnonError(data.message || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
       }
-    } catch (err) {
+    } catch {
       setAnonError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
     } finally {
       setIsAnonLoading(false);
@@ -411,43 +412,43 @@ export default function LoginPage() {
             
             {activePanel === 'none' && (
               <div className="space-y-stack-md">
+
                 {/* SSO Primary Action */}
-                {activePanel === 'none' ? (
-                  <a
-                    href={`${(import.meta.env.VITE_API_URL || 'https://university-social-listening-platform.onrender.com/api/v1').replace(/\/$/, '')}/auth/sso/login`}
-                    className="w-full py-4 px-6 bg-primary-container text-white rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-primary transition-all active:scale-[0.98] shadow-lg shadow-primary/10 cursor-pointer text-center"
-                  >
-                    <svg className="w-5 h-5" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
-                      <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
-                      <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
-                      <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
-                    </svg>
-                    เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัย (@up.ac.th)
-                  </a>
-                ) : null}
+                <a
+                  href={`${(import.meta.env.VITE_API_URL || 'https://university-social-listening-platform.onrender.com/api/v1').replace(/\/$/, '')}/auth/sso/login`}
+                  className="w-full py-3.5 px-5 bg-primary-container text-white rounded-xl font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-primary transition-all active:scale-[0.98] shadow-sm cursor-pointer text-center text-xs"
+                >
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                  </svg>
+                  <span>เข้าสู่ระบบด้วย Microsoft SSO (@up.ac.th)</span>
+                </a>
                 
-                <div className="flex items-center gap-4 py-2">
+                <div className="flex items-center gap-4 py-1">
                   <div className="flex-grow h-[1px] bg-outline-variant/50"></div>
-                  <span className="font-label-sm text-label-sm text-outline">หรือเข้าใช้งานผ่านช่องทางอื่น</span>
+                  <span className="font-label-sm text-label-sm text-outline text-[11px]">หรือเข้าใช้งานผ่านช่องทางอื่น</span>
                   <div className="flex-grow h-[1px] bg-outline-variant/50"></div>
                 </div>
 
                 {/* Secondary Login Actions */}
-                <div className="grid grid-cols-1 gap-stack-sm">
-                  <button onClick={() => setActivePanel('public')} className="w-full py-4 px-6 border border-outline-variant text-primary rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-surface-container-low transition-all active:scale-[0.98]">
-                    <span className="material-symbols-outlined">person</span>
-                    เข้าสู่ระบบบุคคลทั่วไป
-                  </button>
-                  <button onClick={handleAnonymousLogin} disabled={isAnonLoading} className="w-full py-4 px-6 bg-surface-container-low text-on-surface-variant rounded-lg font-label-md text-label-md flex items-center justify-center gap-3 hover:bg-surface-container-high transition-all active:scale-[0.98]">
+                <div className="grid grid-cols-1 gap-2.5">
+                  <button onClick={handleAnonymousLogin} disabled={isAnonLoading} className="w-full py-3.5 px-5 bg-surface-container-low text-on-surface-variant rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-surface-container-high transition-all active:scale-[0.98] cursor-pointer">
                     {isAnonLoading ? (
                       <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
                     ) : (
-                      <span className="material-symbols-outlined">visibility_off</span>
+                      <span className="material-symbols-outlined text-[18px]">visibility_off</span>
                     )}
-                    {isAnonLoading ? 'กำลังประมวลผล...' : 'เข้าใช้งานแบบไม่ระบุตัวตน'}
+                    {isAnonLoading ? 'กำลังประมวลผล...' : 'เข้าใช้งานแบบไม่ระบุตัวตน (Anonymous)'}
+                  </button>
+                  <button onClick={() => setActivePanel('public')} className="w-full py-3 px-5 border border-outline-variant text-primary rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-surface-container-low transition-all active:scale-[0.98] cursor-pointer">
+                    <span className="material-symbols-outlined text-[18px]">person</span>
+                    เข้าสู่ระบบบุคคลทั่วไป / รหัสผ่าน
                   </button>
                 </div>
+
 
                 {/* Assistance Links */}
                 <div className="mt-stack-lg pt-stack-md border-t border-outline-variant/30 flex flex-col items-center gap-3">

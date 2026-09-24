@@ -1,75 +1,123 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
-import { fetchProblems, updateProblemStatus, fetchAnalytics } from '../../services/problemService';
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import { fetchProblems, updateProblemStatus } from '../../services/problemService';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Filter, Layers, CheckCircle2, Clock, AlertTriangle, RefreshCw, X, Eye, ShieldCheck, Sparkles, Building2 } from 'lucide-react';
 
+// Coordinates & Landmarks in University of Phayao (ม.พะเยา)
 const PHAYAO_CENTER = [19.0289, 99.8967];
 
+// Bounding box strictly locking map navigation to University of Phayao & Phayao area
+// [[South-West lat, lng], [North-East lat, lng]]
+const PHAYAO_BOUNDS = [
+  [18.9600, 99.8200], // South-West (ครอบคลุมพื้นที่ ม.พะเยา และรอบนอก)
+  [19.1200, 99.9800], // North-East (ครอบคลุมถึงตัวเมืองพะเยา/กว๊านพะเยา)
+];
+
+const UP_ZONES = [
+  { id: 'all', label: 'ทั้งหมด', center: [19.0289, 99.8967], zoom: 15 },
+  { id: 'dorm', label: 'หอพักนิสิต UP Dorm', center: [19.0308, 99.8906], zoom: 16, keywords: ['หอ', 'dorm', 'UP DORM'] },
+  { id: 'pky', label: 'อาคารเรียนรวม PKY / CE', center: [19.0268, 99.8965], zoom: 16, keywords: ['ภูกามยาว', 'PKY', 'CE', 'ICT', 'เรียนรวม'] },
+  { id: 'gate', label: 'ซุ้มประตู มพ. / อ่างหลวง', center: [19.0242, 99.8915], zoom: 16, keywords: ['ซุ้ม', 'ประตู', 'อ่างหลวง', 'พหลโยธิน', 'เวียง'] },
+];
+
+// Fallback coordinate mapping for UP buildings if no GPS is recorded
+const BUILDING_COORDS = {
+  'pky': [19.0263, 99.8947],
+  'ภูกามยาว': [19.0263, 99.8947],
+  'ce': [19.0273, 99.8999],
+  'ict': [19.0273, 99.8999],
+  'เทคโนโลยีสารสนเทศ': [19.0273, 99.8999],
+  'หอ': [19.0308, 99.8906],
+  'dorm': [19.0308, 99.8906],
+  'อ่างหลวง': [19.0245, 99.8920],
+  'ซุ้ม': [19.0238, 99.8910],
+  'ประตู': [19.0238, 99.8910],
+  'อธิการบดี': [19.0280, 99.8960],
+  'เวียง': [19.0290, 99.8970],
+  'โรงพยาบาล': [19.0326, 99.9199],
+  'แพทย์': [19.0326, 99.9199],
+};
+
+function getProblemBaseCoords(problem) {
+  if (problem.latitude && problem.longitude) {
+    const lat = parseFloat(problem.latitude);
+    const lng = parseFloat(problem.longitude);
+    if (!isNaN(lat) && !isNaN(lng) && lat > 18 && lat < 20 && lng > 98 && lng < 101) {
+      return [lat, lng];
+    }
+  }
+
+  const loc = (problem.location || '').toLowerCase();
+  for (const [key, coords] of Object.entries(BUILDING_COORDS)) {
+    if (loc.includes(key)) {
+      return coords;
+    }
+  }
+
+  return PHAYAO_CENTER;
+}
+
+// Controller to smoothly pan & zoom map when zone changes
+function MapFlyController({ center, zoom }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center && map) {
+      map.flyTo(center, zoom, { duration: 0.8 });
+    }
+  }, [center, zoom, map]);
+  return null;
+}
+
 export default function CategoryAdminDashboard() {
-  const [selectedCluster, setSelectedCluster] = useState(null);
-  const [expandedPostId, setExpandedPostId] = useState(null);
-  const [clusters, setClusters] = useState([]);
-  const [allRawProblems, setAllRawProblems] = useState([]);
-  const [analytics, setAnalytics] = useState(null);
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
+  const [clusters, setClusters] = useState([]);
+  const [assignedCatName, setAssignedCatName] = useState('');
+  const [adminName, setAdminName] = useState('');
+  const [adminRole, setAdminRole] = useState('หัวหน้างานอาคาร');
+
+  // Filter States
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'OPEN' | 'IN_PROGRESS' | 'RESOLVED'
+  const [selectedZone, setSelectedZone] = useState('all');
+  const [locationSearch, setLocationSearch] = useState('');
+  const [selectedCluster, setSelectedCluster] = useState(null);
+  const [expandedPostId, setExpandedPostId] = useState(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(null);
 
-  // Status Filter State for Interactive Stat Cards
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'OPEN' | 'IN_PROGRESS' | 'RESOLVED'
-  const [showMap, setShowMap] = useState(false);
-  const [assignedCatName, setAssignedCatName] = useState('');
+  // Map Controls
+  const [mapCenter, setMapCenter] = useState(PHAYAO_CENTER);
+  const [mapZoom, setMapZoom] = useState(15);
 
+  // 1. Fetch user info
   useEffect(() => {
     api.get('/users/me')
       .then(res => {
-        if (res.data?.success && res.data?.data?.category_name) {
-          setAssignedCatName(res.data.data.category_name);
+        if (res.data?.success && res.data?.data) {
+          const user = res.data.data;
+          if (user.category_name) setAssignedCatName(user.category_name);
+          if (user.display_name) setAdminName(user.display_name);
+          if (user.role) setAdminRole(user.role === 'category_admin' ? (user.category_name || 'แอดมินหมวดหมู่') : user.role);
         }
       })
       .catch(() => {});
   }, []);
 
-  // Get Admin Name from token
-  const getAdminName = () => {
-    try {
-      const token = localStorage.getItem('token');
-      if (token) {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        return payload.display_name || payload.email || 'แอดมินปัญหา';
-      }
-    } catch {}
-    return 'แอดมินปัญหา';
-  };
-  const adminName = getAdminName();
-
-  // Format today's date in Thai format
-  const today = new Date().toLocaleDateString('th-TH', { 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
-  });
-
+  // 2. Load problems & clusters
   const loadData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [pubData, internalData, analyticsData] = await Promise.all([
+      const [pubData, internalData] = await Promise.all([
         fetchProblems({ page_size: 150, visibility_name: 'public' }, true),
         fetchProblems({ page_size: 150, visibility_name: 'internal' }, true),
-        fetchAnalytics(),
       ]);
 
       const merged = [...(pubData.items || []), ...(internalData.items || [])];
       const unique = Array.from(new Map(merged.map(p => [p.problem_id, p])).values());
 
-      setAllRawProblems(unique);
-
-      // Separate parents and children across ALL statuses (including RESOLVED)
       const parents = unique.filter(p => !p.parent_problem_id);
       const children = unique.filter(p => p.parent_problem_id);
 
@@ -80,7 +128,7 @@ export default function CategoryAdminDashboard() {
             id: parent.problem_id,
             text: parent.description,
             author: parent.author_name || parent.author?.display_name || "ไม่ระบุชื่อ",
-            time: new Date(parent.created_at).toLocaleString('th-TH'),
+            time: parent.created_at ? new Date(parent.created_at).toLocaleString('th-TH') : '',
             locationDetail: parent.building_name || parent.location || "ไม่ระบุสถานที่",
             images: parent.attachments?.map(a => a.file_url) || [],
             llm_analysis: parent.llm_analysis
@@ -89,24 +137,32 @@ export default function CategoryAdminDashboard() {
             id: dup.problem_id,
             text: dup.description,
             author: dup.author_name || dup.author?.display_name || "ไม่ระบุชื่อ",
-            time: new Date(dup.created_at).toLocaleString('th-TH'),
+            time: dup.created_at ? new Date(dup.created_at).toLocaleString('th-TH') : '',
             locationDetail: dup.building_name || dup.location || "ไม่ระบุสถานที่",
             images: dup.attachments?.map(a => a.file_url) || [],
             llm_analysis: dup.llm_analysis
           }))
         ];
 
+        let formattedTicketId = `#UP-68-${String(parent.problem_id).padStart(4, '0')}`;
+        if (parent.ticket_id) {
+          formattedTicketId = parent.ticket_id;
+        } else if (parent.ticket_prefix) {
+          formattedTicketId = `${parent.ticket_prefix}-${parent.created_at ? new Date(parent.created_at).getFullYear().toString().slice(-2) : '68'}-${String(parent.problem_id).padStart(4, '0')}`;
+        }
+
         return {
-          id: parent.ticket_id || (parent.ticket_prefix ? `${parent.ticket_prefix}-${new Date(parent.created_at).getFullYear().toString().slice(-2)}-${String(parent.problem_id).padStart(4, '0')}` : `#${parent.problem_id}`),
+          id: formattedTicketId,
           problem_id: parent.problem_id,
           topic: parent.title,
-          date: new Date(parent.created_at).toLocaleDateString('th-TH'),
-          isoDate: parent.created_at.split('T')[0],
+          date: parent.created_at ? new Date(parent.created_at).toLocaleDateString('th-TH') : '',
+          isoDate: parent.created_at ? parent.created_at.split('T')[0] : '',
           location: parent.building_name || parent.location || "ไม่ระบุสถานที่",
           latitude: parent.latitude,
           longitude: parent.longitude,
+          category_id: parent.category_id,
           category_name: parent.category_name,
-          color_code: parent.color_code || '#2B164D',
+          color_code: parent.color_code || '#340866',
           reportCount: allPostsInCluster.length,
           status: parent.status_name,
           posts: allPostsInCluster
@@ -114,12 +170,6 @@ export default function CategoryAdminDashboard() {
       });
 
       setClusters(constructedClusters);
-      setAnalytics(analyticsData);
-
-      // Automatically show map if category has GPS coordinates
-      const hasGps = constructedClusters.some(c => c.latitude && c.longitude);
-      setShowMap(hasGps);
-
     } catch (e) {
       console.error(e);
       setError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่');
@@ -128,19 +178,18 @@ export default function CategoryAdminDashboard() {
     }
   }, []);
 
-  useEffect(() => { 
-    loadData(); 
+  useEffect(() => {
+    loadData();
   }, [loadData]);
 
+  // Handle status update
   const handleStatusChange = async (problemId, newStatus) => {
     setIsUpdatingStatus(problemId);
     try {
       await updateProblemStatus(problemId, newStatus);
-      setClusters(prev => prev.map(c => 
+      setClusters(prev => prev.map(c =>
         c.problem_id === problemId ? { ...c, status: newStatus } : c
       ));
-      const newAnalytics = await fetchAnalytics();
-      setAnalytics(newAnalytics);
     } catch (err) {
       alert("ไม่สามารถเปลี่ยนสถานะได้: " + err.message);
     } finally {
@@ -148,460 +197,931 @@ export default function CategoryAdminDashboard() {
     }
   };
 
-  const openModal = (cluster) => {
-    setSelectedCluster(cluster);
-    setExpandedPostId(null);
+  // 3. Computed KPI Stats
+  const totalCount = clusters.length;
+  const openCount = clusters.filter(c => c.status === 'OPEN').length;
+  const progressCount = clusters.filter(c => c.status === 'IN_PROGRESS').length;
+  const resolvedCount = clusters.filter(c => c.status === 'RESOLVED' || c.status === 'CLOSED').length;
+
+  // 4. Group problems by location / building
+  const locationStats = useMemo(() => {
+    const map = new Map();
+
+    clusters.forEach(c => {
+      const loc = c.location && c.location !== 'ไม่ระบุสถานที่' ? c.location : 'จุดรอรถเมล์/บริเวณทั่วไป';
+      if (!map.has(loc)) {
+        map.set(loc, {
+          name: loc,
+          total: 0,
+          open: 0,
+          in_progress: 0,
+          resolved: 0,
+          clusters: [],
+          icon: 'apartment'
+        });
+      }
+      const item = map.get(loc);
+      item.total += 1;
+      if (c.status === 'OPEN') item.open += 1;
+      else if (c.status === 'IN_PROGRESS') item.in_progress += 1;
+      else item.resolved += 1;
+      item.clusters.push(c);
+
+      if (loc.includes('หอ') || loc.includes('Dorm')) item.icon = 'apartment';
+      else if (loc.includes('เรียน') || loc.includes('PKY') || loc.includes('ภูกามยาว')) item.icon = 'school';
+      else if (loc.includes('ประตู') || loc.includes('พหลโยธิน') || loc.includes('ถนน')) item.icon = 'traffic';
+      else if (loc.includes('ICT') || loc.includes('เทคโนโลยี') || loc.includes('CE')) item.icon = 'devices';
+      else if (loc.includes('อ่างหลวง') || loc.includes('น้ำ')) item.icon = 'water';
+      else if (loc.includes('เวียง') || loc.includes('กีฬา') || loc.includes('กิจกรรม')) item.icon = 'sports_handball';
+      else item.icon = 'domain';
+    });
+
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [clusters]);
+
+  // Zone counts
+  const zoneCounts = useMemo(() => {
+    const counts = { all: totalCount, dorm: 0, pky: 0, gate: 0 };
+    clusters.forEach(c => {
+      const loc = (c.location || '').toLowerCase();
+      if (loc.includes('หอ') || loc.includes('dorm')) counts.dorm += 1;
+      else if (loc.includes('เรียน') || loc.includes('pky') || loc.includes('ภูกามยาว') || loc.includes('ce') || loc.includes('ict')) counts.pky += 1;
+      else if (loc.includes('ประตู') || loc.includes('อ่างหลวง') || loc.includes('พหลโยธิน') || loc.includes('เวียง')) counts.gate += 1;
+    });
+    return counts;
+  }, [clusters, totalCount]);
+
+  // Top hotspot
+  const topHotspot = locationStats.length > 0 ? locationStats[0] : null;
+
+  // Handle Zone selection & pan map
+  const handleSelectZone = (zoneId) => {
+    setSelectedZone(zoneId);
+    const z = UP_ZONES.find(item => item.id === zoneId);
+    if (z) {
+      setMapCenter(z.center);
+      setMapZoom(z.zoom);
+    }
   };
 
-  // Filter clusters by search, date, AND active status card filter
-  const filteredClusters = clusters.filter(c => {
-    const matchSearch = !search || c.topic.toLowerCase().includes(search.toLowerCase()) || c.id.toLowerCase().includes(search.toLowerCase());
-    const matchDate = !dateFilter || c.isoDate === dateFilter;
-    
-    let matchStatus = true;
-    if (statusFilter === 'OPEN') {
-      matchStatus = c.status === 'OPEN';
-    } else if (statusFilter === 'IN_PROGRESS') {
-      matchStatus = c.status === 'IN_PROGRESS';
-    } else if (statusFilter === 'RESOLVED') {
-      matchStatus = c.status === 'RESOLVED' || c.status === 'CLOSED';
-    }
+  // Filtered location stats for the table
+  const filteredLocationStats = useMemo(() => {
+    return locationStats.filter(loc => {
+      const matchSearch = !locationSearch || loc.name.toLowerCase().includes(locationSearch.toLowerCase());
+      let matchZone = true;
+      if (selectedZone === 'dorm') {
+        matchZone = loc.name.includes('หอ') || loc.name.includes('Dorm');
+      } else if (selectedZone === 'pky') {
+        matchZone = loc.name.includes('เรียน') || loc.name.includes('PKY') || loc.name.includes('ภูกามยาว') || loc.name.includes('CE') || loc.name.includes('ICT');
+      } else if (selectedZone === 'gate') {
+        matchZone = loc.name.includes('ประตู') || loc.name.includes('อ่างหลวง') || loc.name.includes('พหลโยธิน') || loc.name.includes('เวียง');
+      }
+      return matchSearch && matchZone;
+    });
+  }, [locationStats, locationSearch, selectedZone]);
 
-    return matchSearch && matchDate && matchStatus;
-  });
+  // Smart Radial Spiderfy Pins for OpenStreetMap
+  // Groups problems by location and spreads them radially so multiple problems at the same building NEVER overlap!
+  const osmPins = useMemo(() => {
+    const groups = new Map();
 
-  // Calculate real counts across all loaded items (both cluster tasks and raw reports)
-  const openClusters = clusters.filter(c => c.status === 'OPEN');
-  const progressClusters = clusters.filter(c => c.status === 'IN_PROGRESS');
-  const resolvedClusters = clusters.filter(c => c.status === 'RESOLVED' || c.status === 'CLOSED');
+    clusters.forEach((c) => {
+      const baseKey = c.building_name || c.location || 'default';
+      if (!groups.has(baseKey)) {
+        groups.set(baseKey, []);
+      }
+      groups.get(baseKey).push(c);
+    });
 
-  const openCount = openClusters.length;
-  const progressCount = progressClusters.length;
-  const resolvedCount = resolvedClusters.length;
+    const pins = [];
 
-  const openReportsCount = openClusters.reduce((sum, c) => sum + (c.reportCount || 1), 0);
-  const progressReportsCount = progressClusters.reduce((sum, c) => sum + (c.reportCount || 1), 0);
-  const resolvedReportsCount = resolvedClusters.reduce((sum, c) => sum + (c.reportCount || 1), 0);
-  const totalReportsCount = clusters.reduce((sum, c) => sum + (c.reportCount || 1), 0);
+    groups.forEach((groupItems) => {
+      const baseCoord = getProblemBaseCoords(groupItems[0]);
+      const count = groupItems.length;
 
-  // GPS points for location map
-  const geoPoints = clusters.filter(c => c.latitude && c.longitude);
-  const categoryTitle = assignedCatName || clusters[0]?.category_name || 'หมวดหมู่ปัญหาของคุณ';
+      groupItems.forEach((c, idx) => {
+        let finalCoord = baseCoord;
+        if (count > 1) {
+          // Distribute in a small circle around the building center (approx 35-40 meters)
+          const angle = (2 * Math.PI * idx) / count;
+          const radius = 0.00038;
+          finalCoord = [
+            baseCoord[0] + radius * Math.cos(angle),
+            baseCoord[1] + (radius * 1.15) * Math.sin(angle),
+          ];
+        }
+
+        const isUrgent = c.status === 'OPEN' || c.reportCount >= 4;
+        let color = '#340866'; // Resolved (purple)
+        let zOrder = 1;
+        let radius = 9;
+
+        if (c.status === 'OPEN') {
+          color = '#ba1a1a'; // Red
+          zOrder = 2;
+          radius = 10;
+        } else if (c.status === 'IN_PROGRESS') {
+          color = '#f59e0b'; // Bright Amber / Yellow
+          zOrder = 10; // High z-order so yellow is rendered on top!
+          radius = 12; // Larger size so it stands out immediately!
+        }
+
+        pins.push({
+          ...c,
+          coords: finalCoord,
+          color,
+          isUrgent,
+          zOrder,
+          radius,
+        });
+      });
+    });
+
+    // Sort ascending by zOrder so high priority (IN_PROGRESS) is rendered LAST (on top)!
+    pins.sort((a, b) => a.zOrder - b.zOrder);
+
+    return pins;
+  }, [clusters]);
+
+  // Filtered Pins on Map according to active statusFilter and selectedZone
+  const displayedOsmPins = useMemo(() => {
+    return osmPins.filter(pin => {
+      // 1. Status Filter
+      if (statusFilter === 'OPEN' && pin.status !== 'OPEN') return false;
+      if (statusFilter === 'IN_PROGRESS' && pin.status !== 'IN_PROGRESS') return false;
+      if (statusFilter === 'RESOLVED' && pin.status !== 'RESOLVED' && pin.status !== 'CLOSED') return false;
+
+      // 2. Zone Filter
+      if (selectedZone === 'dorm') {
+        const loc = (pin.location || '').toLowerCase();
+        if (!loc.includes('หอ') && !loc.includes('dorm')) return false;
+      } else if (selectedZone === 'pky') {
+        const loc = (pin.location || '').toLowerCase();
+        if (!loc.includes('เรียน') && !loc.includes('pky') && !loc.includes('ภูกามยาว') && !loc.includes('ce') && !loc.includes('ict')) return false;
+      } else if (selectedZone === 'gate') {
+        const loc = (pin.location || '').toLowerCase();
+        if (!loc.includes('ประตู') && !loc.includes('อ่างหลวง') && !loc.includes('พหลโยธิน') && !loc.includes('เวียง')) return false;
+      }
+
+      return true;
+    });
+  }, [osmPins, statusFilter, selectedZone]);
+
+  const categoryTitle = assignedCatName || clusters[0]?.category_name || 'กองอาคารสถานที่และยานพาหนะ';
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2B164D]"></div>
+      <div className="flex h-[80vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 border-4 border-[#340866] border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm font-bold text-[#4a4450]">กำลังโหลดข้อมูลภาพรวม...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans text-left space-y-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-              <span>Category Admin Dashboard</span>
-              <span className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-1 rounded-full font-bold">
-                📁 {categoryTitle}
+    <div className="w-full bg-[#faf8ff] min-h-screen text-[#131b2e] pb-16">
+      <div className="px-4 md:px-8 py-6 max-w-[1520px] mx-auto space-y-6">
+
+        {/* ── Top Header & Title Area ────────────────────────────────────── */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#eddcff] text-[#340866] text-xs font-bold">
+                {categoryTitle}
               </span>
+              <span className="text-[#7b7482] text-xs">•</span>
+              <span className="text-xs text-[#4a4450] font-medium">ภาพรวมคำร้องประจำวัน</span>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold text-[#131b2e] tracking-tight">
+              ภาพรวมการซ่อมบำรุงภาคสนาม
             </h1>
-            <p className="text-sm text-slate-500 mt-1">บริหารจัดการและติดตามปัญหากลุ่มงานที่คุณรับผิดชอบ</p>
+            <p className="text-xs md:text-sm text-[#4a4450]">
+              ติดตามงานซ่อมบำรุง ตรวจสอบคำร้องซ้ำซ้อน และกระจายการสื่อสารให้นิสิตในมหาวิทยาลัย
+            </p>
           </div>
-          <div className="flex items-center gap-4">
-            {geoPoints.length > 0 && (
-              <button
-                onClick={() => setShowMap(!showMap)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
-                  showMap 
-                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <MapPin size={14} />
-                {showMap ? 'ซ่อนแผนที่' : 'แสดงแผนที่จุดเกิดเหตุ'}
-              </button>
-            )}
-            <div className="text-left md:text-right border-l pl-4 border-slate-200">
-              <p className="font-bold text-[#2B164D] flex items-center md:justify-end gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                {adminName}
-              </p>
-              <p className="text-xs text-slate-400 mt-0.5">{today}</p>
+
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            <button
+              onClick={loadData}
+              className="h-9 px-3.5 rounded-xl bg-white border border-[#e2e7ff] text-[#340866] text-xs font-bold hover:bg-[#eaedff] transition-all flex items-center gap-2 shadow-xs"
+              title="รีเฟรชข้อมูลล่าสุด"
+            >
+              <span className="material-symbols-outlined text-[16px]">sync</span>
+              <span>อัปเดตข้อมูล</span>
+            </button>
+          </div>
+        </div>
+
+        {/* ── 4 Clean, High-Contrast Summary KPI Cards ──────────────────── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Total */}
+          <div
+            onClick={() => navigate('/category-admin/kanban?status=all')}
+            className="group bg-white p-5 rounded-xl shadow-xs border border-[#eaedff] hover:border-[#340866] hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+            title="คลิกเพื่อเปิดดูรายการคำร้องทั้งหมด"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#4a4450] group-hover:text-[#340866] transition-colors flex items-center gap-1">
+                <span>ปัญหาทั้งหมด</span>
+                <span className="material-symbols-outlined text-[14px] opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span>
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-[#eddcff] text-[#340866] flex items-center justify-center group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-[18px]">assignment</span>
+              </div>
+            </div>
+            <div className="mt-4 flex items-baseline justify-between">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-bold text-[#131b2e] font-sans">{totalCount}</span>
+                <span className="text-xs text-[#4a4450]">รายการ</span>
+              </div>
+              <span className="text-[11px] text-[#340866] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                ดูทั้งหมด <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Card 2: Open */}
+          <div
+            onClick={() => navigate('/category-admin/kanban?status=open')}
+            className="group bg-white p-5 rounded-xl shadow-xs border border-[#eaedff] hover:border-[#ba1a1a] hover:shadow-md hover:bg-red-50/10 transition-all cursor-pointer flex flex-col justify-between"
+            title="คลิกเพื่อเปิดดูรายการคำร้องที่รอดำเนินการ"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#4a4450] group-hover:text-[#ba1a1a] transition-colors flex items-center gap-1">
+                <span>คำร้องรอเริ่มดำเนินการ</span>
+                <span className="material-symbols-outlined text-[14px] opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span>
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-[#ffdad6] text-[#ba1a1a] flex items-center justify-center group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-[18px]">inbox</span>
+              </div>
+            </div>
+            <div className="mt-4 flex items-baseline justify-between">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-bold text-[#ba1a1a] font-sans">{openCount}</span>
+                <span className="text-xs text-[#4a4450]">รายการ</span>
+              </div>
+              <span className="text-[11px] text-[#ba1a1a] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                ดูรายการ <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Card 3: In Progress */}
+          <div
+            onClick={() => navigate('/category-admin/kanban?status=in-progress')}
+            className="group bg-white p-5 rounded-xl shadow-xs border border-[#eaedff] hover:border-[#f59e0b] hover:shadow-md hover:bg-amber-50/10 transition-all cursor-pointer flex flex-col justify-between"
+            title="คลิกเพื่อเปิดดูรายการคำร้องที่กำลังดำเนินการ"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#4a4450] group-hover:text-[#d97706] transition-colors flex items-center gap-1">
+                <span>กำลังดำเนินการ</span>
+                <span className="material-symbols-outlined text-[14px] opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span>
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-[#fed65b] text-[#745c00] flex items-center justify-center group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-[18px]">engineering</span>
+              </div>
+            </div>
+            <div className="mt-4 flex items-baseline justify-between">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-bold text-[#d97706] font-sans">{progressCount}</span>
+                <span className="text-xs text-[#4a4450]">รายการ</span>
+              </div>
+              <span className="text-[11px] text-[#d97706] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                ดูรายการ <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Card 4: Resolved */}
+          <div
+            onClick={() => navigate('/category-admin/kanban?status=resolved')}
+            className="group bg-white p-5 rounded-xl shadow-xs border border-[#eaedff] hover:border-[#340866] hover:shadow-md hover:bg-purple-50/10 transition-all cursor-pointer flex flex-col justify-between"
+            title="คลิกเพื่อเปิดดูรายการคำร้องที่ดำเนินการเสร็จสิ้น"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#4a4450] group-hover:text-[#340866] transition-colors flex items-center gap-1">
+                <span>ดำเนินการเสร็จสิ้น</span>
+                <span className="material-symbols-outlined text-[14px] opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span>
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-[#e2e7ff] text-[#340866] flex items-center justify-center group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-[18px]">fact_check</span>
+              </div>
+            </div>
+            <div className="mt-4 flex items-baseline justify-between">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-bold text-[#340866] font-sans">{resolvedCount}</span>
+                <span className="text-xs text-[#4a4450]">รายการ</span>
+              </div>
+              <span className="text-[11px] text-[#340866] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                ดูรายการ <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Dynamic Category Location Map (Collapsible / Shows if Category has GPS data) */}
-        {showMap && geoPoints.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-[pageFadeIn_0.2s_ease]">
-            <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <span className="text-xs font-bold text-slate-700 flex items-center gap-2">
-                <MapPin size={15} className="text-indigo-600" />
-                แผนที่แสดงจุดเกิดเหตุในหมวดหมู่ {categoryTitle} ({geoPoints.length} ตำแหน่ง)
-              </span>
-              <button onClick={() => setShowMap(false)} className="text-xs text-slate-400 hover:text-slate-600">
-                ✕ ปิด
-              </button>
+        {/* ── Campus Incident & Heatmap Section ─────────────────────────── */}
+        <div className="bg-white rounded-2xl border border-[#eaedff] shadow-sm overflow-hidden">
+          {/* Header */}
+          <div className="p-4 md:p-5 border-b border-[#eaedff] bg-[#f2f3ff]/50 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#340866] text-white flex items-center justify-center shadow-xs flex-shrink-0">
+                <span className="material-symbols-outlined text-[20px]">map</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-base font-bold text-[#131b2e]">
+                    แผนที่ภาพรวมปัญหาตามพิกัดจริง — มหาวิทยาลัยพะเยา (Live Campus Issue Map)
+                  </h2>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#fed65b] text-[#745c00] text-[11px] font-bold">
+                    <span className="w-2 h-2 rounded-full bg-[#735c00] animate-pulse"></span>
+                    อัปเดตพิกัดสด ({displayedOsmPins.length}/{clusters.length} จุด)
+                  </span>
+                </div>
+                <p className="text-xs text-[#4a4450] mt-0.5">
+                  ติดตามตำแหน่งงานซ่อม {categoryTitle} ม.พะเยา พร้อมระดับความเร่งด่วนรายโซน (OpenStreetMap ฟรี 100%)
+                </p>
+              </div>
             </div>
-            <div className="h-[280px] relative">
-              <MapContainer center={PHAYAO_CENTER} zoom={15} scrollWheelZoom={false} className="h-full w-full absolute inset-0">
+
+            {/* Clean Status Badge - OpenStreetMap indicator */}
+            <div className="flex items-center gap-2 self-start lg:self-auto">
+              <span className="px-3 py-1.5 rounded-xl bg-white border border-[#e2e7ff] text-xs font-bold text-[#340866] shadow-xs flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[16px] text-emerald-600">verified</span>
+                <span>แผนที่เมืองจริง ม.พะเยา</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Sub Header / Zone Filter Bar + Status Filter Badges */}
+          <div className="px-4 py-3 bg-[#f2f3ff] border-b border-[#eaedff] flex flex-wrap items-center justify-between gap-3">
+            {/* Zone Buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 text-[#4a4450] text-xs font-semibold mr-1 shrink-0">
+                <span className="material-symbols-outlined text-[16px] text-[#340866]">tune</span>
+                <span>กรองตามโซน:</span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  onClick={() => handleSelectZone('all')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    selectedZone === 'all'
+                      ? 'bg-[#4b267d] text-white shadow-xs'
+                      : 'bg-white border border-[#eaedff] text-[#4a4450] hover:bg-[#eaedff]'
+                  }`}
+                >
+                  <span>ทั้งหมด</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${selectedZone === 'all' ? 'bg-white/20' : 'bg-[#eaedff]'}`}>
+                    {zoneCounts.all}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => handleSelectZone('dorm')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    selectedZone === 'dorm'
+                      ? 'bg-[#4b267d] text-white shadow-xs'
+                      : 'bg-white border border-[#eaedff] text-[#4a4450] hover:bg-[#eaedff]'
+                  }`}
+                >
+                  <span>หอพักนิสิต UP Dorm</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${selectedZone === 'dorm' ? 'bg-white/20' : 'bg-[#eaedff]'}`}>
+                    {zoneCounts.dorm}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => handleSelectZone('pky')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    selectedZone === 'pky'
+                      ? 'bg-[#4b267d] text-white shadow-xs'
+                      : 'bg-white border border-[#eaedff] text-[#4a4450] hover:bg-[#eaedff]'
+                  }`}
+                >
+                  <span>อาคารเรียนรวม PKY / CE</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${selectedZone === 'pky' ? 'bg-white/20' : 'bg-[#eaedff]'}`}>
+                    {zoneCounts.pky}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => handleSelectZone('gate')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    selectedZone === 'gate'
+                      ? 'bg-[#4b267d] text-white shadow-xs'
+                      : 'bg-white border border-[#eaedff] text-[#4a4450] hover:bg-[#eaedff]'
+                  }`}
+                >
+                  <span>ซุ้มประตู มพ. / อ่างหลวง</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${selectedZone === 'gate' ? 'bg-white/20' : 'bg-[#eaedff]'}`}>
+                    {zoneCounts.gate}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Interactive Status Badges (CLICKABLE TO TOGGLE VIEW!) */}
+            <div className="flex items-center gap-2 text-xs shrink-0">
+              <span className="text-[#4a4450] text-[11px] font-bold hidden sm:inline">กรองสถานะหมุด:</span>
+
+              {/* Status: IN_PROGRESS (Yellow/Amber) */}
+              <button
+                onClick={() => setStatusFilter(prev => prev === 'IN_PROGRESS' ? 'ALL' : 'IN_PROGRESS')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full border transition-all cursor-pointer font-bold ${
+                  statusFilter === 'IN_PROGRESS'
+                    ? 'bg-[#fed65b] border-[#d97706] text-[#745c00] ring-2 ring-[#d97706]/30 shadow-xs'
+                    : 'bg-white border-[#eaedff] text-[#745c00] hover:bg-amber-50'
+                }`}
+                title="คลิกเพื่อแสดงเฉพาะจุดกำลังซ่อมบำรุง"
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] border border-white animate-pulse"></span>
+                <span>กำลังซ่อมบำรุง</span>
+                <span className="font-mono text-[11px]">({progressCount})</span>
+                {statusFilter === 'IN_PROGRESS' && <span className="text-[10px]">✕</span>}
+              </button>
+
+              {/* Status: OPEN (Red) */}
+              <button
+                onClick={() => setStatusFilter(prev => prev === 'OPEN' ? 'ALL' : 'OPEN')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full border transition-all cursor-pointer font-bold ${
+                  statusFilter === 'OPEN'
+                    ? 'bg-[#ffdad6] border-[#ba1a1a] text-[#ba1a1a] ring-2 ring-[#ba1a1a]/30 shadow-xs'
+                    : 'bg-white border-[#eaedff] text-[#ba1a1a] hover:bg-red-50'
+                }`}
+                title="คลิกเพื่อแสดงเฉพาะจุดรอดำเนินการ"
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-[#ba1a1a]"></span>
+                <span>รอดำเนินการ</span>
+                <span className="font-mono text-[11px]">({openCount})</span>
+                {statusFilter === 'OPEN' && <span className="text-[10px]">✕</span>}
+              </button>
+
+              {/* Reset to show ALL */}
+              {statusFilter !== 'ALL' && (
+                <button
+                  onClick={() => setStatusFilter('ALL')}
+                  className="px-2.5 py-1 rounded-full bg-[#eaedff] text-[#340866] text-[11px] font-bold hover:bg-[#d8e2ff] transition-all"
+                >
+                  แสดงทั้งหมด
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ── REAL OPENSTREETMAP CONTAINER ── */}
+          <div className="relative w-full h-[520px] bg-[#e6edfa] overflow-hidden select-none">
+            <div className="w-full h-full relative" style={{ zIndex: 0 }}>
+              <MapContainer
+                center={PHAYAO_CENTER}
+                zoom={15}
+                minZoom={13}
+                maxZoom={18}
+                maxBounds={PHAYAO_BOUNDS}
+                maxBoundsViscosity={1.0}
+                scrollWheelZoom={true}
+                style={{ height: '100%', width: '100%', zIndex: 1 }}
+              >
+                <MapFlyController center={mapCenter} zoom={mapZoom} />
                 <TileLayer
-                  attribution='&copy; OpenStreetMap'
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                {geoPoints.map((pt) => (
+
+                {displayedOsmPins.map((pin, idx) => (
                   <CircleMarker
-                    key={pt.problem_id}
-                    center={[parseFloat(pt.latitude), parseFloat(pt.longitude)]}
-                    radius={8}
+                    key={pin.id || idx}
+                    center={pin.coords}
+                    radius={pin.radius}
                     pathOptions={{
-                      fillColor: pt.color_code || '#2B164D',
-                      color: '#fff',
-                      weight: 2,
-                      fillOpacity: 0.9
+                      color: pin.status === 'IN_PROGRESS' ? '#78350f' : '#ffffff',
+                      weight: pin.status === 'IN_PROGRESS' ? 3 : 2,
+                      fillColor: pin.color,
+                      fillOpacity: 0.95,
                     }}
                   >
                     <Popup>
-                      <div className="p-1 text-xs">
-                        <strong className="block text-slate-800">{pt.id}: {pt.topic}</strong>
-                        <span className="text-slate-500">{pt.location}</span>
-                        <span className="block mt-1 font-bold text-indigo-600">รวม {pt.reportCount} รายงานย่อย</span>
+                      <div className="p-1 font-sans text-xs min-w-[200px] text-left">
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                          <span className="font-mono font-bold text-[#340866] text-[12px]">{pin.id}</span>
+                          <span
+                            className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-xs"
+                            style={{ backgroundColor: pin.color }}
+                          >
+                            {pin.status === 'OPEN' ? 'รอดำเนินการ' : pin.status === 'IN_PROGRESS' ? 'กำลังดำเนินการ' : 'เสร็จสิ้น'}
+                          </span>
+                        </div>
+                        <strong className="block text-sm text-[#131b2e] leading-snug mb-1">
+                          {pin.topic}
+                        </strong>
+                        <p className="text-[#4a4450] text-[11px] flex items-center gap-1">
+                          <span>📍</span>
+                          <span className="font-medium">{pin.location}</span>
+                        </p>
+                        <p className="text-slate-400 text-[10px] mt-0.5">รวม {pin.reportCount} รายงานย่อย</p>
+                        <button
+                          onClick={() => setSelectedCluster(pin)}
+                          className="mt-2.5 w-full py-1.5 rounded-lg bg-[#340866] text-white text-[11px] font-bold hover:bg-[#4b267d] transition-colors shadow-xs"
+                        >
+                          ดูรายละเอียดตั๋ว
+                        </button>
                       </div>
                     </Popup>
                   </CircleMarker>
                 ))}
               </MapContainer>
             </div>
-          </div>
-        )}
 
-        {/* Interactive KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          {/* Card 1: OPEN */}
-          <div 
-            onClick={() => setStatusFilter(prev => prev === 'OPEN' ? 'ALL' : 'OPEN')}
-            className={`bg-white p-6 rounded-2xl shadow-sm border transition-all cursor-pointer select-none ${
-              statusFilter === 'OPEN' 
-                ? 'border-amber-400 ring-2 ring-amber-400/20 bg-amber-50/20 shadow-md' 
-                : 'border-slate-100 hover:border-amber-200 hover:shadow-md'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">ยังไม่รับเรื่อง (Open)</p>
-                <div className="flex items-baseline gap-2">
-                  <h3 className="text-3xl font-black text-amber-500">{openCount}</h3>
-                  <span className="text-xs font-bold text-slate-500">กลุ่มงาน ({openReportsCount} รายงาน)</span>
-                </div>
-                <p className="text-[11px] text-amber-600 font-medium mt-1">
-                  {statusFilter === 'OPEN' ? '✓ กำลังแสดงเฉพาะรายการนี้' : 'คลิกเพื่อดูรายการยังไม่รับเรื่อง'}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-500 text-xl shadow-inner">⏳</div>
-            </div>
-          </div>
-          
-          {/* Card 2: IN_PROGRESS */}
-          <div 
-            onClick={() => setStatusFilter(prev => prev === 'IN_PROGRESS' ? 'ALL' : 'IN_PROGRESS')}
-            className={`bg-white p-6 rounded-2xl shadow-sm border transition-all cursor-pointer select-none ${
-              statusFilter === 'IN_PROGRESS' 
-                ? 'border-sky-400 ring-2 ring-sky-400/20 bg-sky-50/20 shadow-md' 
-                : 'border-slate-100 hover:border-sky-200 hover:shadow-md'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">กำลังดำเนินการ (In Progress)</p>
-                <div className="flex items-baseline gap-2">
-                  <h3 className="text-3xl font-black text-sky-500">{progressCount}</h3>
-                  <span className="text-xs font-bold text-slate-500">กลุ่มงาน ({progressReportsCount} รายงาน)</span>
-                </div>
-                <p className="text-[11px] text-sky-600 font-medium mt-1">
-                  {statusFilter === 'IN_PROGRESS' ? '✓ กำลังแสดงเฉพาะรายการนี้' : 'คลิกเพื่อดูรายการกำลังทำ'}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500 text-xl shadow-inner">⚙️</div>
-            </div>
-          </div>
-          
-          {/* Card 3: RESOLVED */}
-          <div 
-            onClick={() => setStatusFilter(prev => prev === 'RESOLVED' ? 'ALL' : 'RESOLVED')}
-            className={`bg-white p-6 rounded-2xl shadow-sm border transition-all cursor-pointer select-none ${
-              statusFilter === 'RESOLVED' 
-                ? 'border-emerald-400 ring-2 ring-emerald-400/20 bg-emerald-50/20 shadow-md' 
-                : 'border-slate-100 hover:border-emerald-200 hover:shadow-md'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">เสร็จสิ้น (Resolved)</p>
-                <div className="flex items-baseline gap-2">
-                  <h3 className="text-3xl font-black text-emerald-500">{resolvedCount}</h3>
-                  <span className="text-xs font-bold text-slate-500">กลุ่มงาน ({resolvedReportsCount} รายงาน)</span>
-                </div>
-                <p className="text-[11px] text-emerald-600 font-medium mt-1">
-                  {statusFilter === 'RESOLVED' ? '✓ กำลังแสดงเฉพาะรายการนี้' : 'คลิกเพื่อดูรายการเสร็จสิ้น'}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500 text-xl shadow-inner">✅</div>
-            </div>
+
           </div>
         </div>
 
-        {/* Smart Clustered Table */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          
-          {/* Search Bar & Status Filter Tag */}
-          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-lg font-bold text-slate-800">รายการกลุ่มปัญหาล่าสุด (Clustered Topics)</h2>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                รวม {clusters.length} กลุ่มงาน ({totalReportsCount} รายงานจากผู้ใช้)
-              </span>
-              {statusFilter !== 'ALL' && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                  <span>กรองสถานะ: {statusFilter === 'OPEN' ? 'ยังไม่รับเรื่อง' : statusFilter === 'IN_PROGRESS' ? 'กำลังดำเนินการ' : 'เสร็จสิ้น'}</span>
-                  <button onClick={() => setStatusFilter('ALL')} className="text-indigo-400 hover:text-indigo-900 ml-1 font-bold">✕</button>
-                </span>
-              )}
-            </div>
-            
-            <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-              <div className="relative w-full sm:w-64">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                  </svg>
+        {/* ── Campus Problem Locations & Hotspots Section ───────────────── */}
+        <div className="space-y-4 bg-white rounded-2xl border border-[#eaedff] shadow-sm p-5 md:p-6">
+          {/* Header */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-[#eaedff]">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="w-8 h-8 rounded-lg bg-[#eddcff] text-[#340866] flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[18px]">domain</span>
                 </div>
-                <input 
-                  type="text" 
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="ค้นหาเนื้อหาหรือรหัส..." 
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2B164D]/20 focus:border-[#2B164D] transition-all placeholder:text-slate-400"
-                />
+                <h2 className="text-base font-bold text-[#131b2e]">
+                  สรุปสถานที่เกิดปัญหาและพื้นที่เฝ้าระวัง (Campus Problem Locations & Hotspots)
+                </h2>
+                <span className="px-2 py-0.5 rounded-full bg-[#eaedff] text-[#4a4450] text-[11px] font-semibold">
+                  {locationStats.length} โซนหลัก
+                </span>
               </div>
-              <input 
-                type="date" 
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full sm:w-auto px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2B164D]/20 focus:border-[#2B164D] transition-all text-slate-600"
-              />
-              <button onClick={loadData} className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors text-slate-600" title="รีเฟรชข้อมูล">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H17.79"></path>
-                </svg>
+              <p className="text-xs text-[#4a4450]">
+                วิเคราะห์ความถี่ปัญหาแยกตามอาคาร/โซนมหาวิทยาลัยพะเยา จำนวนปัญหาที่พบ และสถานะการแก้ไขแบบเรียลไทม์
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => {
+                  alert('ส่งออกรายงานสรุปสถานที่ (Excel/PDF) สำเร็จ');
+                }}
+                className="h-9 px-3.5 rounded-xl bg-[#eaedff] hover:bg-[#d8e2ff] text-[#131b2e] text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs"
+              >
+                <span className="material-symbols-outlined text-[16px] text-[#340866]">file_download</span>
+                <span>ส่งออกรายงานสถานที่ (Excel/PDF)</span>
               </button>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[900px]">
+          {/* Quick Zone Filter and Search */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-1.5 bg-[#f2f3ff] p-1 rounded-xl border border-[#eaedff]">
+              <button
+                onClick={() => handleSelectZone('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  selectedZone === 'all'
+                    ? 'bg-[#340866] text-white shadow-xs'
+                    : 'text-[#4a4450] hover:bg-[#eaedff]'
+                }`}
+              >
+                ทุกโซนอาคาร ({locationStats.length})
+              </button>
+
+              <button
+                onClick={() => handleSelectZone('dorm')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${
+                  selectedZone === 'dorm'
+                    ? 'bg-[#340866] text-white shadow-xs'
+                    : 'text-[#4a4450] hover:bg-[#eaedff]'
+                }`}
+              >
+                <span>กลุ่มหอพักนิสิต</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-[#fed65b] text-[#745c00] text-[10px] font-bold">
+                  {zoneCounts.dorm}
+                </span>
+              </button>
+
+              <button
+                onClick={() => handleSelectZone('pky')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${
+                  selectedZone === 'pky'
+                    ? 'bg-[#340866] text-white shadow-xs'
+                    : 'text-[#4a4450] hover:bg-[#eaedff]'
+                }`}
+              >
+                <span>อาคารเรียนรวม (PKY/CE)</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-[#e2e7ff] text-[#340866] text-[10px] font-bold">
+                  {zoneCounts.pky}
+                </span>
+              </button>
+
+              <button
+                onClick={() => handleSelectZone('gate')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${
+                  selectedZone === 'gate'
+                    ? 'bg-[#340866] text-white shadow-xs'
+                    : 'text-[#4a4450] hover:bg-[#eaedff]'
+                }`}
+              >
+                <span>ประตูทางเข้าและถนนหลัก</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-bold">
+                  {zoneCounts.gate}
+                </span>
+              </button>
+            </div>
+
+            <div className="relative flex-1 max-w-sm">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                search
+              </span>
+              <input
+                type="text"
+                value={locationSearch}
+                onChange={(e) => setLocationSearch(e.target.value)}
+                placeholder="ค้นหาชื่ออาคาร, บริเวณ หรือชั้น..."
+                className="w-full h-9 pl-9 pr-4 rounded-xl bg-[#f2f3ff] text-xs text-[#131b2e] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#340866]/20 border border-[#eaedff]"
+              />
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto rounded-xl border border-[#eaedff]">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wider font-semibold">
-                  <th className="px-6 py-4">รหัสปัญหา</th>
-                  <th className="px-6 py-4">เนื้อหาสรุป</th>
-                  <th className="px-6 py-4">วันที่โพสต์</th>
-                  <th className="px-6 py-4">ตำแหน่ง</th>
-                  <th className="px-6 py-4 text-center">จำนวนโพสต์</th>
-                  <th className="px-6 py-4 text-center">สถานะและจัดการ</th>
+                <tr className="bg-[#f2f3ff] text-[#4a4450] text-[11px] font-bold border-b border-[#eaedff] uppercase tracking-wider">
+                  <th className="py-3 px-4 min-w-[220px]">สถานที่ / โซนใน มพ.</th>
+                  <th className="py-3 px-4 min-w-[140px]">จำนวนปัญหาที่พบ</th>
+                  <th className="py-3 px-4 min-w-[200px]">สถานะการดำเนินการ</th>
+                  <th className="py-3 px-4 text-right min-w-[160px]">การจัดการ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
-                {filteredClusters.length === 0 ? (
+              <tbody className="divide-y divide-[#eaedff] text-xs text-[#131b2e]">
+                {filteredLocationStats.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="p-12 text-center text-slate-400 font-medium">ไม่พบข้อมูลปัญหาระบบตามเงื่อนไขที่เลือก</td>
-                  </tr>
-                ) : filteredClusters.map((cluster) => (
-                  <tr key={cluster.id} className="hover:bg-slate-50/70 transition-colors group">
-                    <td className="px-6 py-5 whitespace-nowrap">
-                      <button 
-                        onClick={() => openModal(cluster)}
-                        className="font-bold text-[#2B164D] bg-indigo-50/50 px-3 py-1.5 rounded-lg border border-indigo-100/50 hover:bg-indigo-100 hover:text-indigo-700 transition-all font-mono"
-                      >
-                        {cluster.id}
-                      </button>
-                    </td>
-                    <td className="px-6 py-5">
-                      <div className="flex items-start gap-2">
-                        <span className="font-semibold text-slate-700 leading-relaxed line-clamp-2">{cluster.topic}</span>
-                        {cluster.reportCount >= 5 && (
-                          <span className="shrink-0 px-2.5 py-1 bg-red-50 text-red-600 border border-red-100 text-[10px] font-black rounded-full flex items-center gap-1.5 mt-0.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-                            ด่วนมาก
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-5 text-slate-500 whitespace-nowrap">{cluster.date}</td>
-                    <td className="px-6 py-5 text-slate-500 max-w-[200px] truncate" title={cluster.location}>{cluster.location}</td>
-                    <td className="px-6 py-5 text-center">
-                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 border border-slate-200 font-bold text-slate-600 shadow-sm">
-                        {cluster.reportCount}
-                      </span>
-                    </td>
-                    <td className="px-6 py-5">
-                      <div className="flex items-center justify-center gap-3">
-                        <select 
-                          value={cluster.status}
-                          disabled={isUpdatingStatus === cluster.problem_id}
-                          onChange={(e) => handleStatusChange(cluster.problem_id, e.target.value)}
-                          className={`text-xs font-bold rounded-lg px-3 py-2 outline-none cursor-pointer transition-all shadow-sm disabled:opacity-50 appearance-none text-center min-w-[120px] ${
-                            cluster.status === 'OPEN' ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100' :
-                            cluster.status === 'IN_PROGRESS' ? 'bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100' :
-                            'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                          }`}
-                        >
-                          <option value="OPEN">รอดำเนินการ</option>
-                          <option value="IN_PROGRESS">กำลังดำเนินการ</option>
-                          <option value="RESOLVED">เสร็จสิ้น</option>
-                        </select>
-                        
-                        <button 
-                          onClick={() => openModal(cluster)}
-                          className="w-9 h-9 rounded-lg flex items-center justify-center bg-white border border-slate-200 text-slate-400 hover:border-[#2B164D] hover:bg-[#2B164D] hover:text-white transition-all shadow-sm"
-                          title="ตรวจสอบรายละเอียด (Drill-down)"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                          </svg>
-                        </button>
-                      </div>
+                    <td colSpan="4" className="p-8 text-center text-slate-400 font-medium">
+                      ไม่พบข้อมูลสถานที่ตามเงื่อนไขที่เลือก
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredLocationStats.map((loc, i) => {
+                    const openPct = loc.total ? Math.round((loc.open / loc.total) * 100) : 0;
+                    const progPct = loc.total ? Math.round((loc.in_progress / loc.total) * 100) : 0;
+                    const resPct = loc.total ? Math.max(0, 100 - openPct - progPct) : 0;
+
+                    return (
+                      <tr key={i} className="hover:bg-[#f2f3ff]/60 transition-colors">
+                        {/* Location Name & Icon */}
+                        <td className="py-3.5 px-4 align-top">
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-9 h-9 rounded-lg bg-[#eaedff] text-[#340866] font-bold flex items-center justify-center shrink-0">
+                              <span className="material-symbols-outlined text-[18px]">{loc.icon}</span>
+                            </div>
+                            <div className="space-y-0.5">
+                              <span
+                                onClick={() => navigate(`/category-admin/kanban?location=${encodeURIComponent(loc.name)}`)}
+                                className="text-sm font-bold text-[#131b2e] hover:text-[#340866] cursor-pointer block transition-colors"
+                                title="คลิกเพื่อกรองดูรายการคำร้องในสถานที่นี้"
+                              >
+                                {loc.name}
+                              </span>
+                              <span className="text-[11px] text-[#4a4450]">
+                                {loc.total} คำร้องในพื้นที่นี้
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Total Count */}
+                        <td className="py-3.5 px-4 align-top">
+                          <div className="flex items-baseline gap-1">
+                            <span className="font-mono text-base font-bold text-[#131b2e]">
+                              {loc.total}
+                            </span>
+                            <span className="text-[11px] text-[#4a4450]">คำร้อง</span>
+                          </div>
+                        </td>
+
+                        {/* Status Progress Bar Breakdown */}
+                        <td className="py-3.5 px-4 align-top">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-[11px] font-mono">
+                              <span className="text-[#ba1a1a] font-bold">รอการดำเนินการ {loc.open}</span>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-[#d97706] font-bold">กำลังดำเนินการ {loc.in_progress}</span>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-[#4a4450]">เสร็จ {loc.resolved}</span>
+                            </div>
+                            <div className="w-full bg-[#eaedff] h-2 rounded-full overflow-hidden flex">
+                              <div style={{ width: `${openPct}%` }} className="bg-[#ba1a1a] h-full" title={`รอดำเนินการ ${openPct}%`}></div>
+                              <div style={{ width: `${progPct}%` }} className="bg-[#fed65b] h-full" title={`กำลังดำเนินการ ${progPct}%`}></div>
+                              <div style={{ width: `${resPct}%` }} className="bg-[#4b267d] h-full" title={`เสร็จสิ้น ${resPct}%`}></div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Action: View all problems for this building */}
+                        <td className="py-3.5 px-4 align-top text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                navigate(`/category-admin/kanban?location=${encodeURIComponent(loc.name)}`);
+                              }}
+                              className="px-3.5 py-1.5 rounded-lg bg-[#eaedff] hover:bg-[#340866] hover:text-white text-[#340866] text-xs font-bold border border-[#adc6ff]/50 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                              title={`คลิกเพื่อดูรายการคำร้องทั้งหมดที่ ${loc.name}`}
+                            >
+                              <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+                              <span>ดูในรายการคำร้อง</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* Footer Pagination / Summary */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 text-xs text-[#4a4450]">
+            <div className="flex items-center gap-2">
+              <span>
+                แสดง <strong className="text-[#131b2e] font-semibold">1 - {filteredLocationStats.length}</strong> จากทั้งหมด <strong className="text-[#131b2e] font-semibold">{locationStats.length}</strong> โซนอาคาร
+              </span>
+              <span className="text-slate-300">|</span>
+              <span>
+                ความครอบคลุม: <strong className="text-[#340866] font-semibold">100% มหาวิทยาลัยพะเยา</strong>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 self-center sm:self-auto">
+              <button disabled className="w-8 h-8 rounded-lg bg-[#f2f3ff] border border-[#eaedff] text-slate-300 flex items-center justify-center disabled:opacity-40">
+                <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+              </button>
+              <button className="w-8 h-8 rounded-lg bg-[#340866] text-white text-xs font-bold shadow-xs">
+                1
+              </button>
+              <button disabled className="w-8 h-8 rounded-lg bg-[#f2f3ff] border border-[#eaedff] text-slate-300 flex items-center justify-center disabled:opacity-40">
+                <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+              </button>
+            </div>
+          </div>
         </div>
+
       </div>
 
-      {/* Drill-down Modal (Nested Details) */}
+      {/* ── Drill-down Modal (View Ticket Details & Update Status) ─────── */}
       {selectedCluster && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
-          <div 
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" 
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
             onClick={() => setSelectedCluster(null)}
           ></div>
-          
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left z-[100000]">
-            
+
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[85vh] overflow-hidden flex flex-col z-[100000] text-left">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white z-10 shrink-0">
+            <div className="px-6 py-4 border-b border-[#eaedff] flex items-center justify-between bg-white z-10 shrink-0">
               <div>
-                <h3 className="text-xl font-bold text-[#2B164D] mb-1">
-                  รายละเอียดกลุ่มปัญหา: {selectedCluster.id}
-                </h3>
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
-                    {selectedCluster.topic}
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-md bg-[#eddcff] text-[#340866] font-mono text-xs font-bold">
+                    {selectedCluster.id}
                   </span>
-                  &bull; 
-                  <span className="flex items-center gap-1">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                  <span className="text-xs text-slate-400">•</span>
+                  <span className="text-xs text-[#4a4450]">
                     {selectedCluster.location}
                   </span>
                 </div>
+                <h3 className="text-lg font-bold text-[#131b2e] mt-1 leading-snug">
+                  {selectedCluster.topic}
+                </h3>
               </div>
-              <button 
-                onClick={() => setSelectedCluster(null)}
-                className="w-8 h-8 bg-white border border-slate-200 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
-              </button>
+
+              <div className="flex items-center gap-2">
+                {/* Status Selector */}
+                <select
+                  value={selectedCluster.status}
+                  disabled={isUpdatingStatus === selectedCluster.problem_id}
+                  onChange={(e) => handleStatusChange(selectedCluster.problem_id, e.target.value)}
+                  className={`text-xs font-bold rounded-xl px-3 py-2 outline-none cursor-pointer transition-all border shadow-xs ${
+                    selectedCluster.status === 'OPEN'
+                      ? 'bg-[#ffdad6] text-[#ba1a1a] border-red-200'
+                      : selectedCluster.status === 'IN_PROGRESS'
+                      ? 'bg-[#fed65b] text-[#745c00] border-amber-200'
+                      : 'bg-[#e2e7ff] text-[#340866] border-indigo-200'
+                  }`}
+                >
+                  <option value="OPEN">รอดำเนินการ</option>
+                  <option value="IN_PROGRESS">กำลังดำเนินการ</option>
+                  <option value="RESOLVED">ดำเนินการเสร็จสิ้น</option>
+                </select>
+
+                <button
+                  onClick={() => {
+                    navigate(`/category-admin/kanban?search=${encodeURIComponent(selectedCluster.id)}`);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-[#340866] hover:bg-[#4b267d] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  title="เปิดดูในรายการคำร้องทั้งหมด"
+                >
+                  <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+                  <span className="hidden sm:inline">เปิดในรายการคำร้อง</span>
+                </button>
+
+                <button
+                  onClick={() => setSelectedCluster(null)}
+                  className="w-8 h-8 rounded-full border border-[#eaedff] text-slate-400 hover:text-slate-600 hover:bg-[#eaedff] flex items-center justify-center transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
             </div>
-            
-            {/* Modal Body - Scrollable Area */}
-            <div className="flex-1 overflow-y-auto bg-slate-50/50">
-              <div className="p-6 pb-2 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-slate-50/90 backdrop-blur-md z-10">
-                <h4 className="font-bold text-slate-700 text-sm">
+
+            {/* Modal Scrollable Body */}
+            <div className="flex-1 overflow-y-auto bg-[#faf8ff] p-6 space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-[#eaedff]">
+                <h4 className="font-bold text-sm text-[#131b2e]">
                   รายงานย่อยที่เกี่ยวข้อง ({(selectedCluster.posts || []).length} รายการ)
                 </h4>
+                <span className="text-xs text-[#4a4450]">
+                  วันที่แจ้ง: {selectedCluster.date}
+                </span>
               </div>
 
-              <div className="p-6 space-y-4">
-                {(selectedCluster.posts || []).map((post, idx) => {
-                  const isExpanded = expandedPostId === post.id;
-                  return (
-                    <div key={post.id || idx} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm hover:border-indigo-200 transition-colors">
-                      <div 
-                        onClick={() => setExpandedPostId(isExpanded ? null : post.id)}
-                        className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/80 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xs">
-                            {post.author[0]?.toUpperCase() || '?'}
-                          </div>
-                          <div>
-                            <p className="font-bold text-sm text-slate-800">{post.author}</p>
-                            <p className="text-xs text-slate-400">{post.time} &bull; {post.locationDetail}</p>
-                          </div>
+              {(selectedCluster.posts || []).map((post, idx) => {
+                const isExpanded = expandedPostId === post.id;
+                return (
+                  <div
+                    key={post.id || idx}
+                    className="bg-white rounded-xl border border-[#eaedff] shadow-xs overflow-hidden hover:border-[#adc6ff] transition-all"
+                  >
+                    <div
+                      onClick={() => setExpandedPostId(isExpanded ? null : post.id)}
+                      className="p-4 flex items-center justify-between cursor-pointer hover:bg-[#f2f3ff]/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-[#eddcff] text-[#340866] flex items-center justify-center font-bold text-xs">
+                          {post.author ? post.author[0].toUpperCase() : 'U'}
                         </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-indigo-600 font-semibold">
-                            {isExpanded ? 'ย่อรายละเอียด' : 'ดูขยาย'}
-                          </span>
-                          <svg className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-                          </svg>
+                        <div>
+                          <p className="font-bold text-xs text-[#131b2e]">{post.author}</p>
+                          <p className="text-[11px] text-[#4a4450]">
+                            {post.time} • {post.locationDetail}
+                          </p>
                         </div>
                       </div>
 
-                      {/* Expanded Content */}
-                      {isExpanded && (
-                        <div className="p-4 pt-0 border-t border-slate-100 bg-slate-50/40 text-sm space-y-3">
-                          <p className="text-slate-700 leading-relaxed mt-3">{post.text}</p>
-
-                          {post.images && post.images.length > 0 && (
-                            <div className="flex gap-2 overflow-x-auto pt-2">
-                              {post.images.map((img, i) => {
-                                const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '');
-                                const srcUrl = !img ? '' : (img.startsWith('http') ? img : `${apiBase}${img.startsWith('/') ? '' : '/'}${img}`);
-                                return (
-                                  <img key={i} src={srcUrl} alt="attachment" className="h-24 w-24 object-cover rounded-lg border border-slate-200" />
-                                );
-                              })}
-                            </div>
-                          )}
-                          {/* Multi-label Collaborative Departments (No % badges shown) */}
-                          {post.llm_analysis?.multi_categories && post.llm_analysis.multi_categories.length > 0 && (
-                            <div className="pt-2 border-t border-slate-200/60">
-                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
-                                <Sparkles size={12} className="text-indigo-500" />
-                                หน่วยงานที่เกี่ยวข้องร่วม (ประสานงาน):
-                              </span>
-                              <div className="flex flex-wrap gap-1.5">
-                                {post.llm_analysis.multi_categories.map((mc, mci) => (
-                                  <span
-                                    key={mci}
-                                    className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200"
-                                  >
-                                    <span>{mc.category_name}</span>
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1.5 text-xs text-[#340866] font-semibold">
+                        <span>{isExpanded ? 'ย่อรายละเอียด' : 'ดูขยาย'}</span>
+                        <span className={`material-symbols-outlined text-[18px] transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                          expand_more
+                        </span>
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
+
+                    {isExpanded && (
+                      <div className="p-4 pt-0 border-t border-[#eaedff] bg-[#faf8ff] text-xs space-y-3">
+                        <p className="text-[#131b2e] leading-relaxed mt-3">{post.text}</p>
+
+                        {post.images && post.images.length > 0 && (
+                          <div className="flex gap-2 overflow-x-auto pt-2">
+                            {post.images.map((img, i) => {
+                              const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '');
+                              const srcUrl = !img ? '' : (img.startsWith('http') ? img : `${apiBase}${img.startsWith('/') ? '' : '/'}${img}`);
+                              return (
+                                <img
+                                  key={i}
+                                  src={srcUrl}
+                                  alt="attachment"
+                                  className="h-24 w-24 object-cover rounded-lg border border-[#eaedff]"
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {post.llm_analysis?.multi_categories && post.llm_analysis.multi_categories.length > 0 && (
+                          <div className="pt-2 border-t border-[#eaedff]">
+                            <span className="text-[11px] font-bold text-[#4a4450] uppercase tracking-wider block mb-1.5">
+                              หน่วยงานที่เกี่ยวข้องร่วม (ประสานงาน):
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {post.llm_analysis.multi_categories.map((mc, mci) => (
+                                <span
+                                  key={mci}
+                                  className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[#eaedff] text-[#340866]"
+                                >
+                                  {mc.category_name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

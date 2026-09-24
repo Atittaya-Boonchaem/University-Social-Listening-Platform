@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const defaultBaseUrl = isLocal ? 'http://localhost:8000/api/v1' : 'https://university-social-listening-platform.onrender.com/api/v1';
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://university-social-listening-platform.onrender.com/api/v1',
+  baseURL: import.meta.env.VITE_API_URL || defaultBaseUrl,
   headers: {
     'Content-Type': 'application/json',
   },
