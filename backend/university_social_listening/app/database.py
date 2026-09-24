@@ -8,10 +8,11 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+# Priority: Render Dashboard Environment Variables always take highest precedence!
+# Only use .env or /etc/secrets/.env as fallback when variables are not set in the environment.
+load_dotenv(override=False)
 if os.path.exists("/etc/secrets/.env"):
-    load_dotenv("/etc/secrets/.env", override=True)
-else:
-    load_dotenv(override=True)
+    load_dotenv("/etc/secrets/.env", override=False)
 
 
 # ──────────────────────────────────────────────
@@ -63,7 +64,11 @@ class Config:
         )
 
 
+import logging
+_logger = logging.getLogger("app.database")
+
 config = Config()
+_logger.info(f"Database active config: host={config.DB_HOST}, port={config.DB_PORT}, user={config.DB_USER}, db={config.DB_NAME}")
 
 # ──────────────────────────────────────────────
 # SQLAlchemy core objects
