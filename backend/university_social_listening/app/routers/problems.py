@@ -29,6 +29,7 @@ from app.models import (
     Problem, ProblemLike, ProblemComment, ProblemAttachment,
     ProblemStatusHistory, Category, Status, VisibilityType,
     SuperAdmin, CategoryAdmin, Building,
+    LLMSetting, Notification, UserBan,
 )
 from app.schemas import (
     ChatAssistRequest,
@@ -493,6 +494,8 @@ async def create_problem(
     longitude: Optional[float] = Form(None),
     location_confidence: Optional[float] = Form(None),
     is_location_confirmed: Optional[bool] = Form(False),
+    incident_date: Optional[str] = Form(None),
+    incident_time: Optional[str] = Form(None),
     images: List[UploadFile] = File(default=[]),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
@@ -510,7 +513,6 @@ async def create_problem(
     from app.services.ai_service import check_profanity, suggest_category
     try:
         if check_profanity(description):
-            from app.models import LLMSetting, Notification, SuperAdmin
             setting = db.query(LLMSetting).first()
             if setting and setting.is_auto_ban_enabled:
                 current_user.strike_count = (current_user.strike_count or 0) + 1
@@ -520,7 +522,6 @@ async def create_problem(
                     current_user.is_active = False
                     
                     # Create ban record
-                    from app.models import UserBan
                     ban_rec = UserBan(
                         user_id=current_user.user_id,
                         banned_by=current_user.user_id, # Self-banned by system
@@ -535,6 +536,7 @@ async def create_problem(
                     for sa in super_admins:
                         notif = Notification(
                             user_id=sa.user_id,
+                            notification_type="SYSTEM_ALERT",
                             title="ผู้ใช้ถูกแบนอัตโนมัติ (Auto-Banned)",
                             message=f"ผู้ใช้ {current_user.email or current_user.user_id} ถูกแบนเนื่องจากละเมิดกฎคำหยาบเกิน {max_strikes} ครั้ง",
                             is_read=False
@@ -549,6 +551,7 @@ async def create_problem(
                     for sa in super_admins:
                         notif = Notification(
                             user_id=sa.user_id,
+                            notification_type="SYSTEM_ALERT",
                             title="ผู้ใช้ละเมิดกฎคำหยาบ (Warning)",
                             message=f"ผู้ใช้ {current_user.email or current_user.user_id} พิมพ์คำหยาบ (เตือนครั้งที่ {current_user.strike_count}/{max_strikes})",
                             is_read=False
@@ -700,7 +703,6 @@ async def create_problem(
 
     # Send Notification to Category Admins of this category for moderation
     try:
-        from app.models import CategoryAdmin, Notification
         cat_admins = db.query(CategoryAdmin).filter(
             CategoryAdmin.category_id == category_id,
             CategoryAdmin.is_active == True
@@ -708,6 +710,8 @@ async def create_problem(
         for ca in cat_admins:
             db.add(Notification(
                 user_id=ca.user_id,
+                problem_id=problem.problem_id,
+                notification_type="NEW_PROBLEM",
                 title="มีคำร้องใหม่รอการตรวจสอบและอนุมัติ",
                 message=f"คำร้อง #{problem.ticket_id}: {problem.title[:45]} รอยืนยันจากแอดมินหมวดหมู่",
                 is_read=False

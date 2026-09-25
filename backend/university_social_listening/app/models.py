@@ -398,7 +398,7 @@ class Notification(Base):
     notification_id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     problem_id = Column(Integer, ForeignKey("problems.problem_id"), nullable=True)
-    notification_type = Column(String(50), nullable=False)
+    notification_type = Column(String(50), nullable=False, default="SYSTEM")
     title = Column(String(200), nullable=False)
     message = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)

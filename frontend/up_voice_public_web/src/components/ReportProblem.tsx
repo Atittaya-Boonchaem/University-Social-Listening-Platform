@@ -784,10 +784,15 @@ export default function ReportProblem({
           return;
         }
         const detail = err.response?.data?.detail || err.response?.data?.message;
-        showToast(
-          typeof detail === 'string' ? detail : 'ไม่สามารถส่งข้อมูลได้ กรุณาลองใหม่อีกครั้ง',
-          'error'
-        );
+        let errorMsg = 'ไม่สามารถส่งข้อมูลได้ กรุณาลองใหม่อีกครั้ง';
+        if (typeof detail === 'string') {
+          errorMsg = detail;
+        } else if (Array.isArray(detail)) {
+          errorMsg = detail.map((d: any) => d.msg || (typeof d === 'string' ? d : JSON.stringify(d))).join(', ');
+        } else if (err.response?.data?.message) {
+          errorMsg = String(err.response.data.message);
+        }
+        showToast(errorMsg, 'error');
       } else {
         showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
       }
