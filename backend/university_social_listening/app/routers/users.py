@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import logging
 import uuid
 
@@ -904,6 +904,155 @@ def promote_to_super_admin(
         success=True,
         message=f"User #{user_id} promoted to Super Admin",
         data={"user_id": user_id, "new_role": "super_admin"},
+    )
+
+
+class SetUserRolePayload(BaseModel):
+    role: str
+    category_id: Optional[int] = None
+
+
+@router.post("/{user_id}/set-role", response_model=StandardResponse, tags=[TAG_SUPER_ADMIN])
+def set_user_role(
+    user_id: int,
+    payload: SetUserRolePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_super_admin(current_user, db)
+
+    target = db.query(User).filter(User.user_id == user_id, User.is_deleted == False).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    new_role = payload.role.strip().lower()
+    valid_roles = ["super_admin", "category_admin", "staff", "student", "public"]
+    if new_role not in valid_roles:
+        raise HTTPException(status_code=400, detail=f"Invalid role '{new_role}'. Must be one of: {', '.join(valid_roles)}")
+
+    old_role = get_user_role(user_id, db)
+
+    # 1. Super Admin role handling
+    if new_role == "super_admin":
+        sa = db.query(SuperAdmin).filter(SuperAdmin.user_id == user_id).first()
+        if sa:
+            sa.is_active = True
+            sa.assigned_by = current_user.user_id
+            sa.assigned_at = datetime.utcnow()
+        else:
+            db.add(SuperAdmin(
+                user_id=user_id,
+                assigned_by=current_user.user_id,
+                is_active=True,
+            ))
+    else:
+        db.query(SuperAdmin).filter(SuperAdmin.user_id == user_id).update({"is_active": False})
+
+    # 2. Category Admin role handling
+    if new_role == "category_admin":
+        if not payload.category_id:
+            raise HTTPException(status_code=400, detail="กรุณาระบุหมวดหมู่ปัญหาสำหรับแอดมินหมวดหมู่ (category_id is required)")
+        from app.models import Category
+        cat = db.query(Category).filter(Category.category_id == payload.category_id).first()
+        if not cat:
+            raise HTTPException(status_code=400, detail=f"ไม่พบหมวดหมู่รหัส {payload.category_id}")
+
+        # Deactivate other category assignments for this user
+        db.query(CategoryAdmin).filter(
+            CategoryAdmin.user_id == user_id,
+            CategoryAdmin.category_id != payload.category_id
+        ).update({"is_active": False, "revoked_at": datetime.utcnow()})
+
+        ca = db.query(CategoryAdmin).filter(
+            CategoryAdmin.user_id == user_id,
+            CategoryAdmin.category_id == payload.category_id
+        ).first()
+        if ca:
+            ca.is_active = True
+            ca.revoked_at = None
+            ca.assigned_by = current_user.user_id
+            ca.assigned_at = datetime.utcnow()
+        else:
+            db.add(CategoryAdmin(
+                user_id=user_id,
+                category_id=payload.category_id,
+                assigned_by=current_user.user_id,
+                is_active=True,
+            ))
+    else:
+        db.query(CategoryAdmin).filter(CategoryAdmin.user_id == user_id).update({
+            "is_active": False,
+            "revoked_at": datetime.utcnow()
+        })
+
+    # 3. Base role-specific table management
+    current_name = get_display_name(user_id, db)
+    fallback_name = current_name if current_name and current_name != "ผู้ใช้งาน" else (target.email.split('@')[0] if target.email else f"User {user_id}")
+
+    if new_role == "student":
+        # Delete staff / public records so student takes clean precedence
+        db.query(Staff).filter(Staff.user_id == user_id).delete()
+        db.query(PublicUser).filter(PublicUser.user_id == user_id).delete()
+
+        st = db.query(Student).filter(Student.user_id == user_id).first()
+        if not st:
+            std_code = target.email.split('@')[0] if (target.email and target.email.split('@')[0].isdigit()) else f"STD{user_id}"
+            db.add(Student(
+                user_id=user_id,
+                student_id=std_code,
+                student_name=fallback_name
+            ))
+    elif new_role == "staff":
+        db.query(Student).filter(Student.user_id == user_id).delete()
+        db.query(PublicUser).filter(PublicUser.user_id == user_id).delete()
+
+        stf = db.query(Staff).filter(Staff.user_id == user_id).first()
+        if not stf:
+            emp_id = f"EMP-{uuid.uuid4().hex[:8].upper()}"
+            db.add(Staff(
+                user_id=user_id,
+                employee_id=emp_id,
+                staff_name=fallback_name,
+                staff_role="Staff"
+            ))
+    elif new_role == "public":
+        db.query(Student).filter(Student.user_id == user_id).delete()
+        db.query(Staff).filter(Staff.user_id == user_id).delete()
+
+        pub = db.query(PublicUser).filter(PublicUser.user_id == user_id).first()
+        if not pub:
+            db.add(PublicUser(
+                user_id=user_id,
+                first_name=fallback_name,
+                last_name="",
+                birthdate=date(2000, 1, 1),
+                is_pdpa_accepted=True
+            ))
+
+    # Audit log
+    audit = AuditLog(
+        admin_id=current_user.user_id,
+        action_type="SET_USER_ROLE",
+        table_name="users",
+        record_id=user_id,
+        old_value={"role": old_role},
+        new_value={"role": new_role, "category_id": payload.category_id if new_role == "category_admin" else None},
+    )
+    db.add(audit)
+    db.commit()
+
+    updated_role = get_user_role(user_id, db)
+    updated_name = get_display_name(user_id, db)
+
+    return StandardResponse(
+        success=True,
+        message=f"อัปเดตบทบาทผู้ใช้ #{user_id} เป็น '{updated_role}' เรียบร้อยแล้ว",
+        data={
+            "user_id": user_id,
+            "role": updated_role,
+            "display_name": updated_name,
+            "category_id": payload.category_id if updated_role == "category_admin" else None
+        }
     )
 
 

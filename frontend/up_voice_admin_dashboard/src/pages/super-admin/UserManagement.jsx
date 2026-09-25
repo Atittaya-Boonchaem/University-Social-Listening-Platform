@@ -274,16 +274,24 @@ const SAUserManagement = () => {
   const handleUpdateRoleStatus = async (e) => {
     e.preventDefault();
     if (!editUser) return;
+    if (editRole === 'category_admin' && !editCategory) {
+      showToast('⚠️ กรุณาเลือกหมวดหมู่ที่ต้องการมอบหมาย');
+      return;
+    }
     setIsUpdating(true);
     try {
-      if (editRole === 'super_admin' && editUser.role !== 'super_admin') {
-        await api.post(`/users/${editUser.user_id}/promote/super-admin`);
-      }
-      if (editRole === 'category_admin' && editCategory) {
-        await api.post(`/users/${editUser.user_id}/assign/category-admin`, null, {
-          params: { category_id: editCategory }
+      // 1. Update role if changed or if category changed for category admin
+      const roleChanged = editRole !== editUser.role;
+      const catChanged = editRole === 'category_admin' && String(editCategory) !== String(editUser.category_id);
+
+      if (roleChanged || catChanged) {
+        await api.post(`/users/${editUser.user_id}/set-role`, {
+          role: editRole,
+          category_id: editRole === 'category_admin' ? Number(editCategory) : null,
         });
       }
+
+      // 2. Update status (active / banned) if changed
       if (editStatus !== editUser.is_active) {
         if (editStatus) {
           await unbanUser(editUser.user_id);
@@ -291,6 +299,7 @@ const SAUserManagement = () => {
           await banUser(editUser.user_id, 'Status updated by Super Admin');
         }
       }
+
       showToast('✅ อัปเดตข้อมูลผู้ใช้งานเรียบร้อยแล้ว');
       setEditUser(null);
       await loadUsers();
