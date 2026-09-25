@@ -134,14 +134,23 @@ def list_users(
         
         if uid in super_map:
             role = "super_admin"
-            display_name = u.email.split('@')[0] if u.email else "Super Admin"
+            if uid in staff_map and staff_map[uid].staff_name:
+                display_name = staff_map[uid].staff_name
+            elif uid in students_map and students_map[uid].student_name:
+                display_name = students_map[uid].student_name
+            elif u.email:
+                display_name = u.email.split('@')[0]
+            else:
+                display_name = "Super Admin"
         elif uid in cat_admin_map:
             role = "category_admin"
             ca = cat_admin_map[uid]
             category_id = ca.category_id
             category_name = cats_map.get(category_id)
-            if uid in staff_map:
+            if uid in staff_map and staff_map[uid].staff_name:
                 display_name = staff_map[uid].staff_name
+            elif uid in students_map and students_map[uid].student_name:
+                display_name = students_map[uid].student_name
             elif u.email:
                 display_name = u.email.split('@')[0]
         elif uid in staff_map:
