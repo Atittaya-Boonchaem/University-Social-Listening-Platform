@@ -517,6 +517,47 @@ def delete_invite(
 
 
 # ──────────────────────────────────────────────
+# Verify Invite Token (Public for Register Page)
+# ──────────────────────────────────────────────
+@router.get("/invites/verify/{token}", response_model=StandardResponse, tags=[TAG_AUTH])
+def verify_invite_token(token: str, db: Session = Depends(get_db)):
+    """
+    ตรวจสอบความถูกต้องของ Token คำเชิญ และดึงข้อมูลอีเมล/หมวดหมู่เพื่อแสดงในหน้าลงทะเบียน
+    """
+    from app.models import Category
+    invite = db.query(UserInvite).filter(UserInvite.token == token).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="ไม่พบคำเชิญนี้ในระบบ หรือลิงก์คำเชิญไม่ถูกต้อง")
+    if invite.status == "Accepted":
+        raise HTTPException(status_code=400, detail="คำเชิญนี้ถูกลงทะเบียนไปแล้ว กรุณาเข้าสู่ระบบ")
+    if invite.status == "Revoked":
+        raise HTTPException(status_code=400, detail="คำเชิญนี้ถูกยกเลิกโดยผู้ดูแลระบบแล้ว")
+    if invite.expires_at and invite.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="คำเชิญนี้หมดอายุแล้ว กรุณาติดต่อ Super Admin")
+
+    cat_name = None
+    if invite.category_id:
+        c = db.query(Category).filter(Category.category_id == invite.category_id).first()
+        if c: 
+            cat_name = c.category_name
+
+    display_role = invite.role.replace("_", " ").title() if invite.role else "Category Admin"
+
+    return StandardResponse(
+        success=True,
+        message="Token is valid",
+        data={
+            "email": invite.email,
+            "role": invite.role,
+            "display_role": display_role,
+            "category_id": invite.category_id,
+            "category_name": cat_name,
+            "expires_at": str(invite.expires_at) if invite.expires_at else None,
+        }
+    )
+
+
+# ──────────────────────────────────────────────
 # Register via Invite
 # ──────────────────────────────────────────────
 @router.post("/register-invite", response_model=StandardResponse, tags=[TAG_AUTH])

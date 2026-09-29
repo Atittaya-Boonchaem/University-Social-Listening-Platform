@@ -24,94 +24,188 @@ def send_invitation_email(email: str, role: str, category_name: str, token: str)
 
         frontend_url = os.getenv("FRONTEND_URL", "https://university-social-listening-platfor.vercel.app")
         invite_link = f"{frontend_url}/register?token={token}"
-        
-        category_text = f"manage the <strong>{category_name}</strong> category" if category_name else "access the platform"
+        assigned_dept = category_name if category_name else "ระบบภาพรวม (Global Administrator)"
 
         html_content = f"""
         <!DOCTYPE html>
-        <html>
+        <html lang="th">
         <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>UP Voice Platform - คำเชิญเข้าร่วมระบบ</title>
             <style>
                 body {{
-                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-                    background-color: #f8fafc;
-                    color: #334155;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans Thai', Helvetica, Arial, sans-serif;
+                    background-color: #f3f4f6;
+                    color: #1f2937;
                     margin: 0;
                     padding: 0;
                 }}
-                .container {{
-                    max-width: 600px;
-                    margin: 40px auto;
+                .wrapper {{
+                    width: 100%;
+                    background-color: #f3f4f6;
+                    padding: 40px 15px;
+                }}
+                .card {{
+                    max-width: 580px;
+                    margin: 0 auto;
                     background-color: #ffffff;
-                    border-radius: 12px;
-                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+                    border-radius: 20px;
                     overflow: hidden;
+                    box-shadow: 0 10px 25px -5px rgba(52, 8, 102, 0.12), 0 8px 10px -6px rgba(52, 8, 102, 0.08);
+                    border: 1px solid #e9d5ff;
                 }}
                 .header {{
-                    background-color: #4f46e5;
+                    background: linear-gradient(135deg, #1e0836 0%, #340866 50%, #4c1d95 100%);
                     color: white;
-                    padding: 30px 40px;
+                    padding: 36px 32px;
                     text-align: center;
+                }}
+                .logo-badge {{
+                    display: inline-block;
+                    background: rgba(255, 255, 255, 0.15);
+                    border: 1px solid rgba(255, 255, 255, 0.3);
+                    padding: 6px 14px;
+                    border-radius: 9999px;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.08em;
+                    color: #fed65b;
+                    margin-bottom: 12px;
+                    text-transform: uppercase;
                 }}
                 .header h1 {{
+                    margin: 0 0 6px 0;
+                    font-size: 26px;
+                    font-weight: 800;
+                    letter-spacing: -0.02em;
+                    color: #ffffff;
+                }}
+                .header p {{
                     margin: 0;
-                    font-size: 24px;
-                    font-weight: 700;
-                    letter-spacing: -0.025em;
+                    font-size: 13px;
+                    color: #e9d5ff;
+                    font-weight: 400;
                 }}
-                .content {{
-                    padding: 40px;
+                .body {{
+                    padding: 32px;
                 }}
-                .content p {{
+                .greeting {{
                     font-size: 16px;
-                    line-height: 1.6;
+                    font-weight: 700;
+                    color: #1e1b4b;
+                    margin-bottom: 12px;
+                }}
+                .intro {{
+                    font-size: 14px;
+                    line-height: 1.7;
+                    color: #4b5563;
                     margin-bottom: 24px;
                 }}
-                .cta-container {{
+                .info-box {{
+                    background: #faf5ff;
+                    border: 1px solid #e9d5ff;
+                    border-left: 5px solid #7c3aed;
+                    border-radius: 12px;
+                    padding: 18px 20px;
+                    margin-bottom: 28px;
+                }}
+                .info-row {{
+                    display: flex;
+                    margin-bottom: 8px;
+                    font-size: 13px;
+                }}
+                .info-label {{
+                    color: #6b7280;
+                    width: 140px;
+                    flex-shrink: 0;
+                    font-weight: 600;
+                }}
+                .info-value {{
+                    color: #1f2937;
+                    font-weight: 700;
+                }}
+                .cta-box {{
                     text-align: center;
-                    margin-top: 32px;
-                    margin-bottom: 32px;
+                    margin: 32px 0;
                 }}
                 .btn {{
                     display: inline-block;
-                    background-color: #4f46e5;
-                    color: #ffffff;
+                    background: linear-gradient(135deg, #340866 0%, #6d28d9 100%);
+                    color: #ffffff !important;
                     text-decoration: none;
-                    font-weight: 600;
-                    font-size: 16px;
-                    padding: 14px 28px;
-                    border-radius: 8px;
-                    transition: background-color 0.2s ease;
+                    font-weight: 700;
+                    font-size: 15px;
+                    padding: 16px 36px;
+                    border-radius: 12px;
+                    box-shadow: 0 6px 20px rgba(109, 40, 217, 0.35);
                 }}
-                .btn:hover {{
-                    background-color: #4338ca;
+                .note-box {{
+                    background-color: #f9fafb;
+                    border: 1px dashed #d1d5db;
+                    border-radius: 10px;
+                    padding: 14px;
+                    font-size: 12px;
+                    color: #6b7280;
+                    line-height: 1.6;
+                    word-break: break-all;
                 }}
                 .footer {{
-                    background-color: #f1f5f9;
+                    background-color: #f9fafb;
+                    border-top: 1px solid #f3f4f6;
                     padding: 24px;
                     text-align: center;
-                    font-size: 14px;
-                    color: #64748b;
+                    font-size: 12px;
+                    color: #9ca3af;
                 }}
             </style>
         </head>
         <body>
-            <div class="container">
-                <div class="header">
-                    <h1>UP Voice Platform</h1>
-                </div>
-                <div class="content">
-                    <p>เรียน ผู้ได้รับการเสนอชื่อเป็นผู้ดูแลระบบ ({email}),</p>
-                    <p>ท่านได้รับคำเชิญเข้าร่วมใช้งานระบบ UP Voice ในบทบาท <strong>{display_role}</strong> เพื่อรับผิดชอบและดูแลหมวดหมู่ {category_text}</p>
-                    
-                    <div class="cta-container">
-                        <a href="{invite_link}" style="display: inline-block; background-color: #4f46e5; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 16px; padding: 14px 28px; border-radius: 8px;">ยอมรับคำเชิญและตั้งรหัสผ่าน (Accept Invitation)</a>
+            <div class="wrapper">
+                <div class="card">
+                    <div class="header">
+                        <div class="logo-badge">มหาวิทยาลัยพะเยา • UNIVERSITY OF PHAYAO</div>
+                        <h1>UP Voice Platform</h1>
+                        <p>ระบบรับเรื่องร้องเรียนและรับฟังเสียงนิสิตบุคลากร มหาวิทยาลัยพะเยา</p>
                     </div>
-                    
-                    <p style="font-size: 13px; color: #64748b;">หากไม่สามารถคลิกปุ่มได้ สามารถคัดลอกลิงก์ด้านล่างนี้ไปวางในเบราว์เซอร์:<br><a href="{invite_link}" style="color: #4f46e5; word-break: break-all;">{invite_link}</a></p>
-                </div>
-                <div class="footer">
-                    &copy; 2026 UP Voice Platform มหาวิทยาลัยพะเยา. All rights reserved.
+                    <div class="body">
+                        <div class="greeting">เรียน ผู้ดูแลระบบ ({email}),</div>
+                        <div class="intro">
+                            คุณได้รับคำเชิญเข้าร่วมเป็นผู้ดูแลระบบในแพลตฟอร์ม <strong>UP Voice</strong> เพื่อร่วมดูแลและบริหารจัดการข้อร้องเรียนของมหาวิทยาลัยพะเยาให้รวดเร็วและมีประสิทธิภาพยิ่งขึ้น
+                        </div>
+
+                        <div class="info-box">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr>
+                                    <td style="padding: 6px 0; font-size: 13px; color: #6b7280; font-weight: 600; width: 150px;">สิทธิ์การใช้งาน:</td>
+                                    <td style="padding: 6px 0; font-size: 14px; color: #4c1d95; font-weight: 700;">{display_role}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; font-size: 13px; color: #6b7280; font-weight: 600;">หมวดหมู่ที่รับผิดชอบ:</td>
+                                    <td style="padding: 6px 0; font-size: 14px; color: #1e1b4b; font-weight: 700;">{assigned_dept}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; font-size: 13px; color: #6b7280; font-weight: 600;">อายุของคำเชิญ:</td>
+                                    <td style="padding: 6px 0; font-size: 13px; color: #059669; font-weight: 600;">7 วัน นับจากวันที่ได้รับ</td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <div class="cta-box">
+                            <a href="{invite_link}" class="btn">
+                                ยอมรับคำเชิญและตั้งรหัสผ่าน &rarr;
+                            </a>
+                        </div>
+
+                        <div class="note-box">
+                            <strong>หากไม่สามารถคลิกปุ่มด้านบนได้</strong> กรุณาคัดลอกลิงก์นี้ไปเปิดในเบราว์เซอร์ของคุณ:<br>
+                            <a href="{invite_link}" style="color: #6d28d9; text-decoration: underline;">{invite_link}</a>
+                        </div>
+                    </div>
+                    <div class="footer">
+                        อีเมลนี้ถูกส่งโดยระบบอัตโนมัติของ UP Voice Platform มหาวิทยาลัยพะเยา<br>
+                        &copy; 2026 University of Phayao. All rights reserved.
+                    </div>
                 </div>
             </div>
         </body>

@@ -371,6 +371,7 @@ export default function ReportProblem({
         title?: string;
         description?: string;
         location?: string;
+        locationDetail?: string;
         latitude?: number | string;
         longitude?: number | string;
       }
