@@ -308,15 +308,19 @@ def invite_admin(
         if cat:
             category_name = cat.category_name
 
-    background_tasks.add_task(
-        send_invitation_email,
-        email=payload.email,
-        role=payload.role,
-        category_name=category_name,
-        token=token
-    )
-    
     db.commit()
+
+    import threading
+    threading.Thread(
+        target=send_invitation_email,
+        kwargs={
+            "email": payload.email,
+            "role": payload.role,
+            "category_name": category_name,
+            "token": token
+        },
+        daemon=True
+    ).start()
     
     return StandardResponse(
         success=True, 
@@ -415,15 +419,19 @@ def resend_invite(
         if cat:
             category_name = cat.category_name
             
-    background_tasks.add_task(
-        send_invitation_email,
-        email=invite.email,
-        role=invite.role,
-        category_name=category_name,
-        token=new_token
-    )
-    
     db.commit()
+
+    import threading
+    threading.Thread(
+        target=send_invitation_email,
+        kwargs={
+            "email": invite.email,
+            "role": invite.role,
+            "category_name": category_name,
+            "token": new_token
+        },
+        daemon=True
+    ).start()
     
     return StandardResponse(
         success=True,
@@ -508,7 +516,12 @@ def delete_invite(
 
     # Send revocation notification email to recipient
     from app.services.email_service import send_revocation_email
-    background_tasks.add_task(send_revocation_email, email=email_revoked)
+    import threading
+    threading.Thread(
+        target=send_revocation_email,
+        kwargs={"email": email_revoked},
+        daemon=True
+    ).start()
     
     return StandardResponse(
         success=True,

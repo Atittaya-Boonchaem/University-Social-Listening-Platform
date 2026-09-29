@@ -2,26 +2,118 @@ import smtplib
 from email.message import EmailMessage
 import os
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
 
-def send_invitation_email(email: str, role: str, category_name: str, token: str):
+def _dispatch_email(to_email: str, subject: str, html_content: str, text_content: str = None) -> dict:
+    """
+    Intelligent email dispatcher that works on both Cloud (Render/Vercel) and Localhost.
+    1. HTTP-based Email API: Resend / Brevo over HTTPS (Port 443) - Works 100% on Render Free Tier.
+    2. Fallback to Gmail SMTP: Ports 465 & 587 with fast 3s timeout for local development.
+    """
+    logs = []
+
+    # ── 1. Resend API (HTTPS Port 443 - Recommended for Render) ──
+    resend_api_key = os.getenv("RESEND_API_KEY")
+    if resend_api_key:
+        try:
+            from_sender = os.getenv("RESEND_FROM", "UP Voice <onboarding@resend.dev>")
+            res = requests.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {resend_api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "from": from_sender,
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html_content,
+                    "text": text_content or subject
+                },
+                timeout=8
+            )
+            if res.status_code in [200, 201]:
+                logger.info(f"Email dispatched via Resend API to {to_email}")
+                return {"success": True, "method": "Resend_API", "message": f"Sent via Resend API to {to_email}"}
+            else:
+                logs.append(f"Resend API error: {res.status_code} {res.text}")
+        except Exception as e:
+            logs.append(f"Resend API exception: {str(e)}")
+
+    # ── 2. Brevo API (HTTPS Port 443) ──
+    brevo_api_key = os.getenv("BREVO_API_KEY")
+    if brevo_api_key:
+        try:
+            res = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={
+                    "api-key": brevo_api_key,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "sender": {"name": "UP Voice Platform", "email": os.getenv("SMTP_EMAIL", "artitaya.11244@gmail.com")},
+                    "to": [{"email": to_email}],
+                    "subject": subject,
+                    "htmlContent": html_content
+                },
+                timeout=8
+            )
+            if res.status_code in [200, 201]:
+                logger.info(f"Email dispatched via Brevo API to {to_email}")
+                return {"success": True, "method": "Brevo_API", "message": f"Sent via Brevo API to {to_email}"}
+            else:
+                logs.append(f"Brevo API error: {res.status_code} {res.text}")
+        except Exception as e:
+            logs.append(f"Brevo API exception: {str(e)}")
+
+    # ── 3. Gmail SMTP Fallback (Ports 465 & 587) ──
     smtp_email = os.getenv("SMTP_EMAIL", "artitaya.11244@gmail.com")
     raw_password = os.getenv("SMTP_PASSWORD", "nupd wksj jknn aiks")
     smtp_password = raw_password.replace(" ", "") if raw_password else ""
 
     if not smtp_email or not smtp_password:
-        logger.error("SMTP_EMAIL or SMTP_PASSWORD not set in environment variables.")
-        return
+        return {"success": False, "error": "No SMTP credentials or HTTP email API keys configured", "logs": logs}
 
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = f"UP Voice Platform <{smtp_email}>"
+    msg['To'] = to_email
+    msg.set_content(text_content or subject)
+    msg.add_alternative(html_content, subtype='html')
+
+    # Try SSL port 465 (timeout=3s to prevent server lockup on cloud free tier)
     try:
-        msg = EmailMessage()
-        display_role = role.replace("_", " ").title()
-        msg['Subject'] = f'คำเชิญเข้าร่วมเป็นผู้ดูแลระบบ UP Voice ({display_role} Invitation)'
-        msg['From'] = f"UP Voice Platform <{smtp_email}>"
-        msg['To'] = email
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=3) as server:
+            server.login(smtp_email, smtp_password)
+            server.send_message(msg)
+        return {"success": True, "method": "SMTP_SSL_465", "message": f"Sent via Gmail SMTP (465) to {to_email}"}
+    except Exception as ssl_err:
+        err_str = str(ssl_err)
+        logs.append(f"Port 465 failed: {err_str}")
 
+        # If network is unreachable (like Render free tier), avoid repeating long timeouts
+        if "Network is unreachable" in err_str or "101" in err_str:
+            logger.warning(f"Render firewall blocked SMTP 465 ({err_str}). Trying port 587...")
+
+        # Try TLS port 587 (timeout=3s)
+        try:
+            with smtplib.SMTP("smtp.gmail.com", 587, timeout=3) as server:
+                server.starttls()
+                server.login(smtp_email, smtp_password)
+                server.send_message(msg)
+            return {"success": True, "method": "SMTP_TLS_587", "message": f"Sent via Gmail SMTP (587) to {to_email}"}
+        except Exception as tls_err:
+            logs.append(f"Port 587 failed: {str(tls_err)}")
+            logger.error(f"Both SMTP ports failed: {logs}")
+            return {"success": False, "error": f"Failed via ports 465 and 587: {ssl_err}, {tls_err}", "logs": logs}
+
+
+def send_invitation_email(email: str, role: str, category_name: str, token: str):
+    try:
+        display_role = role.replace("_", " ").title() if role else "Admin"
         frontend_url = os.getenv("FRONTEND_URL", "https://university-social-listening-platfor.vercel.app")
         invite_link = f"{frontend_url}/register?token={token}"
         assigned_dept = category_name if category_name else "ระบบภาพรวม (Global Administrator)"
@@ -110,21 +202,6 @@ def send_invitation_email(email: str, role: str, category_name: str, token: str)
                     padding: 18px 20px;
                     margin-bottom: 28px;
                 }}
-                .info-row {{
-                    display: flex;
-                    margin-bottom: 8px;
-                    font-size: 13px;
-                }}
-                .info-label {{
-                    color: #6b7280;
-                    width: 140px;
-                    flex-shrink: 0;
-                    font-weight: 600;
-                }}
-                .info-value {{
-                    color: #1f2937;
-                    font-weight: 700;
-                }}
                 .cta-box {{
                     text-align: center;
                     margin: 32px 0;
@@ -211,138 +288,46 @@ def send_invitation_email(email: str, role: str, category_name: str, token: str)
         </body>
         </html>
         """
-        
-        msg.set_content(f"ท่านได้รับคำเชิญเข้าร่วม UP Voice Platform: {invite_link}")
-        msg.add_alternative(html_content, subtype='html')
 
-        # Try SSL port 465 first, fallback to TLS port 587
-        try:
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
-                server.login(smtp_email, smtp_password)
-                server.send_message(msg)
-        except Exception as ssl_err:
-            logger.warning(f"SSL port 465 failed ({ssl_err}), trying TLS port 587...")
-            with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-                server.starttls()
-                server.login(smtp_email, smtp_password)
-                server.send_message(msg)
-            
-        logger.info(f"Invitation email sent successfully to {email}")
+        subject = f'คำเชิญเข้าร่วมเป็นผู้ดูแลระบบ UP Voice ({display_role} Invitation)'
+        text_content = f"ท่านได้รับคำเชิญเข้าร่วม UP Voice Platform ({display_role}): {invite_link}"
+        _dispatch_email(to_email=email, subject=subject, html_content=html_content, text_content=text_content)
 
     except Exception as e:
-        logger.exception(f"Failed to send email to {email}. Error: {str(e)}")
+        logger.exception(f"Failed to dispatch invitation email to {email}: {e}")
 
 
 def test_send_email(target_email: str) -> dict:
     """
-    Diagnostic helper to test SMTP connection from local or cloud environment.
+    Diagnostic helper to test email delivery from local or cloud environment.
     """
-    smtp_email = os.getenv("SMTP_EMAIL", "artitaya.11244@gmail.com")
-    raw_password = os.getenv("SMTP_PASSWORD", "nupd wksj jknn aiks")
-    smtp_password = raw_password.replace(" ", "") if raw_password else ""
-
-    if not smtp_email or not smtp_password:
-        return {"success": False, "error": "SMTP_EMAIL or SMTP_PASSWORD not set in environment variables"}
-
-    msg = EmailMessage()
-    msg['Subject'] = 'UP Voice Platform - ทดสอบการส่งอีเมล (Test SMTP Connection)'
-    msg['From'] = f"UP Voice Platform <{smtp_email}>"
-    msg['To'] = target_email
-    msg.set_content(f"สวัสดีครับ,\n\nนี่คืออีเมลทดสอบการเชื่อมต่อระบบ SMTP จาก UP Voice Platform ไปยัง {target_email}\nหากได้รับอีเมลนี้ แสดงว่าระบบส่งอีเมลจากเซิร์ฟเวอร์สามารถเชื่อมต่อ Gmail ได้อย่างสมบูรณ์แบบ 100% ครับ")
-
-    logs = []
-    # 1. Try SSL port 465
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
-            server.login(smtp_email, smtp_password)
-            server.send_message(msg)
-        logs.append("Sent successfully via SMTP_SSL (port 465)")
-        return {"success": True, "method": "SSL_465", "message": f"Email successfully sent to {target_email}", "logs": logs}
-    except Exception as e_ssl:
-        logs.append(f"Port 465 failed: {str(e_ssl)}")
-        # 2. Try TLS port 587
-        try:
-            with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-                server.starttls()
-                server.login(smtp_email, smtp_password)
-                server.send_message(msg)
-            logs.append("Sent successfully via SMTP TLS (port 587)")
-            return {"success": True, "method": "TLS_587", "message": f"Email successfully sent to {target_email}", "logs": logs}
-        except Exception as e_tls:
-            logs.append(f"Port 587 failed: {str(e_tls)}")
-            return {"success": False, "error": f"Failed via both ports 465 and 587. SSL error: {str(e_ssl)}, TLS error: {str(e_tls)}", "logs": logs}
+    subject = 'UP Voice Platform - ทดสอบการส่งอีเมล (Test Email Connection)'
+    text_content = f"สวัสดีครับ,\n\nนี่คืออีเมลทดสอบจาก UP Voice Platform ไปยัง {target_email}\nหากได้รับอีเมลนี้ แสดงว่าระบบส่งอีเมลจากเซิร์ฟเวอร์สามารถทำงานได้อย่างสมบูรณ์แบบ 100% ครับ"
+    html_content = f"""
+    <div style="font-family: sans-serif; padding: 20px; border-radius: 12px; background: #faf5ff; border: 1px solid #e9d5ff;">
+        <h2 style="color: #4c1d95;">UP Voice Platform - ทดสอบระบบอีเมล</h2>
+        <p>สวัสดีครับ, นี่คืออีเมลทดสอบการเชื่อมต่อระบบส่งข้อความจากเซิร์ฟเวอร์ไปยัง <strong>{target_email}</strong></p>
+        <p style="color: #059669; font-weight: bold;">✔ ระบบส่งอีเมลสามารถติดต่อได้สำเร็จเรียบร้อยครับ</p>
+    </div>
+    """
+    return _dispatch_email(to_email=target_email, subject=subject, html_content=html_content, text_content=text_content)
 
 
 def send_revocation_email(email: str):
-    smtp_email = os.getenv("SMTP_EMAIL", "artitaya.11244@gmail.com")
-    raw_password = os.getenv("SMTP_PASSWORD", "nupd wksj jknn aiks")
-    smtp_password = raw_password.replace(" ", "") if raw_password else ""
-
-    if not smtp_email or not smtp_password:
-        logger.error("SMTP_EMAIL or SMTP_PASSWORD not set in environment variables.")
-        return
-
     try:
-        msg = EmailMessage()
-        msg['Subject'] = 'Notice: Your UP Voice Admin Access / Invitation has been Revoked'
-        msg['From'] = smtp_email
-        msg['To'] = email
-
+        subject = 'Notice: Your UP Voice Admin Access / Invitation has been Revoked'
         html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <style>
-                body {{
-                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    background-color: #f8fafc;
-                    color: #334155;
-                    margin: 0;
-                    padding: 0;
-                }}
-                .container {{
-                    max-width: 600px;
-                    margin: 40px auto;
-                    background-color: #ffffff;
-                    border-radius: 12px;
-                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-                    overflow: hidden;
-                }}
-                .header {{
-                    background-color: #ef4444;
-                    color: white;
-                    padding: 30px 40px;
-                    text-align: center;
-                }}
-                .header h1 {{
-                    margin: 0;
-                    font-size: 22px;
-                    font-weight: 700;
-                }}
-                .content {{
-                    padding: 40px;
-                }}
-                .content p {{
-                    font-size: 15px;
-                    line-height: 1.6;
-                    margin-bottom: 20px;
-                }}
-                .alert-box {{
-                    background-color: #fef2f2;
-                    border-left: 4px solid #ef4444;
-                    padding: 16px;
-                    border-radius: 6px;
-                    margin: 20px 0;
-                    color: #991b1b;
-                    font-weight: 500;
-                }}
-                .footer {{
-                    background-color: #f1f5f9;
-                    padding: 20px;
-                    text-align: center;
-                    font-size: 13px;
-                    color: #64748b;
-                }}
+                body {{ font-family: sans-serif; background-color: #f8fafc; color: #334155; margin: 0; padding: 0; }}
+                .container {{ max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; }}
+                .header {{ background-color: #ef4444; color: white; padding: 24px 32px; text-align: center; }}
+                .header h1 {{ margin: 0; font-size: 20px; font-weight: 700; }}
+                .content {{ padding: 32px; font-size: 14px; line-height: 1.6; }}
+                .alert-box {{ background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 14px; border-radius: 6px; margin: 20px 0; color: #991b1b; }}
+                .footer {{ background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 12px; color: #64748b; }}
             </style>
         </head>
         <body>
@@ -353,9 +338,9 @@ def send_revocation_email(email: str):
                 <div class="content">
                     <p>เรียน ผู้ใช้งาน ({email}),</p>
                     <div class="alert-box">
-                        ⚠️ สิทธิ์การเข้าถึง / คำเชิญใช้งานระบบ UP Voice ของคุณถูกยกเลิกหรือหมดอายุ (Session Expired / Access Revoked)
+                        ⚠️ สิทธิ์การเข้าถึง / คำเชิญใช้งานระบบ UP Voice ของคุณถูกยกเลิก (Access Revoked)
                     </div>
-                    <p>ระบบขอแจ้งให้ทราบว่า สิทธิ์การเป็นผู้ดูแลระบบ (Admin) หรือคำเชิญเข้าใช้งานสำหรับอีเมล <strong>{email}</strong> ได้ถูกยกเลิกโดยผู้ดูแลระบบ (Super Admin) เรียบร้อยแล้ว</p>
+                    <p>ระบบขอแจ้งให้ทราบว่า สิทธิ์การเป็นผู้ดูแลระบบ หรือคำเชิญเข้าใช้งานสำหรับอีเมล <strong>{email}</strong> ได้ถูกยกเลิกโดยผู้ดูแลระบบสูงสุด (Super Admin) เรียบร้อยแล้ว</p>
                     <p>หากมีข้อสงสัยเพิ่มเติม โปรดติดต่อผู้ดูแลระบบมหาวิทยาลัยพะเยา</p>
                 </div>
                 <div class="footer">
@@ -365,21 +350,7 @@ def send_revocation_email(email: str):
         </body>
         </html>
         """
-
-        msg.set_content(f"Notice: Your invitation/access for {email} has been revoked.")
-        msg.add_alternative(html_content, subtype='html')
-
-        try:
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as server:
-                server.login(smtp_email, smtp_password)
-                server.send_message(msg)
-        except Exception as ssl_err:
-            logger.warning(f"SSL port 465 failed ({ssl_err}), trying TLS port 587...")
-            with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
-                server.starttls()
-                server.login(smtp_email, smtp_password)
-                server.send_message(msg)
-
-        logger.info(f"Revocation notification email sent successfully to {email}")
+        text_content = f"Notice: Your invitation/access for {email} has been revoked."
+        _dispatch_email(to_email=email, subject=subject, html_content=html_content, text_content=text_content)
     except Exception as e:
-        logger.error(f"Failed to send revocation email to {email}. Error: {str(e)}")
+        logger.error(f"Failed to send revocation email to {email}: {e}")

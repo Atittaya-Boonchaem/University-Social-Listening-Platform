@@ -138,6 +138,98 @@ const ExtendDialog = ({ invite, onConfirm, onCancel, isLoading }) => {
   );
 };
 
+// ── Invite Success Modal with Instant Copy ─────────────────────
+const InviteSuccessModal = ({ invite, onClose }) => {
+  const [copied, setCopied] = useState(false);
+
+  if (!invite) return null;
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(invite.inviteLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-7 border border-purple-100 animate-[pageFadeIn_0.2s_ease]">
+        <div className="w-14 h-14 rounded-2xl bg-emerald-500 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/25">
+          <CheckCircle2 size={30} />
+        </div>
+        
+        <h3 className="text-xl font-bold text-slate-800 text-center mb-1">
+          สร้างคำเชิญสำเร็จแล้ว!
+        </h3>
+        <p className="text-xs text-slate-500 text-center mb-5">
+          ระบบได้บันทึกคำเชิญและจัดส่งอีเมลไปยัง <strong className="text-slate-800">{invite.email}</strong> แล้ว
+        </p>
+
+        <div className="p-3.5 rounded-2xl bg-purple-50/70 border border-purple-100 mb-5">
+          <div className="flex items-center justify-between text-xs mb-1.5">
+            <span className="text-slate-500 font-medium">บทบาท:</span>
+            <span className="font-bold text-purple-900 bg-purple-100 px-2.5 py-0.5 rounded-full uppercase text-[11px]">
+              {invite.role}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-medium">หมวดหมู่:</span>
+            <span className="font-semibold text-slate-700">
+              {invite.categoryName || 'ภาพรวมระบบ'}
+            </span>
+          </div>
+        </div>
+
+        {/* Copy Link Input & Button */}
+        <div className="space-y-2 mb-5">
+          <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+            ลิงก์สำหรับสมัครสมาชิก / เปิดใช้งานบัญชี
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              value={invite.inviteLink}
+              className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-mono outline-none select-all"
+            />
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm shrink-0 ${
+                copied
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-[#2B164D] hover:bg-[#3d2268] text-white active:scale-95'
+              }`}
+            >
+              {copied ? (
+                <>
+                  <CheckCircle2 size={15} />
+                  <span>คัดลอกแล้ว!</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={15} />
+                  <span>คัดลอก</span>
+                </>
+              )}
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            💡 คุณสามารถคัดลอกลิงก์นี้ส่งให้ผู้รับทาง LINE หรือแชทเพื่อเปิดใช้งานได้ทันที (กรณีผู้รับไม่ได้รับอีเมลหรือติดสแปม)
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors"
+        >
+          เสร็จสิ้น (ปิดหน้าต่าง)
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ── Invite Admin Modal ─────────────────────────────────────────
 const InviteModal = ({ isOpen, onClose, categories, onAssign, submitting }) => {
   const [form, setForm] = useState({ 
@@ -342,6 +434,7 @@ const CategoryAdminInvites = () => {
   
   const [loading, setLoading] = useState(true);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [createdInviteModal, setCreatedInviteModal] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState({ msg: '', type: '' });
   
@@ -361,11 +454,16 @@ const CategoryAdminInvites = () => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [cats, admins, invites] = await Promise.all([
+      const [catsRes, adminsRes, invitesRes] = await Promise.allSettled([
         fetchCategories(),
         fetchCategoryAdmins(),
         fetchPendingInvites()
       ]);
+
+      const cats = catsRes.status === 'fulfilled' ? catsRes.value : [];
+      const admins = adminsRes.status === 'fulfilled' ? adminsRes.value : [];
+      const invites = invitesRes.status === 'fulfilled' ? invitesRes.value : [];
+
       setCategories(cats);
       
       const formattedAdmins = admins.map(a => ({
@@ -388,7 +486,7 @@ const CategoryAdminInvites = () => {
         displayName: i.email,
         categoryName: i.category_name || '—',
         categoryId: i.category_id,
-        role: i.role.replace('_', ' '),
+        role: (i.role || '').replace('_', ' '),
         date: i.created_at,
         expiresAt: i.expires_at,
         remainingDays: i.remaining_days,
@@ -402,7 +500,7 @@ const CategoryAdminInvites = () => {
 
       setAssignments([...formattedAdmins, ...formattedInvites]);
     } catch (e) {
-      showToast('Failed to load data. Please refresh.', 'error');
+      showToast('เกิดข้อผิดพลาดในการดึงข้อมูล กรุณารีเฟรชอีกครั้ง', 'error');
     } finally {
       setLoading(false);
     }
@@ -415,15 +513,30 @@ const CategoryAdminInvites = () => {
   const handleAssign = async (form) => {
     setSubmitting(true);
     try {
-      await sendInvite({
+      const res = await sendInvite({
         email: form.email,
         role: form.role,
         category_id: form.category_id || null,
         expiration_days: form.expiration_days || 7
       });
-      
-      showToast(`ส่งคำเชิญไปยัง ${form.email} สำเร็จ (อายุ ${form.expiration_days || 7} วัน)`);
+
+      const token = res?.data?.token;
+      const categoryObj = categories.find(c => String(c.category_id) === String(form.category_id));
+      const categoryName = categoryObj ? categoryObj.category_name : 'ภาพรวมระบบ';
+      const inviteLink = `https://university-social-listening-platfor.vercel.app/register?token=${token}`;
+
       setIsInviteModalOpen(false);
+      if (token) {
+        setCreatedInviteModal({
+          email: form.email,
+          role: form.role.replace('_', ' '),
+          categoryName: categoryName,
+          token: token,
+          inviteLink: inviteLink
+        });
+      } else {
+        showToast(`ส่งคำเชิญไปยัง ${form.email} สำเร็จ`);
+      }
       loadData();
     } catch (err) {
       showToast(err.response?.data?.message || 'Failed to send invite.', 'error');
@@ -509,6 +622,14 @@ const CategoryAdminInvites = () => {
           onConfirm={handleExtendConfirm}
           onCancel={() => !extending && setExtendDialog(null)}
           isLoading={extending}
+        />
+      )}
+
+      {/* Invite Created Success Modal */}
+      {createdInviteModal && (
+        <InviteSuccessModal
+          invite={createdInviteModal}
+          onClose={() => setCreatedInviteModal(null)}
         />
       )}
 
@@ -693,7 +814,7 @@ const CategoryAdminInvites = () => {
                             <button
                               onClick={() => {
                                 const tk = a.token || a.raw?.token || '';
-                                const link = `${window.location.origin}/register?token=${tk}`;
+                                const link = `https://university-social-listening-platfor.vercel.app/register?token=${tk}`;
                                 navigator.clipboard.writeText(link);
                                 showToast('คัดลอกลิงก์คำเชิญเรียบร้อยแล้ว!', 'success');
                               }}
