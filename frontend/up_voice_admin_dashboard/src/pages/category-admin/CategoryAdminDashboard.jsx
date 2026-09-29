@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
-import { fetchProblems, updateProblemStatus } from '../../services/problemService';
+import { fetchProblems, updateProblemStatus, invalidateProblemsCache } from '../../services/problemService';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -110,6 +110,7 @@ export default function CategoryAdminDashboard() {
     setLoading(true);
     setError('');
     try {
+      invalidateProblemsCache();
       const [pubData, internalData] = await Promise.all([
         fetchProblems({ page_size: 150, visibility_name: 'public' }, true),
         fetchProblems({ page_size: 150, visibility_name: 'internal' }, true),

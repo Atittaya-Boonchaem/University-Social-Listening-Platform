@@ -378,7 +378,7 @@ export default function ReportProblem({
 
   // ── Form State ────────────────────────────────────────────────────────────
   const [problemTitle, setProblemTitle] = useState(
-    prefillData?.title || 'ไฟทางเดินดับ บริเวณทางเชื่อมอาคาร CE และ ICT'
+    prefillData?.title || ''
   );
   
   // Default location set to ICT building or UP_CENTER
@@ -390,7 +390,7 @@ export default function ReportProblem({
     prefillData?.location || 'อาคารเทคโนโลยีสารสนเทศและการสื่อสาร (ICT)'
   );
   const [locationDetail, setLocationDetail] = useState<string>(
-    'ทางเชื่อมชั้น 2 ฝั่งทิศตะวันออก มุ่งหน้าตึก CE'
+    prefillData?.locationDetail || ''
   );
 
   const [incidentDate, setIncidentDate] = useState<string>(() => {
@@ -403,8 +403,7 @@ export default function ReportProblem({
   });
 
   const [description, setDescription] = useState<string>(
-    prefillData?.description ||
-      'ไฟนีออนตรงทางเดินเชื่อมกระพริบถี่ๆ แล้วดับสนิท มืดมากในช่วงหัวค่ำ เกรงว่าจะเกิดอันตรายแก่นิสิตที่เดินกลับหอพักหลังคาบเรียนแลปเลิกดึก'
+    prefillData?.description || ''
   );
 
   const [images, setImages] = useState<File[]>([]);

@@ -249,7 +249,18 @@ const LLMSettings = () => {
           text: textToTest,
           threshold: customThreshold
         });
-        if (res) setSimResult(res);
+        if (res && res.all_scores && res.all_scores.length > 0) {
+          const apiScores = res.all_scores.map((item, idx) => ({
+            category_id: item.category_id,
+            category_name: item.category_name,
+            sla: item.category_name?.includes('ขนส่ง') || item.category_name?.includes('เดินทาง') ? 'SLA 4 ชม.' : 'SLA 2 ชม.',
+            score: item.score_percent !== undefined ? item.score_percent : Math.round((item.confidence || item.score || 0) * 100),
+            reason: item.confidence >= 0.40 ? `พบความเชื่อมโยงสูงกับภารกิจหลัก (${item.category_name})` : 'ไม่พบความเชื่อมโยงโดยตรง (0%)',
+            rank: idx + 1,
+          })).sort((a, b) => b.score - a.score).map((it, idx) => ({ ...it, rank: idx + 1 }));
+          setSimResultsList(apiScores);
+          setSimResult(res);
+        }
       } catch (apiErr) {
         // Fallback simulation already active
       }

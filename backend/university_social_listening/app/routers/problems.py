@@ -632,7 +632,20 @@ async def create_problem(
         from app.services.research_classifier_service import classify_with_wangchanberta
         active_cats = db.query(Category).filter(Category.is_active == True).all()
         cats_list = [{"id": c.category_id, "name": c.category_name} for c in active_cats]
-        multi_result = classify_with_wangchanberta(description or title, categories_list=cats_list)
+        combined_text = f"{title} {description}".strip()
+        multi_result = classify_with_wangchanberta(combined_text, categories_list=cats_list)
+
+        # If AI identifies the primary category with strong confidence (>= 0.60)
+        # and it differs from the submitted category (which often defaults to 1 from UI presets),
+        # auto-assign to the true primary category:
+        ai_primary_id = multi_result.get("primary_category_id")
+        ai_top_conf = multi_result.get("top_confidence", 0.0)
+        if ai_primary_id and ai_top_conf >= 0.60 and ai_primary_id != category_id:
+            matched_cat = db.query(Category).filter(Category.category_id == ai_primary_id).first()
+            if matched_cat:
+                category_id = ai_primary_id
+                cat = matched_cat
+
         llm_analysis_data = {
             "multi_categories": multi_result.get("routed_categories", []),
             "all_category_scores": multi_result.get("all_scores", []),
@@ -778,6 +791,8 @@ async def list_problems(
     1. ดึงข้อมูลโพสต์ปัญหาแบบแบ่งหน้า (Pagination)
     2. ตรวจสอบสิทธิ์ Visibility: ถ้าขอเรียกฟีด 'internal' จะต้องเป็น บุคลากร หรือ Admin เท่านั้น
     """
+    from sqlalchemy import or_, func, cast, String
+
     query = (
         db.query(Problem)
         .options(
@@ -789,13 +804,7 @@ async def list_problems(
         .filter(Problem.is_deleted == False)
     )
 
-    # For all public & internal feeds: problems awaiting review (PENDING_REVIEW) must NOT appear on the feed
-    from sqlalchemy import or_, func
-    pending_stat = db.query(Status).filter(func.lower(Status.status_name) == "pending_review").first()
-    if pending_stat:
-        query = query.filter(Problem.status_id != pending_stat.status_id)
-
-    # Determine if requester is admin/staff (can see hidden posts)
+    # Determine if requester is admin/staff (can see hidden posts and pending review queue)
     is_admin = False
     if current_user:
         is_admin = bool(
@@ -803,6 +812,14 @@ async def list_problems(
             or db.query(SuperAdmin).filter(SuperAdmin.user_id == current_user.user_id, SuperAdmin.is_active == True).first()
             or db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
         )
+
+    # For regular public users (not admin): problems awaiting review (PENDING_REVIEW) must NOT appear on public feed
+    if not is_admin and (not status_name or status_name.upper() != "PENDING_REVIEW"):
+        from sqlalchemy import func
+        pending_stat = db.query(Status).filter(func.lower(Status.status_name) == "pending_review").first()
+        if pending_stat:
+            query = query.filter(Problem.status_id != pending_stat.status_id)
+
     if not is_admin:
         query = query.filter(Problem.is_hidden == False)
 
@@ -869,7 +886,7 @@ async def list_problems(
             )
         )
     if status_name:
-        status_obj = db.query(Status).filter(Status.status_name == status_name).first()
+        status_obj = db.query(Status).filter(func.lower(Status.status_name) == status_name.lower()).first()
         if status_obj:
             query = query.filter(Problem.status_id == status_obj.status_id)
 

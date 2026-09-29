@@ -114,35 +114,13 @@ const getRelatedCategories = (ticket) => {
 
   const topScores = ticket?.llm_analysis?.all_category_scores || [];
   topScores
-    .filter(s => (s.confidence >= 0.20 || s.score >= 0.20 || s.score_percent >= 20) && s.category_name)
+    .filter(s => (s.confidence >= 0.65 || s.score >= 0.65 || s.score_percent >= 65) && s.category_name)
     .forEach(s => {
       const name = s.category_name.trim();
       if (name && name.toLowerCase() !== primary && !result.includes(name)) {
         result.push(name);
       }
     });
-
-  if (result.length === 0) {
-    const text = `${ticket?.title || ''} ${ticket?.description || ''}`.toLowerCase();
-    if (text.includes('ไฟ') || text.includes('สว่าง') || text.includes('ทางเท้า') || text.includes('ถนน') || text.includes('จราจร')) {
-      const cat = 'ความปลอดภัยและการจราจร';
-      if (cat.toLowerCase() !== primary && !result.includes(cat)) result.push(cat);
-    } else if (text.includes('ท่อ') || text.includes('ระบายน้ำ') || text.includes('ขยะ') || text.includes('กลิ่น')) {
-      const cat = 'ระบบระบายน้ำ';
-      if (cat.toLowerCase() !== primary && !result.includes(cat)) result.push(cat);
-    } else if (text.includes('เน็ต') || text.includes('wifi') || text.includes('สแกน') || text.includes('access control')) {
-      const cat = 'ระบบรักษาความปลอดภัย';
-      if (cat.toLowerCase() !== primary && !result.includes(cat)) result.push(cat);
-    } else if (text.includes('แอร์') || text.includes('พัดลม') || text.includes('ห้องเรียน')) {
-      const cat = 'อาคารเรียนรวม';
-      if (cat.toLowerCase() !== primary && !result.includes(cat)) result.push(cat);
-    } else if (text.includes('อาหาร') || text.includes('น้ำ') || text.includes('ก๊อก')) {
-      const cat = 'ศูนย์อาหาร';
-      if (cat.toLowerCase() !== primary && !result.includes(cat)) result.push(cat);
-    } else {
-      result.push('ความปลอดภัยและการจราจร');
-    }
-  }
 
   return result.filter(c => c.toLowerCase() !== primary);
 };

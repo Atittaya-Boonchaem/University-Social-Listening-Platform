@@ -5,7 +5,7 @@ import api from '../../services/api';
 import TicketDetailModal from '../../components/TicketDetailModal';
 import MergeModal from '../../components/MergeModal';
 import ForwardModal from '../../components/ForwardModal';
-import { fetchProblems, updateProblemStatus } from '../../services/problemService';
+import { fetchProblems, updateProblemStatus, invalidateProblemsCache } from '../../services/problemService';
 import { quarantineTicket, mergeDuplicate, unmergeDuplicate, forwardTicket } from '../../services/ticketService';
 import { fetchCategories } from '../../services/categoryService';
 import { getAnonymousAuthor } from '../../utils/authorUtils';
@@ -131,6 +131,7 @@ export default function KanbanBoard() {
     setLoading(true);
     setError('');
     try {
+      invalidateProblemsCache();
       const [pubRes, intRes, catsData] = await Promise.all([
         fetchProblems({ page_size: 150, visibility_name: 'public' }, true),
         fetchProblems({ page_size: 150, visibility_name: 'internal' }, true),
@@ -147,6 +148,8 @@ export default function KanbanBoard() {
           const yr = t.created_at ? new Date(t.created_at).getFullYear().toString().slice(-2) : '68';
           const pfx = t.ticket_prefix || 'UP';
           tid = `#${pfx}-${yr}-${String(t.problem_id).padStart(4, '0')}`;
+        } else if (!tid.startsWith('#')) {
+          tid = `#${tid}`;
         }
         return {
           ...t,
@@ -186,7 +189,10 @@ export default function KanbanBoard() {
     const parents = [];
 
     scopedTickets.forEach(t => {
-      if (t.parent_problem_id) {
+      const st = (t.status_name || '').toUpperCase();
+      const isPending = st === 'PENDING_REVIEW' || st === 'PENDING' || st === 'NEW';
+      // คำร้องที่รอรับเรื่อง/รออนุมัติ ต้องแสดงให้แอดมินเห็นเพื่อตรวจสอบเสมอ
+      if (t.parent_problem_id && !isPending) {
         if (!dupsMap[t.parent_problem_id]) {
           dupsMap[t.parent_problem_id] = [];
         }
@@ -262,10 +268,15 @@ export default function KanbanBoard() {
     return parentTickets.filter(ticket => {
       // 1. Search Query
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
+        const rawQ = searchQuery.toLowerCase().trim();
+        const cleanQ = rawQ.replace(/^#/, '').trim();
         const authorInfo = getAnonymousAuthor(ticket);
         const text = [
+          ticket.ticket_id,
           ticket.formatted_ticket_id,
+          ticket.ticket_id ? `#${ticket.ticket_id}` : '',
+          ticket.formatted_ticket_id ? `#${ticket.formatted_ticket_id}` : '',
+          String(ticket.problem_id),
           ticket.title,
           ticket.description,
           ticket.building_name,
@@ -274,7 +285,7 @@ export default function KanbanBoard() {
           ticket.category_name
         ].filter(Boolean).join(' ').toLowerCase();
 
-        if (!text.includes(q)) return false;
+        if (!text.includes(rawQ) && !text.includes(cleanQ)) return false;
       }
 
       // 2. Status Filter
@@ -480,41 +491,16 @@ export default function KanbanBoard() {
       }
     });
 
-    // 2. From all_category_scores with high confidence
+    // 2. From all_category_scores with high confidence (>= 65%)
     const topScores = ticket.llm_analysis?.all_category_scores || [];
     topScores
-      .filter(s => (s.confidence >= 0.20 || s.score >= 0.20 || s.score_percent >= 20) && s.category_name)
+      .filter(s => (s.confidence >= 0.65 || s.score >= 0.65 || s.score_percent >= 65) && s.category_name)
       .forEach(s => {
         const name = s.category_name.trim();
         if (name && name.toLowerCase() !== primary && !result.includes(name)) {
           result.push(name);
         }
       });
-
-    // 3. Fallback semantic heuristics based on title / description / keywords
-    if (result.length === 0) {
-      const text = `${ticket.title || ''} ${ticket.description || ''}`.toLowerCase();
-      if (text.includes('ไฟ') || text.includes('สว่าง') || text.includes('ทางเท้า') || text.includes('ถนน') || text.includes('จราจร')) {
-        const cat = 'การเดินทางและจราจร';
-        if (cat.toLowerCase() !== primary && !result.includes(cat)) result.push(cat);
-      }
-      if (text.includes('ท่อ') || text.includes('ระบายน้ำ') || text.includes('ขยะ') || text.includes('กลิ่น') || text.includes('สุนัข') || text.includes('หมา')) {
-        const cat = 'ระบบระบายน้ำ';
-        if (cat.toLowerCase() !== primary && !result.includes(cat)) result.push(cat);
-      }
-      if (text.includes('เน็ต') || text.includes('wifi') || text.includes('สแกน') || text.includes('กล้อง') || text.includes('access control') || text.includes('คอม')) {
-        const cat = 'ระบบรักษาความปลอดภัย';
-        if (cat.toLowerCase() !== primary && !result.includes(cat)) result.push(cat);
-      }
-      if (text.includes('แอร์') || text.includes('พัดลม') || text.includes('ห้องเรียน') || text.includes('ลิฟต์') || text.includes('ประตู')) {
-        const cat = 'อาคารเรียนรวม';
-        if (cat.toLowerCase() !== primary && !result.includes(cat)) result.push(cat);
-      }
-      if (text.includes('อาหาร') || text.includes('น้ำดื่ม') || text.includes('ห้องน้ำ') || text.includes('ส้วม') || text.includes('ก๊อก')) {
-        const cat = 'ศูนย์อาหาร';
-        if (cat.toLowerCase() !== primary && !result.includes(cat)) result.push(cat);
-      }
-    }
 
     return result.filter(c => c.toLowerCase() !== primary);
   };

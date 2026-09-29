@@ -59,14 +59,21 @@ def _find_category(label: str, categories: List[Dict[str, Any]]) -> Dict[str, An
     return None
 
 def classify_with_wangchanberta(text: str, categories_list: List[Dict[str, Any]], threshold: float | None = None) -> Dict[str, Any]:
-    if not text or not _load():
-        return {"routed_categories": [], "all_scores": [
-                    {"category_id": c.get("id", c.get("category_id")),
-                     "category_name": c.get("name", c.get("category_name")),
-                     "label": None, "score": 0.0, "score_percent": 0.0,
-                     "confidence": 0.0, "score_source": "unavailable"} for c in categories_list],
-                "top_confidence": 0.0,
-                "threshold_used": 0.5, "needs_human_review": True, "model": "unavailable"}
+    if not text:
+        return {"routed_categories": [], "all_scores": [], "top_confidence": 0.0, "threshold_used": 0.5, "model": "none"}
+    if not _load():
+        try:
+            from app.services.ai_service import classify_problem_multilabel
+            return classify_problem_multilabel(text, categories_list=categories_list, threshold=threshold)
+        except Exception as e:
+            logger.error(f"Fallback to classify_problem_multilabel failed: {e}")
+            return {"routed_categories": [], "all_scores": [
+                        {"category_id": c.get("id", c.get("category_id")),
+                         "category_name": c.get("name", c.get("category_name")),
+                         "label": None, "score": 0.0, "score_percent": 0.0,
+                         "confidence": 0.0, "score_source": "unavailable"} for c in categories_list],
+                    "top_confidence": 0.0,
+                    "threshold_used": 0.5, "needs_human_review": True, "model": "unavailable"}
     import torch
     route_threshold = max(0.0, min(1.0, float(threshold))) if threshold is not None else None
     inputs = _TOKENIZER(text, return_tensors="pt", truncation=True, max_length=128)

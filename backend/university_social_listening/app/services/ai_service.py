@@ -135,8 +135,8 @@ def check_profanity(text: str) -> bool:
 CATEGORY_INTENT_MAP = {
     1: { # อาคารและสิ่งอำนวยความสะดวก
         "name": "อาคารและสิ่งอำนวยความสะดวก",
-        "high_priority": ["หลังคารั่ว", "ประตูพัง", "ลิฟต์ค้าง", "ลิฟต์พัง", "แอร์ไม่เย็น", "แอร์เสีย", "น้ำไม่ไหล", "ท่อแตก", "น้ำรั่ว", "ไฟดับ", "ไฟฟ้าดับ", "หลอดไฟขาด", "หลอดไฟกระพริบ", "ปลั๊กไฟช็อต", "ชักโครกตัน", "ห้องน้ำพัง"],
-        "keywords": ["พัง", "ชำรุด", "เสีย", "รั่ว", "ซ่อม", "ประตู", "หน้าต่าง", "แอร์", "ลิฟต์", "หลอดไฟ", "ก๊อกน้ำ", "โถส้วม", "สุขภัณฑ์", "อาคาร", "ตึก", "ชั้น", "เพเพดาน", "พัดลม", "ปลั๊กไฟ", "โต๊ะเก้าอี้พัง", "สิ่งอำนวยความสะดวก"],
+        "high_priority": ["หลังคารั่ว", "ประตูพัง", "ลิฟต์ค้าง", "ลิฟต์พัง", "แอร์ไม่เย็น", "แอร์เสีย", "น้ำไม่ไหล", "ท่อแตก", "น้ำรั่ว", "ไฟดับในตึก", "ไฟในห้องดับ", "หลอดไฟขาด", "หลอดไฟกระพริบ", "ปลั๊กไฟช็อต", "ชักโครกตัน", "ห้องน้ำพัง", "ไฟทางเดินดับ"],
+        "keywords": ["พัง", "ชำรุด", "เสีย", "รั่ว", "ซ่อม", "ประตู", "หน้าต่าง", "แอร์", "ลิฟต์", "หลอดไฟ", "ก๊อกน้ำ", "โถส้วม", "สุขภัณฑ์", "อาคาร", "ตึก", "ชั้น", "เพดาน", "พัดลม", "ปลั๊กไฟ", "โต๊ะเก้าอี้พัง", "สิ่งอำนวยความสะดวก", "ไฟดับ"],
     },
     2: { # ระบบเครือข่ายและเทคโนโลยี
         "name": "ระบบเครือข่ายและเทคโนโลยี",
@@ -165,8 +165,18 @@ CATEGORY_INTENT_MAP = {
     },
     7: { # การเดินทางและระบบขนส่ง
         "name": "การเดินทางและระบบขนส่ง",
-        "high_priority": ["รถเมล์ชน", "รถเมล์ไม่มา", "รถเมล์รอนาน", "รถเมล์มอ", "รถมอเตอร์ไซค์รับจ้าง", "ป้ายรถเมล์พัง", "คนขับรถขับเร็ว", "ตารางรถเมล์"],
-        "keywords": ["รถเมล์", "รถบัส", "รถมอ", "รมอ", "รถรับส่ง", "รถไฟฟ้า", "รอรถ", "ป้ายรถ", "ป้ายรถเมล์", "คิวรถ", "ตารางรถ", "สาย 1", "สาย 2", "ไม่จอดรับ", "รถติด", "ที่จอดรถ", "ลานจอดรถ", "การเดินทาง", "ขนส่ง"],
+        "high_priority": [
+            "รถเมล์ชน", "รถเมล์ไม่มา", "รถเมล์รอนาน", "รถเมล์มอ", "รถมอเตอร์ไซค์รับจ้าง", 
+            "ป้ายรถเมล์พัง", "คนขับรถขับเร็ว", "ตารางรถเมล์", "รถเมล์เสีย", "รถเมล์ดับ", 
+            "รถเมย์ดับ", "รถเมล์ไฟฟ้า", "รถเมย์ไฟฟ้า", "รถเมล์ไฟฟ้าดับ", "รถเมย์ไฟฟ้าดับ", 
+            "ระเมย์ไฟฟ้าดับ", "รถไฟฟ้าดับ", "รถไฟฟ้าเสีย", "รถเมย์", "รถเมย์มอ", "รถขสมพ", "ขสมพ"
+        ],
+        "keywords": [
+            "รถเมล์", "รถเมย์", "ระเมย์", "รถบัส", "รถมอ", "รมอ", "รถรับส่ง", "รถไฟฟ้า", 
+            "รถเมล์ไฟฟ้า", "รถเมย์ไฟฟ้า", "รอรถ", "ป้ายรถ", "ป้ายรถเมล์", "คิวรถ", "ตารางรถ", 
+            "สาย 1", "สาย 2", "สาย 3", "ไม่จอดรับ", "รถติด", "ที่จอดรถ", "ลานจอดรถ", 
+            "การเดินทาง", "ขนส่ง", "ขสมพ", "รถม่วง", "รถกอล์ฟ"
+        ],
     },
     8: { # สุขอนามัย/ความปลอดภัยทางอาหาร
         "name": "สุขอนามัย/ความปลอดภัยทางอาหาร",
@@ -241,14 +251,36 @@ def classify_problem_multilabel(
     import re
     scores_dict = {}
 
+    transit_signals = ["รถเมล์", "รถเมย์", "ระเมย์", "รถบัส", "รถไฟฟ้า", "รถเมล์ไฟฟ้า", "รถเมย์ไฟฟ้า", "ขสมพ", "รถม่วง", "รถรับส่ง"]
+    is_transit = any(ts in text_lower for ts in transit_signals)
+
     for c in categories_list:
         cid = c.get("id") or c.get("category_id")
         cname = c.get("name") or c.get("category_name") or ""
         cdesc = c.get("description") or ""
 
         match_score = 0.0
-        # Check high priority & keywords from CATEGORY_INTENT_MAP
         data = CATEGORY_INTENT_MAP.get(cid, {})
+
+        # Context-aware adjustments:
+        # If this is a transit vehicle issue, suppress building category matching
+        # caused merely by naming the building landmark (e.g. "อาคารเรียนรวม CE") or bus power dying ("ไฟดับ")
+        if is_transit and cid == 1:
+            has_real_building_damage = any(bk in text_lower for bk in ["ชนตึก", "ชนอาคาร", "เสาตึก", "แอร์", "ลิฟต์", "ท่อแตก", "หลังคารั่ว", "ห้องน้ำ", "เพดาน"])
+            if not has_real_building_damage:
+                # Suppress Category 1
+                match_score = 0.0
+                prob = 0.02
+                scores_dict[cid] = {
+                    "category_id": cid,
+                    "category_name": cname,
+                    "confidence": round(prob, 2),
+                    "score_percent": int(round(prob * 100)),
+                    "raw_match": 0.0
+                }
+                continue
+
+        # Check high priority & keywords from CATEGORY_INTENT_MAP
         for phrase in data.get("high_priority", []):
             if phrase.lower() in text_lower:
                 match_score += 3.5
@@ -261,6 +293,11 @@ def classify_problem_multilabel(
             w = w.strip().lower()
             if len(w) >= 2 and w in text_lower:
                 match_score += 1.5
+
+        # Boost Category 7 (Transportation) when vehicle signals and fault words appear
+        if is_transit and cid == 7:
+            if any(flt in text_lower for flt in ["ดับ", "เสีย", "พัง", "สตาร์ท", "ชาร์จ", "แบต"]):
+                match_score += 4.0
 
         if match_score == 0:
             prob = 0.02
@@ -286,12 +323,17 @@ def classify_problem_multilabel(
         primary_name = top["category_name"]
         top_conf = top["confidence"]
 
-    routed_categories = [
-        item for item in sorted_scores 
-        if item["confidence"] >= threshold and item["confidence"] >= 0.30
-    ]
-    if not routed_categories and top["confidence"] >= 0.30:
-        routed_categories = [top]
+    # Strict multi-label routing: secondary categories must genuinely pass both threshold and high evidence criteria (>= 0.65)
+    # A single post should not casually cross-route unless there is genuine cross-department need
+    routed_categories = [top]
+    for item in sorted_scores[1:]:
+        if (
+            item["confidence"] >= threshold
+            and item["confidence"] >= 0.65
+            and item.get("raw_match", 0) >= 3.0
+            and item["confidence"] >= (top_conf * 0.75)
+        ):
+            routed_categories.append(item)
 
     return {
         "primary_category_id": primary_id,
