@@ -17,14 +17,14 @@ def send_invitation_email(email: str, role: str, category_name: str, token: str)
 
     try:
         msg = EmailMessage()
-        msg['Subject'] = 'You have been invited to the UP Voice Platform!'
-        msg['From'] = smtp_email
+        display_role = role.replace("_", " ").title()
+        msg['Subject'] = f'คำเชิญเข้าร่วมเป็นผู้ดูแลระบบ UP Voice ({display_role} Invitation)'
+        msg['From'] = f"UP Voice Platform <{smtp_email}>"
         msg['To'] = email
 
         frontend_url = os.getenv("FRONTEND_URL", "https://university-social-listening-platfor.vercel.app")
         invite_link = f"{frontend_url}/register?token={token}"
         
-        display_role = role.replace("_", " ").title()
         category_text = f"manage the <strong>{category_name}</strong> category" if category_name else "access the platform"
 
         html_content = f"""
@@ -101,34 +101,34 @@ def send_invitation_email(email: str, role: str, category_name: str, token: str)
                     <h1>UP Voice Platform</h1>
                 </div>
                 <div class="content">
-                    <p>Hello,</p>
-                    <p>You have been invited to join the UP Voice Platform as a <strong>{display_role}</strong>. In this role, you will be able to {category_text}.</p>
+                    <p>เรียน ผู้ได้รับการเสนอชื่อเป็นผู้ดูแลระบบ ({email}),</p>
+                    <p>ท่านได้รับคำเชิญเข้าร่วมใช้งานระบบ UP Voice ในบทบาท <strong>{display_role}</strong> เพื่อรับผิดชอบและดูแลหมวดหมู่ {category_text}</p>
                     
                     <div class="cta-container">
-                        <a href="{invite_link}" style="display: inline-block; background-color: #4f46e5; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 16px; padding: 14px 28px; border-radius: 8px;">Accept Invitation</a>
+                        <a href="{invite_link}" style="display: inline-block; background-color: #4f46e5; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 16px; padding: 14px 28px; border-radius: 8px;">ยอมรับคำเชิญและตั้งรหัสผ่าน (Accept Invitation)</a>
                     </div>
                     
-                    <p>If you did not expect this invitation, you can safely ignore this email.</p>
+                    <p style="font-size: 13px; color: #64748b;">หากไม่สามารถคลิกปุ่มได้ สามารถคัดลอกลิงก์ด้านล่างนี้ไปวางในเบราว์เซอร์:<br><a href="{invite_link}" style="color: #4f46e5; word-break: break-all;">{invite_link}</a></p>
                 </div>
                 <div class="footer">
-                    &copy; 2026 UP Voice Platform. All rights reserved.
+                    &copy; 2026 UP Voice Platform มหาวิทยาลัยพะเยา. All rights reserved.
                 </div>
             </div>
         </body>
         </html>
         """
         
-        msg.set_content("You have been invited to the UP Voice Platform. Please view this email in an HTML-compatible client.")
+        msg.set_content(f"ท่านได้รับคำเชิญเข้าร่วม UP Voice Platform: {invite_link}")
         msg.add_alternative(html_content, subtype='html')
 
         # Try SSL port 465 first, fallback to TLS port 587
         try:
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as server:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
                 server.login(smtp_email, smtp_password)
                 server.send_message(msg)
         except Exception as ssl_err:
             logger.warning(f"SSL port 465 failed ({ssl_err}), trying TLS port 587...")
-            with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
+            with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
                 server.starttls()
                 server.login(smtp_email, smtp_password)
                 server.send_message(msg)
@@ -136,7 +136,47 @@ def send_invitation_email(email: str, role: str, category_name: str, token: str)
         logger.info(f"Invitation email sent successfully to {email}")
 
     except Exception as e:
-        logger.error(f"Failed to send email to {email}. Error: {str(e)}")
+        logger.exception(f"Failed to send email to {email}. Error: {str(e)}")
+
+
+def test_send_email(target_email: str) -> dict:
+    """
+    Diagnostic helper to test SMTP connection from local or cloud environment.
+    """
+    smtp_email = os.getenv("SMTP_EMAIL", "artitaya.11244@gmail.com")
+    raw_password = os.getenv("SMTP_PASSWORD", "nupd wksj jknn aiks")
+    smtp_password = raw_password.replace(" ", "") if raw_password else ""
+
+    if not smtp_email or not smtp_password:
+        return {"success": False, "error": "SMTP_EMAIL or SMTP_PASSWORD not set in environment variables"}
+
+    msg = EmailMessage()
+    msg['Subject'] = 'UP Voice Platform - ทดสอบการส่งอีเมล (Test SMTP Connection)'
+    msg['From'] = f"UP Voice Platform <{smtp_email}>"
+    msg['To'] = target_email
+    msg.set_content(f"สวัสดีครับ,\n\nนี่คืออีเมลทดสอบการเชื่อมต่อระบบ SMTP จาก UP Voice Platform ไปยัง {target_email}\nหากได้รับอีเมลนี้ แสดงว่าระบบส่งอีเมลจากเซิร์ฟเวอร์สามารถเชื่อมต่อ Gmail ได้อย่างสมบูรณ์แบบ 100% ครับ")
+
+    logs = []
+    # 1. Try SSL port 465
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
+            server.login(smtp_email, smtp_password)
+            server.send_message(msg)
+        logs.append("Sent successfully via SMTP_SSL (port 465)")
+        return {"success": True, "method": "SSL_465", "message": f"Email successfully sent to {target_email}", "logs": logs}
+    except Exception as e_ssl:
+        logs.append(f"Port 465 failed: {str(e_ssl)}")
+        # 2. Try TLS port 587
+        try:
+            with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+                server.starttls()
+                server.login(smtp_email, smtp_password)
+                server.send_message(msg)
+            logs.append("Sent successfully via SMTP TLS (port 587)")
+            return {"success": True, "method": "TLS_587", "message": f"Email successfully sent to {target_email}", "logs": logs}
+        except Exception as e_tls:
+            logs.append(f"Port 587 failed: {str(e_tls)}")
+            return {"success": False, "error": f"Failed via both ports 465 and 587. SSL error: {str(e_ssl)}, TLS error: {str(e_tls)}", "logs": logs}
 
 
 def send_revocation_email(email: str):

@@ -236,6 +236,32 @@ def list_category_admins(
 
 
 # ──────────────────────────────────────────────
+# Test SMTP Email Sending (Available in Swagger UI /docs)
+# ──────────────────────────────────────────────
+class TestEmailPayload(BaseModel):
+    email: str
+
+@router.post("/test-email", response_model=StandardResponse, tags=[TAG_SUPER_ADMIN])
+def test_email_smtp(payload: TestEmailPayload):
+    """
+    ทดสอบส่งอีเมลผ่านระบบ SMTP โดยตรง สำหรับตรวจสอบการทำงานบน Swagger UI (/docs)
+    """
+    from app.services.email_service import test_send_email
+    res = test_send_email(payload.email)
+    if res.get("success"):
+        return StandardResponse(
+            success=True,
+            message=f"ส่งอีเมลทดสอบไปยัง {payload.email} สำเร็จเรียบร้อย!",
+            data=res
+        )
+    else:
+        return StandardResponse(
+            success=False,
+            message=f"การส่งอีเมลล้มเหลว: {res.get('error')}",
+            data=res
+        )
+
+
 # ──────────────────────────────────────────────
 # Create an Invite (Super Admin only)
 # ──────────────────────────────────────────────
