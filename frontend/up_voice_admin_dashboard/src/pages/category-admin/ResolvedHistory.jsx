@@ -1,5 +1,6 @@
 // src/pages/category-admin/ResolvedHistory.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import api from '../../services/api';
 import { fetchProblems, updateProblemStatus } from '../../services/problemService';
 import TicketDetailModal from '../../components/TicketDetailModal';
 import { getAnonymousAuthor } from '../../utils/authorUtils';

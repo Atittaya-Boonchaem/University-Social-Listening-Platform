@@ -25,6 +25,7 @@ import {
 import { fetchAnalytics, fetchProblems, updateProblemStatus } from '../../services/problemService';
 import { fetchUsers } from '../../services/userService';
 import { fetchBuildings } from '../../services/buildingService';
+import { fetchCategories } from '../../services/categoryService';
 
 const PHAYAO_CENTER = [19.0289, 99.8967];
 const PHAYAO_BOUNDS = [
@@ -70,6 +71,7 @@ export default function GlobalDashboard() {
   const [allProblems, setAllProblems] = useState([]);
   const [pendingProblems, setPendingProblems] = useState([]);
   const [masterBuildings, setMasterBuildings] = useState([]);
+  const [masterCategories, setMasterCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -87,12 +89,13 @@ export default function GlobalDashboard() {
     if (!isSilent) setLoading(true);
     setRefreshing(true);
     try {
-      const [analyticsData, usersData, bldData, probRes, pendingRes] = await Promise.all([
+      const [analyticsData, usersData, bldData, probRes, pendingRes, catsData] = await Promise.all([
         fetchAnalytics(),
         fetchUsers().catch(() => []),
         fetchBuildings().catch(() => []),
         fetchProblems({ page_size: 300 }, true).catch(() => ({ items: [] })),
         fetchProblems({ status_name: 'PENDING_REVIEW', page_size: 50 }).catch(() => ({ items: [] })),
+        fetchCategories().catch(() => []),
       ]);
 
       setAnalytics(analyticsData);
@@ -101,6 +104,7 @@ export default function GlobalDashboard() {
       setTotalUsers(uList.length || 0);
       setGeoPoints(analyticsData?.geo_points ?? []);
       setMasterBuildings(Array.isArray(bldData) ? bldData : bldData?.data || []);
+      setMasterCategories(Array.isArray(catsData) ? catsData : (catsData?.items || []));
       
       const pItems = probRes?.items || probRes || [];
       setAllProblems(pItems);
@@ -143,13 +147,15 @@ export default function GlobalDashboard() {
     }
   };
 
-  // Categories list
+  // Categories list (Includes all master categories configured in system)
   const categoryOptions = useMemo(() => {
+    const masterNames = masterCategories.map(c => c.category_name || c.name).filter(Boolean);
+    if (masterNames.length > 0) return masterNames;
     return Array.from(new Set([
       ...(analytics?.by_category || []).map(c => c.category_name),
       ...allProblems.map(p => p.category_name).filter(Boolean),
     ]));
-  }, [analytics, allProblems]);
+  }, [masterCategories, analytics, allProblems]);
 
   // Filtered problems based on selected category
   const visibleProblems = useMemo(() => {
@@ -167,9 +173,33 @@ export default function GlobalDashboard() {
   }, [analytics, visibleProblems, selectedCategory]);
 
   const byCategory = useMemo(() => {
-    if (selectedCategory === 'ALL') return (analytics?.by_category ?? []);
-    return [{ category_name: selectedCategory, count: visibleProblems.length }];
-  }, [analytics, visibleProblems, selectedCategory]);
+    if (selectedCategory !== 'ALL') {
+      return [{ category_name: selectedCategory, count: visibleProblems.length }];
+    }
+
+    if (masterCategories.length > 0) {
+      const countsMap = {};
+      (analytics?.by_category || []).forEach(c => {
+        countsMap[c.category_name] = c.count;
+      });
+      allProblems.forEach(p => {
+        if (p.category_name) {
+          countsMap[p.category_name] = (countsMap[p.category_name] || 0) + 1;
+        }
+      });
+
+      return masterCategories.map(cat => {
+        const name = cat.category_name || cat.name;
+        return {
+          category_name: name,
+          count: countsMap[name] || 0,
+          color_code: cat.color_code
+        };
+      }).sort((a, b) => b.count - a.count);
+    }
+
+    return (analytics?.by_category ?? []);
+  }, [selectedCategory, visibleProblems, masterCategories, analytics, allProblems]);
 
   const total = selectedCategory === 'ALL' ? (analytics?.total ?? allProblems.length) : visibleProblems.length;
   const geoPoints = useMemo(() => {
