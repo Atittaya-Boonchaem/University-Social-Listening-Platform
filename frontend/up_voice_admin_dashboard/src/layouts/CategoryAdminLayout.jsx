@@ -242,7 +242,22 @@ const CategoryAdminLayout = () => {
           }
           fetchProblems(params, true)
             .then(pubData => {
-              setProblemCount(pubData.total || (pubData.items || []).length);
+              const items = pubData.items || [];
+              if (user.role === 'category_admin' && (user.category_id || user.category_name)) {
+                const filtered = items.filter(t => 
+                  (user.category_id && t.category_id === user.category_id) ||
+                  (user.category_name && t.category_name === user.category_name) ||
+                  t.llm_analysis?.multi_categories?.some(mc => 
+                    (user.category_id && mc.category_id === user.category_id) ||
+                    (user.category_name && mc.category_name === user.category_name)
+                  )
+                );
+                // Scoped parent tickets count matching Kanban table
+                const parents = filtered.filter(t => !t.parent_problem_id);
+                setProblemCount(parents.length);
+              } else {
+                setProblemCount(pubData.total || items.length);
+              }
             })
             .catch(() => {});
         }

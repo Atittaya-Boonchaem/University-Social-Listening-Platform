@@ -46,6 +46,23 @@ export default function ResolvedHistory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMsg, setToastMsg] = useState('');
+  const [assignedCatName, setAssignedCatName] = useState('');
+  const [assignedCatId, setAssignedCatId] = useState(null);
+  const [userRole, setUserRole] = useState('');
+
+  // 1. Fetch user info
+  useEffect(() => {
+    api.get('/users/me')
+      .then(res => {
+        if (res.data?.success && res.data?.data) {
+          const u = res.data.data;
+          if (u.category_name) setAssignedCatName(u.category_name);
+          if (u.category_id) setAssignedCatId(u.category_id);
+          if (u.role) setUserRole(u.role);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // ── Filters & Controls ──────────────────────────────────────────────
   const [search, setSearch] = useState('');
@@ -155,9 +172,24 @@ export default function ResolvedHistory() {
     window.print();
   };
 
+  // ── Scoped to current admin category ─────────────────────────────────
+  const scopedTickets = useMemo(() => {
+    if (userRole === 'category_admin' && (assignedCatId || assignedCatName)) {
+      return tickets.filter(t => 
+        (assignedCatId && t.category_id === assignedCatId) ||
+        (assignedCatName && t.category_name === assignedCatName) ||
+        t.llm_analysis?.multi_categories?.some(mc => 
+          (assignedCatId && mc.category_id === assignedCatId) ||
+          (assignedCatName && mc.category_name === assignedCatName)
+        )
+      );
+    }
+    return tickets;
+  }, [tickets, userRole, assignedCatId, assignedCatName]);
+
   // ── Filter & Sort Logic ─────────────────────────────────────────────
   const filteredTickets = useMemo(() => {
-    return tickets.filter(t => {
+    return scopedTickets.filter(t => {
       // 1. Search Query
       if (search) {
         const q = search.toLowerCase();

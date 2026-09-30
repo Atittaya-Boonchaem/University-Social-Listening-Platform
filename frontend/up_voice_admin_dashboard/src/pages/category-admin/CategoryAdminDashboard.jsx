@@ -76,6 +76,8 @@ export default function CategoryAdminDashboard() {
   const [error, setError] = useState('');
   const [clusters, setClusters] = useState([]);
   const [assignedCatName, setAssignedCatName] = useState('');
+  const [assignedCatId, setAssignedCatId] = useState(null);
+  const [userRole, setUserRole] = useState('');
   const [adminName, setAdminName] = useState('');
   const [adminRole, setAdminRole] = useState('หัวหน้างานอาคาร');
 
@@ -98,8 +100,12 @@ export default function CategoryAdminDashboard() {
         if (res.data?.success && res.data?.data) {
           const user = res.data.data;
           if (user.category_name) setAssignedCatName(user.category_name);
+          if (user.category_id) setAssignedCatId(user.category_id);
           if (user.display_name) setAdminName(user.display_name);
-          if (user.role) setAdminRole(user.role === 'category_admin' ? (user.category_name || 'แอดมินหมวดหมู่') : user.role);
+          if (user.role) {
+            setUserRole(user.role);
+            setAdminRole(user.role === 'category_admin' ? (user.category_name || 'แอดมินหมวดหมู่') : user.role);
+          }
         }
       })
       .catch(() => {});
@@ -198,17 +204,35 @@ export default function CategoryAdminDashboard() {
     }
   };
 
-  // 3. Computed KPI Stats
-  const totalCount = clusters.length;
-  const openCount = clusters.filter(c => c.status === 'OPEN').length;
-  const progressCount = clusters.filter(c => c.status === 'IN_PROGRESS').length;
-  const resolvedCount = clusters.filter(c => c.status === 'RESOLVED' || c.status === 'CLOSED').length;
+  // 3. Scoped Clusters (Strictly filtered to this Category Admin's department)
+  const scopedClusters = useMemo(() => {
+    if (userRole === 'category_admin' && (assignedCatId || assignedCatName)) {
+      return clusters.filter(c => {
+        const matchesPrimary = (assignedCatId && c.category_id === assignedCatId) ||
+                               (assignedCatName && c.category_name === assignedCatName);
+        const matchesMulti = c.posts?.some(p => 
+          p.llm_analysis?.multi_categories?.some(mc => 
+            (assignedCatId && mc.category_id === assignedCatId) ||
+            (assignedCatName && mc.category_name === assignedCatName)
+          )
+        );
+        return matchesPrimary || matchesMulti;
+      });
+    }
+    return clusters;
+  }, [clusters, userRole, assignedCatId, assignedCatName]);
 
-  // 4. Group problems by location / building
+  // 4. Computed KPI Stats (Scoped)
+  const totalCount = scopedClusters.length;
+  const openCount = scopedClusters.filter(c => c.status === 'OPEN').length;
+  const progressCount = scopedClusters.filter(c => c.status === 'IN_PROGRESS').length;
+  const resolvedCount = scopedClusters.filter(c => c.status === 'RESOLVED' || c.status === 'CLOSED').length;
+
+  // 5. Group problems by location / building
   const locationStats = useMemo(() => {
     const map = new Map();
 
-    clusters.forEach(c => {
+    scopedClusters.forEach(c => {
       const loc = c.location && c.location !== 'ไม่ระบุสถานที่' ? c.location : 'จุดรอรถเมล์/บริเวณทั่วไป';
       if (!map.has(loc)) {
         map.set(loc, {
@@ -238,19 +262,19 @@ export default function CategoryAdminDashboard() {
     });
 
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [clusters]);
+  }, [scopedClusters]);
 
   // Zone counts
   const zoneCounts = useMemo(() => {
     const counts = { all: totalCount, dorm: 0, pky: 0, gate: 0 };
-    clusters.forEach(c => {
+    scopedClusters.forEach(c => {
       const loc = (c.location || '').toLowerCase();
       if (loc.includes('หอ') || loc.includes('dorm')) counts.dorm += 1;
       else if (loc.includes('เรียน') || loc.includes('pky') || loc.includes('ภูกามยาว') || loc.includes('ce') || loc.includes('ict')) counts.pky += 1;
       else if (loc.includes('ประตู') || loc.includes('อ่างหลวง') || loc.includes('พหลโยธิน') || loc.includes('เวียง')) counts.gate += 1;
     });
     return counts;
-  }, [clusters, totalCount]);
+  }, [scopedClusters, totalCount]);
 
   // Top hotspot
   const topHotspot = locationStats.length > 0 ? locationStats[0] : null;
@@ -286,7 +310,7 @@ export default function CategoryAdminDashboard() {
   const osmPins = useMemo(() => {
     const groups = new Map();
 
-    clusters.forEach((c) => {
+    scopedClusters.forEach((c) => {
       const baseKey = c.building_name || c.location || 'default';
       if (!groups.has(baseKey)) {
         groups.set(baseKey, []);
@@ -342,7 +366,7 @@ export default function CategoryAdminDashboard() {
     pins.sort((a, b) => a.zOrder - b.zOrder);
 
     return pins;
-  }, [clusters]);
+  }, [scopedClusters]);
 
   // Filtered Pins on Map according to active statusFilter and selectedZone
   const displayedOsmPins = useMemo(() => {
@@ -368,7 +392,7 @@ export default function CategoryAdminDashboard() {
     });
   }, [osmPins, statusFilter, selectedZone]);
 
-  const categoryTitle = assignedCatName || clusters[0]?.category_name || 'กองอาคารสถานที่และยานพาหนะ';
+  const categoryTitle = assignedCatName || scopedClusters[0]?.category_name || 'หมวดหมู่ที่รับผิดชอบ';
 
   if (loading) {
     return (

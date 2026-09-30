@@ -878,11 +878,11 @@ async def list_problems(
             query = query.filter(Problem.visibility_id == 1)
 
     if category_id:
-        from sqlalchemy import or_, cast, String
+        from sqlalchemy import or_, func, cast, String
         query = query.filter(
             or_(
                 Problem.category_id == category_id,
-                cast(Problem.llm_analysis, String).like(f'%"category_id": {category_id}%')
+                cast(func.json_extract(Problem.llm_analysis, '$.multi_categories'), String).like(f'%"category_id": {category_id}%')
             )
         )
     if status_name:
@@ -895,14 +895,14 @@ async def list_problems(
 
     # Category Admin RBAC filter: Primary category OR Multi-label collaborative routing
     if current_user:
-        from sqlalchemy import or_, cast, String
+        from sqlalchemy import or_, func, cast, String
         cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
         if cat_admin and cat_admin.category_id:
             c_id = cat_admin.category_id
             query = query.filter(
                 or_(
                     Problem.category_id == c_id,
-                    cast(Problem.llm_analysis, String).like(f'%"category_id": {c_id}%')
+                    cast(func.json_extract(Problem.llm_analysis, '$.multi_categories'), String).like(f'%"category_id": {c_id}%')
                 )
             )
 
