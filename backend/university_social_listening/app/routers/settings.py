@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models import LLMSetting, User, AuditLog
 from app.schemas import StandardResponse, LLMSettingUpdate, LLMSettingResponse
 from app.routers.auth import get_current_user
-from app.routers.users import require_super_admin
+from app.routers.users import require_super_admin, require_staff_or_above
 from pydantic import BaseModel
 from app.tags import TAG_SUPER_ADMIN
 
@@ -94,7 +94,7 @@ def get_llm_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_super_admin(current_user, db)
+    require_staff_or_above(current_user, db)
     
     setting = get_safe_llm_setting(db)
     if not setting:
@@ -239,7 +239,7 @@ def test_auto_routing(
     """
     Simulates Multi-label AI Classification & Auto-routing for Super Admin testing.
     """
-    require_super_admin(current_user, db)
+    require_staff_or_above(current_user, db)
     
     text = payload.get("text", "")
     threshold = payload.get("threshold", None)
@@ -338,7 +338,7 @@ def get_ai_model_metrics(
     """
     Returns AI model classification accuracy, evaluation metrics, and confusion matrix for Super Admin.
     """
-    require_super_admin(current_user, db)
+    require_staff_or_above(current_user, db)
     metrics_path = os.path.join(os.path.dirname(__file__), "..", "..", "ai_data", "models", "evaluation_metrics.json")
     
     if not os.path.exists(metrics_path):

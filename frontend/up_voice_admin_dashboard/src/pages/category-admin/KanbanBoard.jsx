@@ -132,13 +132,22 @@ export default function KanbanBoard() {
     setError('');
     try {
       invalidateProblemsCache();
-      const [pubRes, intRes, catsData] = await Promise.all([
+      // Fetch public, internal, AND explicitly request PENDING_REVIEW tickets
+      // PENDING_REVIEW tickets are filtered out for non-admin users by the backend,
+      // but admin token should allow them through. We fetch them separately to ensure
+      // they always appear in the admin board.
+      const [pubRes, intRes, pendingRes, catsData] = await Promise.all([
         fetchProblems({ page_size: 150, visibility_name: 'public' }, true),
         fetchProblems({ page_size: 150, visibility_name: 'internal' }, true),
+        fetchProblems({ page_size: 150, visibility_name: 'public', status_name: 'PENDING_REVIEW' }, true),
         fetchCategories(),
       ]);
 
-      const merged = [...(pubRes.items || []), ...(intRes.items || [])];
+      const merged = [
+        ...(pubRes.items || []),
+        ...(intRes.items || []),
+        ...(pendingRes.items || []),
+      ];
       const unique = Array.from(new Map(merged.map(t => [t.problem_id, t])).values());
 
       // Format ticket_id if not present
@@ -171,14 +180,25 @@ export default function KanbanBoard() {
     loadData();
   }, [loadData]);
 
-  // 3. Scope tickets to real assigned category of this Category Admin
+  // 3. Scope tickets to real assigned category of this Category Admin (including collaborative multi-category routing)
   const scopedTickets = useMemo(() => {
-    if (userRole === 'category_admin' && assignedCatId) {
-      return tickets.filter(t => t.category_id === assignedCatId);
-    }
-    // If assignedCatName is available and matches a category
-    if (userRole === 'category_admin' && assignedCatName) {
-      return tickets.filter(t => t.category_name === assignedCatName);
+    if (userRole === 'category_admin' && (assignedCatId || assignedCatName)) {
+      return tickets.filter(t => {
+        const matchesPrimary = (assignedCatId && t.category_id === assignedCatId) ||
+                               (assignedCatName && t.category_name === assignedCatName);
+
+        let multiList = t.llm_analysis?.multi_categories;
+        if (typeof multiList === 'string') {
+          try { multiList = JSON.parse(multiList); } catch (e) { multiList = []; }
+        }
+
+        const matchesMulti = Array.isArray(multiList) && multiList.some(mc =>
+          (assignedCatId && mc.category_id === assignedCatId) ||
+          (assignedCatName && (mc.category_name === assignedCatName || mc.label_th === assignedCatName))
+        );
+
+        return Boolean(matchesPrimary || matchesMulti);
+      });
     }
     return tickets;
   }, [tickets, userRole, assignedCatId, assignedCatName]);
@@ -483,13 +503,18 @@ export default function KanbanBoard() {
     const result = [];
 
     // 1. From multi_categories in llm_analysis
-    const multi = ticket.llm_analysis?.multi_categories || [];
-    multi.forEach(m => {
-      const name = (m.category_name || m.name || '').trim();
-      if (name && name.toLowerCase() !== primary && !result.includes(name)) {
-        result.push(name);
-      }
-    });
+    let multi = ticket.llm_analysis?.multi_categories || [];
+    if (typeof multi === 'string') {
+      try { multi = JSON.parse(multi); } catch (e) { multi = []; }
+    }
+    if (Array.isArray(multi)) {
+      multi.forEach(m => {
+        const name = (m.category_name || m.name || '').trim();
+        if (name && name.toLowerCase() !== primary && !result.includes(name)) {
+          result.push(name);
+        }
+      });
+    }
 
     // 2. From all_category_scores with high confidence (>= 65%)
     const topScores = ticket.llm_analysis?.all_category_scores || [];
@@ -1463,6 +1488,33 @@ export default function KanbanBoard() {
                               <span className="material-symbols-outlined text-[14px] text-slate-400">pin_drop</span>
                               <span>{ticket.building_name || ticket.location || 'ม.พะเยา'}</span>
                             </p>
+
+                            {/* Category & Cross-department collaboration badges */}
+                            {(() => {
+                              const related = getRelatedCategories(ticket);
+                              const isSecondaryForMe = assignedCatName && related.some(r => r.toLowerCase() === assignedCatName.toLowerCase());
+                              return (
+                                <div className="flex flex-col gap-1 my-0.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="px-2 py-0.5 rounded-md bg-[#eaedff] text-[#340866] text-[10px] font-bold truncate max-w-[170px]" title={ticket.category_name}>
+                                      {ticket.category_name || 'หมวดหมู่ทั่วไป'}
+                                    </span>
+                                    {isSecondaryForMe && (
+                                      <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold flex items-center gap-0.5">
+                                        <span className="material-symbols-outlined text-[11px]">handshake</span>
+                                        งานร่วม
+                                      </span>
+                                    )}
+                                  </div>
+                                  {related.length > 0 && !isSecondaryForMe && (
+                                    <span className="text-[10px] text-[#7b7482] flex items-center gap-1 truncate" title={related.join(', ')}>
+                                      <span className="material-symbols-outlined text-[12px]">share</span>
+                                      ร่วมกับ: {related[0]}{related.length > 1 ? ` (+${related.length - 1})` : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
 
                             {/* Quick Action Button on Card */}
                             {col.key === 'PENDING_REVIEW' && (

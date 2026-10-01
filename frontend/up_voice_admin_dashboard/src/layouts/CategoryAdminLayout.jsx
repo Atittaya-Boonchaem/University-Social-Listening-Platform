@@ -240,23 +240,37 @@ const CategoryAdminLayout = () => {
           if (user.category_id && user.role === 'category_admin') {
             params.category_id = user.category_id;
           }
-          fetchProblems(params, true)
-            .then(pubData => {
-              const items = pubData.items || [];
+          // Fetch both all-status and PENDING_REVIEW specifically to ensure we get pending tickets
+          Promise.all([
+            fetchProblems(params, true),
+            fetchProblems({ ...params, status_name: 'PENDING_REVIEW' }, true),
+          ])
+            .then(([pubData, pendingData]) => {
+              const allItems = Array.from(
+                new Map([
+                  ...(pubData.items || []),
+                  ...(pendingData.items || []),
+                ].map(t => [t.problem_id, t])).values()
+              );
               if (user.role === 'category_admin' && (user.category_id || user.category_name)) {
-                const filtered = items.filter(t => 
-                  (user.category_id && t.category_id === user.category_id) ||
-                  (user.category_name && t.category_name === user.category_name) ||
-                  t.llm_analysis?.multi_categories?.some(mc => 
+                const filtered = allItems.filter(t => {
+                  const matchesPrimary = (user.category_id && t.category_id === user.category_id) ||
+                                         (user.category_name && t.category_name === user.category_name);
+                  let multiList = t.llm_analysis?.multi_categories;
+                  if (typeof multiList === 'string') {
+                    try { multiList = JSON.parse(multiList); } catch (e) { multiList = []; }
+                  }
+                  const matchesMulti = Array.isArray(multiList) && multiList.some(mc =>
                     (user.category_id && mc.category_id === user.category_id) ||
-                    (user.category_name && mc.category_name === user.category_name)
-                  )
-                );
+                    (user.category_name && (mc.category_name === user.category_name || mc.label_th === user.category_name))
+                  );
+                  return Boolean(matchesPrimary || matchesMulti);
+                });
                 // Scoped parent tickets count matching Kanban table
                 const parents = filtered.filter(t => !t.parent_problem_id);
                 setProblemCount(parents.length);
               } else {
-                setProblemCount(pubData.total || items.length);
+                setProblemCount(allItems.filter(t => !t.parent_problem_id).length);
               }
             })
             .catch(() => {});

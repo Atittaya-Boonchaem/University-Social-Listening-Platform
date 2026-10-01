@@ -630,17 +630,22 @@ async def create_problem(
     llm_analysis_data = None
     try:
         from app.services.research_classifier_service import classify_with_wangchanberta
+        
+        # Read live configuration from Super Admin LLMSetting in DB
+        llm_cfg = db.query(LLMSetting).first()
+        configured_threshold = float(llm_cfg.confidence_threshold) if (llm_cfg and llm_cfg.confidence_threshold is not None) else 0.50
+        is_auto_routing_enabled = bool(llm_cfg.is_auto_routing_enabled) if (llm_cfg and llm_cfg.is_auto_routing_enabled is not None) else True
+
         active_cats = db.query(Category).filter(Category.is_active == True).all()
         cats_list = [{"id": c.category_id, "name": c.category_name} for c in active_cats]
         combined_text = f"{title} {description}".strip()
-        multi_result = classify_with_wangchanberta(combined_text, categories_list=cats_list)
+        multi_result = classify_with_wangchanberta(combined_text, categories_list=cats_list, threshold=configured_threshold)
 
-        # If AI identifies the primary category with strong confidence (>= 0.60)
-        # and it differs from the submitted category (which often defaults to 1 from UI presets),
-        # auto-assign to the true primary category:
+        # If AI identifies the primary category with strong confidence (>= configured_threshold)
+        # and auto-routing is enabled, auto-assign to the true primary category:
         ai_primary_id = multi_result.get("primary_category_id")
         ai_top_conf = multi_result.get("top_confidence", 0.0)
-        if ai_primary_id and ai_top_conf >= 0.60 and ai_primary_id != category_id:
+        if is_auto_routing_enabled and ai_primary_id and ai_top_conf >= configured_threshold and ai_primary_id != category_id:
             matched_cat = db.query(Category).filter(Category.category_id == ai_primary_id).first()
             if matched_cat:
                 category_id = ai_primary_id
@@ -649,8 +654,13 @@ async def create_problem(
         llm_analysis_data = {
             "multi_categories": multi_result.get("routed_categories", []),
             "all_category_scores": multi_result.get("all_scores", []),
-            "top_confidence": multi_result.get("top_confidence", 0.5),
-            "threshold_used": multi_result.get("threshold_used", 0.7),
+            "top_confidence": ai_top_conf,
+            "threshold_used": configured_threshold,
+            "ai_reasoning": multi_result.get("ai_reasoning", []),
+            "routing_queue": multi_result.get("routing_queue", "category_admin"),
+            "assigned_admin_categories": multi_result.get("assigned_admin_categories", []),
+            "needs_human_review": multi_result.get("needs_human_review", False),
+            "model_version": multi_result.get("model_version", "wangchanberta-enterprise-7000-records"),
         }
     except Exception as e:
         logger.error(f"Error during multi-label classification: {e}")
@@ -714,10 +724,19 @@ async def create_problem(
     )
     db.add(history)
 
-    # Send Notification to Category Admins of this category for moderation
+    # Send Notification to Category Admins of all routed categories
     try:
+        routed_cat_ids = set()
+        if category_id:
+            routed_cat_ids.add(category_id)
+        if llm_analysis_data and "multi_categories" in llm_analysis_data:
+            for rc in llm_analysis_data["multi_categories"]:
+                cid = rc.get("category_id")
+                if cid:
+                    routed_cat_ids.add(cid)
+
         cat_admins = db.query(CategoryAdmin).filter(
-            CategoryAdmin.category_id == category_id,
+            CategoryAdmin.category_id.in_(routed_cat_ids),
             CategoryAdmin.is_active == True
         ).all()
         for ca in cat_admins:
@@ -726,9 +745,40 @@ async def create_problem(
                 problem_id=problem.problem_id,
                 notification_type="NEW_PROBLEM",
                 title="มีคำร้องใหม่รอการตรวจสอบและอนุมัติ",
-                message=f"คำร้อง #{problem.ticket_id}: {problem.title[:45]} รอยืนยันจากแอดมินหมวดหมู่",
+                message=f"คำร้อง #{problem.ticket_id}: {problem.title[:45]} รอยืนยันจากแอดมินหมวดหมู่ (จำแนกโดย WangchanBERTa)",
                 is_read=False
             ))
+            # Send Email alert asynchronously to Category Admin
+            if background_tasks:
+                u_obj = db.query(User).filter(User.user_id == ca.user_id).first()
+                if u_obj and u_obj.email and "@" in u_obj.email:
+                    c_obj = db.query(Category).filter(Category.category_id == ca.category_id).first()
+                    is_collab = (ca.category_id != problem.category_id)
+                    from app.services.email_service import send_new_problem_routed_email
+                    background_tasks.add_task(
+                        send_new_problem_routed_email,
+                        to_email=u_obj.email,
+                        ticket_id=problem.ticket_id or str(problem.problem_id),
+                        title=problem.title,
+                        description=problem.description,
+                        category_name=c_obj.category_name if c_obj else "ทั่วไป",
+                        building_name=problem.building_name,
+                        is_collaborative=is_collab
+                    )
+
+
+        # If low confidence or borderline, notify Super Admin for Central Review
+        if llm_analysis_data and llm_analysis_data.get("needs_human_review"):
+            super_admins = db.query(SuperAdmin).filter(SuperAdmin.is_active == True).all()
+            for sa in super_admins:
+                db.add(Notification(
+                    user_id=sa.user_id,
+                    problem_id=problem.problem_id,
+                    notification_type="SYSTEM_ALERT",
+                    title="คำร้องรอตรวจสอบส่วนกลาง (Central Review)",
+                    message=f"คำร้อง #{problem.ticket_id}: {problem.title[:45]} ความมั่นใจไม่ถึงเกณฑ์ ต้องการการตรวจสอบโดย Super Admin",
+                    is_read=False
+                ))
     except Exception as e:
         logger.error(f"Error creating category admin notifications: {e}")
 
@@ -776,7 +826,7 @@ async def create_problem(
 @router.get("/list", response_model=StandardResponse, tags=[TAG_USER_PROBLEMS])
 async def list_problems(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     category_id: Optional[int] = None,
     status_name: Optional[str] = None,
     user_id: Optional[int] = None,
@@ -814,13 +864,12 @@ async def list_problems(
         )
 
     # For regular public users (not admin): problems awaiting review (PENDING_REVIEW) must NOT appear on public feed
-    if not is_admin and (not status_name or status_name.upper() != "PENDING_REVIEW"):
+    # Security: PENDING_REVIEW is ALWAYS hidden from non-admin users, regardless of status_name param
+    if not is_admin:
         from sqlalchemy import func
         pending_stat = db.query(Status).filter(func.lower(Status.status_name) == "pending_review").first()
         if pending_stat:
             query = query.filter(Problem.status_id != pending_stat.status_id)
-
-    if not is_admin:
         query = query.filter(Problem.is_hidden == False)
 
     # Visibility gate:
@@ -882,7 +931,8 @@ async def list_problems(
         query = query.filter(
             or_(
                 Problem.category_id == category_id,
-                cast(func.json_extract(Problem.llm_analysis, '$.multi_categories'), String).like(f'%"category_id": {category_id}%')
+                cast(func.json_extract(Problem.llm_analysis, '$.multi_categories'), String).like(f'%"category_id": {category_id}%'),
+                cast(func.json_extract(Problem.llm_analysis, '$.multi_categories'), String).like(f'%"category_id":{category_id}%')
             )
         )
     if status_name:
@@ -902,7 +952,8 @@ async def list_problems(
             query = query.filter(
                 or_(
                     Problem.category_id == c_id,
-                    cast(func.json_extract(Problem.llm_analysis, '$.multi_categories'), String).like(f'%"category_id": {c_id}%')
+                    cast(func.json_extract(Problem.llm_analysis, '$.multi_categories'), String).like(f'%"category_id": {c_id}%'),
+                    cast(func.json_extract(Problem.llm_analysis, '$.multi_categories'), String).like(f'%"category_id":{c_id}%')
                 )
             )
 
@@ -1496,9 +1547,57 @@ def update_problem_status(
 
     cat_admin = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == current_user.user_id, CategoryAdmin.is_active == True).first()
     if cat_admin and cat_admin.category_id and problem.category_id != cat_admin.category_id:
-        raise HTTPException(403, "You can only update problems in your assigned category")
+        multi_cats = (problem.llm_analysis or {}).get("multi_categories", [])
+        if isinstance(multi_cats, str):
+            try:
+                import json
+                multi_cats = json.loads(multi_cats)
+            except Exception:
+                multi_cats = []
+        is_in_multi = any(mc.get("category_id") == cat_admin.category_id for mc in multi_cats)
+        if not is_in_multi:
+            raise HTTPException(403, "You can only update problems in your assigned category")
 
-    status_obj = get_status_by_name(db, new_status_name)
+    # Update departmental progress tracking
+    analysis = dict(problem.llm_analysis or {})
+    dept_statuses = dict(analysis.get("department_statuses") or {})
+    curr_cat_id = str(cat_admin.category_id) if (cat_admin and cat_admin.category_id) else str(problem.category_id)
+    dept_statuses[curr_cat_id] = {
+        "status_name": new_status_name.upper(),
+        "updated_at": datetime.utcnow().isoformat(),
+        "notes": notes,
+        "admin_id": current_user.user_id,
+        "admin_name": get_display_name(current_user.user_id, db)
+    }
+    analysis["department_statuses"] = dept_statuses
+    problem.llm_analysis = analysis
+
+    # Determine overall problem status
+    # If marking as RESOLVED in a multi-department ticket, check if all departments have completed
+    status_to_apply = new_status_name
+    multi_cats = (problem.llm_analysis or {}).get("multi_categories", [])
+    if isinstance(multi_cats, str):
+        try:
+            import json
+            multi_cats = json.loads(multi_cats)
+        except Exception:
+            multi_cats = []
+
+    if new_status_name.upper() in ["RESOLVED", "CLOSED"] and len(multi_cats) > 1:
+        all_resolved = True
+        for mc in multi_cats:
+            mc_id = str(mc.get("category_id"))
+            mc_status = dept_statuses.get(mc_id, {}).get("status_name", "").upper()
+            if mc_status not in ["RESOLVED", "CLOSED"]:
+                all_resolved = False
+                break
+        if not all_resolved:
+            status_to_apply = "IN_PROGRESS"
+            dept_name = cat_admin.category.category_name if (cat_admin and cat_admin.category) else "หน่วยงานที่เกี่ยวข้อง"
+            additional_note = f"[{dept_name} ดำเนินการแก้ไขเสร็จสิ้นแล้ว - อยู่ระหว่างหน่วยงานอื่นเข้าดำเนินการต่อ]"
+            notes = f"{notes}\n{additional_note}".strip() if notes else additional_note
+
+    status_obj = get_status_by_name(db, status_to_apply)
     problem.status_id = status_obj.status_id
 
     history = ProblemStatusHistory(

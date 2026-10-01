@@ -159,19 +159,17 @@ def get_category_prototypes_wangchanberta() -> Dict[int, np.ndarray]:
     return _CATEGORY_PROTOTYPES_WANGCHANBERTA
 
 
-def classify_with_wangchanberta(text: str, categories_list: List[Dict], threshold: float = 0.70) -> Dict[str, Any]:
+def classify_with_wangchanberta(text: str, categories_list: List[Dict], threshold: float = 0.50) -> Dict[str, Any]:
     """
-    Model 2: Multi-label classification using WangchanBERTa contextual representations.
-    Returns:
-      {
-        "primary_category_id": int,
-        "primary_category_name": str,
-        "top_confidence": float,
-        "routed_categories": list,
-        "all_scores": list,
-        "threshold_used": float
-      }
+    Model 2: Multi-label classification using Enterprise WangchanBERTa contextual representations.
+    Delegates to research_classifier_service with full Knowledge Index and Relative Calibration.
     """
+    try:
+        from app.services.research_classifier_service import classify_with_wangchanberta as enterprise_classify
+        return enterprise_classify(text, categories_list=categories_list, threshold=threshold)
+    except Exception as e:
+        logger.warning(f"Failed to use enterprise WangchanBERTa classifier, using local fallback: {e}")
+
     if not text:
         cat = categories_list[0] if categories_list else {"category_id": 6, "category_name": "บริการทั่วไป / อื่นๆ"}
         return {

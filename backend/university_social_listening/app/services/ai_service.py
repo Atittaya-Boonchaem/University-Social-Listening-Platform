@@ -600,12 +600,6 @@ def auto_cluster_problem(problem_id: int, db) -> int | None:
         now = _dt.datetime.utcnow()
 
         if similar:
-            first_similar_id = similar[0]["id"]
-            first_prob = db.query(Problem).filter(Problem.problem_id == first_similar_id).first()
-            if first_prob:
-                target_parent = first_prob.parent_problem_id or first_prob.problem_id
-                problem.parent_problem_id = target_parent
-
             existing_cluster_id = None
             for s in similar:
                 s_prob = db.query(Problem).filter(Problem.problem_id == s["id"]).first()

@@ -29,7 +29,7 @@ const DEFAULT_SETTINGS = {
   is_auto_ban_enabled: true,
   is_auto_routing_enabled: true,
   auto_ban_duration_days: 7,
-  confidence_threshold: 0.40, // 40% มพ. Standard
+  confidence_threshold: 0.50, // 50% WangchanBERTa Standard
   max_warnings_before_ban: 1,
   banned_words: [],
   banned_patterns: [],
@@ -220,10 +220,10 @@ const LLMSettings = () => {
   const handleResetDefault = () => {
     setSettings((s) => ({
       ...s,
-      confidence_threshold: 0.40,
+      confidence_threshold: 0.50,
       is_auto_routing_enabled: true,
     }));
-    showToast('รีเซ็ตเกณฑ์ความเชื่อมั่นเป็นค่ามาตรฐาน 40% (มพ. Standard) เรียบร้อย');
+    showToast('รีเซ็ตเกณฑ์ความเชื่อมั่นเป็นค่ามาตรฐาน 50% (WangchanBERTa Standard) เรียบร้อย');
   };
 
   const runSimulation = async (textToTest = simText, customThreshold = settings.confidence_threshold) => {
@@ -250,21 +250,27 @@ const LLMSettings = () => {
           threshold: customThreshold
         });
         if (res && res.all_scores && res.all_scores.length > 0) {
-          const apiScores = res.all_scores.map((item, idx) => ({
-            category_id: item.category_id,
-            category_name: item.category_name,
-            sla: item.category_name?.includes('ขนส่ง') || item.category_name?.includes('เดินทาง') ? 'SLA 4 ชม.' : 'SLA 2 ชม.',
-            score: item.score_percent !== undefined ? item.score_percent : Math.round((item.confidence || item.score || 0) * 100),
-            reason: item.confidence >= 0.40 ? `พบความเชื่อมโยงสูงกับภารกิจหลัก (${item.category_name})` : 'ไม่พบความเชื่อมโยงโดยตรง (0%)',
-            rank: idx + 1,
-          })).sort((a, b) => b.score - a.score).map((it, idx) => ({ ...it, rank: idx + 1 }));
+          const effectiveThreshPct = Math.round(customThreshold * 100);
+          const apiScores = res.all_scores.map((item, idx) => {
+            const sc = item.score_percent !== undefined ? item.score_percent : Math.round((item.confidence || item.score || 0) * 100);
+            const isPassed = sc >= effectiveThreshPct;
+            return {
+              category_id: item.category_id,
+              category_name: item.category_name,
+              sla: item.category_name?.includes('ขนส่ง') || item.category_name?.includes('เดินทาง') ? 'SLA 4 ชม.' : 'SLA 2 ชม.',
+              score: sc,
+              reason: isPassed ? `ผ่านเกณฑ์การจำแนกหมวดหมู่อัตโนมัติ (≥ ${effectiveThreshPct}%)` : `ต่ำกว่าเกณฑ์การส่งต่อ (< ${effectiveThreshPct}%)`,
+              rank: idx + 1,
+              passed: isPassed,
+            };
+          }).sort((a, b) => b.score - a.score).map((it, idx) => ({ ...it, rank: idx + 1 }));
           setSimResultsList(apiScores);
           setSimResult(res);
         }
       } catch (apiErr) {
         // Fallback simulation already active
       }
-      showToast('ประเมินผลการกระจายงานทั้ง 9 หมวดหมู่สำเร็จ');
+      showToast('ประเมินผลการกระจายงานทั้ง 7 หมวดหมู่สำเร็จ');
     } catch (e) {
       showToast('ไม่สามารถทดสอบจำลองได้ กรุณาลองใหม่อีกครั้ง', 'error');
     } finally {
@@ -863,6 +869,17 @@ const LLMSettings = () => {
                           </span>
                         )}
                       </div>
+
+                      {simResult?.ai_reasoning && simResult.ai_reasoning.length > 0 && (
+                        <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/60 text-xs text-purple-950 space-y-1.5 mb-2">
+                          <div className="font-bold flex items-center gap-1.5 text-[#4B267D]">
+                            <span>🧠</span> <span>การคิดวิเคราะห์เชิงเหตุและผลกระทบ (AI Reasoning):</span>
+                          </div>
+                          {simResult.ai_reasoning.map((r, i) => (
+                            <div key={i} className="text-[11px] leading-relaxed pl-1 text-slate-700">{r}</div>
+                          ))}
+                        </div>
+                      )}
 
                       <div className="space-y-2">
                         {simResultsList.map((item, idx) => {

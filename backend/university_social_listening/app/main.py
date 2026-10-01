@@ -163,15 +163,16 @@ def seed_initial_data():
             db.add_all(visibilities)
             db.commit()
 
-        # Seed Categories
+        # Seed Categories (7 Official Categories aligned with WangchanBERTa)
         if db.query(Category).count() == 0:
             cats = [
-                Category(category_id=1, category_name="สิ่งอำนวยความสะดวกและอาคารสถานที่", ticket_prefix="FAC", description="ปัญหาอาคาร ชำรุด โต๊ะเก้าอี้ ไฟฟ้า ประปา"),
+                Category(category_id=1, category_name="อาคารและสิ่งอำนวยความสะดวก", ticket_prefix="FAC", description="ปัญหาอาคาร ชำรุด โต๊ะเก้าอี้ ไฟฟ้า ประปา"),
                 Category(category_id=2, category_name="ระบบเครือข่ายและเทคโนโลยี", ticket_prefix="IT", description="ปัญหาสัญญาณ Wi-Fi อินเทอร์เน็ต ระบบลงทะเบียน"),
-                Category(category_id=3, category_name="การเรียนการสอนและหลักสูตร", ticket_prefix="ACA", description="ปัญหาเกี่ยวกับการเรียน ตารางเรียน การสอบ"),
-                Category(category_id=4, category_name="สุขอนามัยและความสะอาด", ticket_prefix="SAN", description="ปัญหาขยะ โรงอาหาร ห้องน้ำ ความสะอาด"),
-                Category(category_id=5, category_name="ความปลอดภัยและจราจร", ticket_prefix="SEC", description="ปัญหารถเมล์ มพ. การจราจร ทางข้าม ไฟส่องสว่าง"),
-                Category(category_id=6, category_name="บริการและสวัสดิการนิสิต", ticket_prefix="WEL", description="ทุนการศึกษา สวัสดิการ หอพักนิสิต"),
+                Category(category_id=3, category_name="การเรียนการสอนและวิชาการ", ticket_prefix="ACA", description="ปัญหาเกี่ยวกับการเรียน ตารางเรียน การสอบ"),
+                Category(category_id=4, category_name="ภูมิทัศน์และความสะอาด", ticket_prefix="SAN", description="ปัญหาขยะ โรงอาหาร ห้องน้ำ ความสะอาด"),
+                Category(category_id=5, category_name="ความปลอดภัยและจราจร", ticket_prefix="SEC", description="ปัญหาความปลอดภัย อุบัติเหตุ ไฟทางดับ ทางมืด"),
+                Category(category_id=6, category_name="บริการทั่วไป / อื่นๆ", ticket_prefix="GEN", description="ทุนการศึกษา สวัสดิการ ร้านค้า ปัญหานอกเหนือจาก 6 หมวด"),
+                Category(category_id=7, category_name="การเดินทางและระบบขนส่ง", ticket_prefix="BUS", description="ปัญหารถเมล์ มพ. การสัญจร ท่ารถ ขนส่งมวลชน"),
             ]
             db.add_all(cats)
             db.commit()

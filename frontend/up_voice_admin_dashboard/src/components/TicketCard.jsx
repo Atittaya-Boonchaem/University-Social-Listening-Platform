@@ -81,7 +81,12 @@ export default function TicketCard({ ticket, onQuarantine, onForward, onViewDeta
         )}
         <span className="flex items-center gap-1 text-slate-400">
           <span>🕐</span>
-          {ticket.created_at ? new Date(ticket.created_at).toLocaleDateString('th-TH') : ''}
+          {ticket.created_at ? (() => {
+            const s = String(ticket.created_at).trim().replace(' ', 'T');
+            const iso = s.endsWith('Z') || s.includes('+') ? s : s + 'Z';
+            const d = new Date(iso);
+            return (isNaN(d.getTime()) ? new Date(ticket.created_at) : d).toLocaleDateString('th-TH');
+          })() : ''}
         </span>
         {isHidden && (
           <span className="text-rose-500 font-semibold flex items-center gap-1">
@@ -92,10 +97,12 @@ export default function TicketCard({ ticket, onQuarantine, onForward, onViewDeta
 
       {/* Multi-Department Collaboration & Routing Badges (No % shown) */}
       {(() => {
-        const multi = ticket.llm_analysis?.multi_categories || [];
-        const topScores = (ticket.llm_analysis?.all_category_scores || [])
-          .filter(s => s.confidence >= 0.20 && s.category_name !== ticket.category_name);
-        const related = multi.length > 1 ? multi : topScores;
+        const primary = (ticket.category_name || '').trim().toLowerCase();
+        const related = (ticket.llm_analysis?.multi_categories || [])
+          .filter(m => {
+            const name = (m.category_name || m.name || '').trim();
+            return name && name.toLowerCase() !== primary;
+          });
 
         if (related.length === 0) return null;
 

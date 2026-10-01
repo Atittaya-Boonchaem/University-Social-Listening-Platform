@@ -354,3 +354,70 @@ def send_revocation_email(email: str):
         _dispatch_email(to_email=email, subject=subject, html_content=html_content, text_content=text_content)
     except Exception as e:
         logger.error(f"Failed to send revocation email to {email}: {e}")
+
+
+def send_new_problem_routed_email(
+    to_email: str,
+    ticket_id: str,
+    title: str,
+    description: str,
+    category_name: str,
+    building_name: str = None,
+    is_collaborative: bool = False
+):
+    """Notify category admin by email when a new problem is submitted/routed to their department."""
+    try:
+        subject = f"[{'งานร่วม' if is_collaborative else 'คำร้องใหม่'}] #{ticket_id}: {title[:40]}"
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+        detail_link = f"{frontend_url}/category-admin/kanban"
+        role_label = f"หมวดหมู่งานร่วม (Collaborative Task): {category_name}" if is_collaborative else f"หมวดหมู่หลัก: {category_name}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html lang="th">
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; color: #1e293b; margin: 0; padding: 0; }}
+                .container {{ max-width: 600px; margin: 30px auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; }}
+                .header {{ background: #340866; color: white; padding: 20px 28px; }}
+                .content {{ padding: 28px; font-size: 14px; line-height: 1.6; }}
+                .ticket-box {{ background: #f1f5f9; border-left: 4px solid #340866; padding: 14px; border-radius: 6px; margin: 16px 0; }}
+                .badge {{ display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; background: #e0e7ff; color: #3730a3; }}
+                .btn {{ display: inline-block; background: #340866; color: white !important; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 14px; }}
+                .footer {{ background: #f8fafc; padding: 16px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2 style="margin:0; font-size: 18px;">🔔 UP Voice — มีคำร้องใหม่รอรับเรื่อง</h2>
+                </div>
+                <div class="content">
+                    <p>เรียน ผู้ดูแลระบบหมวดหมู่ ({to_email}),</p>
+                    <p>มีคำร้องใหม่ที่เกี่ยวข้องกับหน่วยงานของท่านถูกส่งเข้ามาในระบบ โดยผ่านการจำแนกหมวดหมู่อัตโนมัติ (AI Multi-label Routing):</p>
+                    
+                    <div class="ticket-box">
+                        <div style="font-weight: bold; color: #340866; font-size: 15px;">รหัสคำร้อง: #{ticket_id}</div>
+                        <div style="margin-top: 6px; font-weight: 600;">{title}</div>
+                        <div style="margin-top: 6px; color: #475569; font-size: 13px;">{description[:180]}...</div>
+                        <div style="margin-top: 10px;">
+                            <span class="badge">{role_label}</span>
+                            {f'<span class="badge" style="background:#fef3c7; color:#92400e; margin-left:6px;">📍 {building_name}</span>' if building_name else ''}
+                        </div>
+                    </div>
+
+                    <a href="{detail_link}" class="btn">เปิดดูคำร้องบน Kanban Board</a>
+                </div>
+                <div class="footer">
+                    &copy; 2026 UP Voice Platform • มหาวิทยาลัยพะเยา
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        text_content = f"UP Voice: New Problem #{ticket_id} - {title}. Category: {category_name}. Link: {detail_link}"
+        _dispatch_email(to_email=to_email, subject=subject, html_content=html_content, text_content=text_content)
+    except Exception as e:
+        logger.error(f"Failed to send problem notification email to {to_email}: {e}")
+

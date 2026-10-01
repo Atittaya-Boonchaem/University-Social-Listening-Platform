@@ -6,3 +6,6 @@ node_modules/
 backend/university_social_listening/uploads/
 backend/university_social_listening/app/ai_data/
 .idea/
+webapp_wangchanberta_deployment/model/*.safetensors
+webapp_wangchanberta_deployment/model/*.bin
+webapp_wangchanberta_deployment/model/*.pth

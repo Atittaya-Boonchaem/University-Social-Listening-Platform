@@ -1,0 +1,11 @@
+{
+  "routes": {
+    "traffic": ["admin_traffic"],
+    "safety": ["admin_safety"],
+    "cleaning": ["admin_cleaning"],
+    "facilities": ["admin_facilities"],
+    "education": ["admin_education"],
+    "network": ["admin_network"],
+    "other": ["admin_general_service"]
+  }
+}

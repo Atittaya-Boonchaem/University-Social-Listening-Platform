@@ -17,10 +17,19 @@ const resolveImageUrl = (img) => {
   return `${apiBase}${cleanPath}`;
 };
 
+const parseDateUtc = (rawDate) => {
+  if (!rawDate) return null;
+  let s = String(rawDate).trim().replace(' ', 'T');
+  const iso = s.endsWith('Z') || s.includes('+') ? s : s + 'Z';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? new Date(rawDate) : d;
+};
+
 const formatThaiDate = (dateStr) => {
   if (!dateStr) return 'ไม่ระบุวันที่';
   try {
-    const d = new Date(dateStr);
+    const d = parseDateUtc(dateStr);
+    if (!d || isNaN(d.getTime())) return dateStr;
     return d.toLocaleDateString('th-TH', {
       day: 'numeric',
       month: 'short',
@@ -32,12 +41,13 @@ const formatThaiDate = (dateStr) => {
 };
 
 const formatAuditTime = (dateStr) => {
-  if (!dateStr) return '19:40 น.';
+  if (!dateStr) return '—';
   try {
-    const d = new Date(dateStr);
+    const d = parseDateUtc(dateStr);
+    if (!d || isNaN(d.getTime())) return '—';
     return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
   } catch {
-    return '19:40 น.';
+    return '—';
   }
 };
 

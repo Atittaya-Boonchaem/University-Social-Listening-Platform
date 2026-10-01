@@ -73,28 +73,42 @@ const resolveImageUrl = (img) => {
   return `${apiBase}${cleanPath}`;
 };
 
+const parseDateUtc = (rawDate) => {
+  if (!rawDate) return null;
+  let s = String(rawDate).trim().replace(' ', 'T');
+  const iso = s.endsWith('Z') || s.includes('+') ? s : s + 'Z';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? new Date(rawDate) : d;
+};
+
 const formatThaiDate = (dateStr) => {
-  if (!dateStr) return '18 ก.ย. 2568 • 19:40 น.';
+  if (!dateStr) return '—';
   try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('th-TH', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    }) + ' • ' + d.toLocaleTimeString('th-TH', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }) + ' น.';
+    const d = parseDateUtc(dateStr);
+    if (!d || isNaN(d.getTime())) return dateStr;
+    const thaiMonths = [
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
+    ];
+    const day = d.getDate();
+    const month = thaiMonths[d.getMonth()];
+    const year = d.getFullYear() + 543;
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${day} ${month} ${year} • ${hh}:${mm} น.`;
   } catch {
     return dateStr;
   }
 };
 
-const formatAuditTime = (dateStr, fallback = '19:40 น.') => {
+const formatAuditTime = (dateStr, fallback = '—') => {
   if (!dateStr) return fallback;
   try {
-    const d = new Date(dateStr);
-    return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+    const d = parseDateUtc(dateStr);
+    if (!d || isNaN(d.getTime())) return fallback;
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm} น.`;
   } catch {
     return fallback;
   }
@@ -114,7 +128,7 @@ const getRelatedCategories = (ticket) => {
 
   const topScores = ticket?.llm_analysis?.all_category_scores || [];
   topScores
-    .filter(s => (s.confidence >= 0.65 || s.score >= 0.65 || s.score_percent >= 65) && s.category_name)
+    .filter(s => s.passed && s.category_name)
     .forEach(s => {
       const name = s.category_name.trim();
       if (name && name.toLowerCase() !== primary && !result.includes(name)) {
@@ -138,6 +152,7 @@ export default function TicketDetailModal({
   const [localStatus, setLocalStatus] = useState(() => {
     const s = (ticket?.status_name || '').toUpperCase();
     if (s === 'PENDING_REVIEW' || s === 'PENDING' || s === 'NEW') return 'pending';
+    if (s === 'OPEN') return 'open';
     if (s === 'IN_PROGRESS') return 'in_progress';
     if (s === 'RESOLVED' || s === 'CLOSED') return 'resolved';
     return 'pending';
@@ -194,7 +209,9 @@ export default function TicketDetailModal({
 
     let targetStatus = 'OPEN';
     if (localStatus === 'pending') {
-      targetStatus = isPending ? 'PENDING_REVIEW' : 'OPEN';
+      targetStatus = 'PENDING_REVIEW';
+    } else if (localStatus === 'open') {
+      targetStatus = 'OPEN';
     } else if (localStatus === 'in_progress') {
       targetStatus = 'IN_PROGRESS';
     } else if (localStatus === 'resolved') {
@@ -313,25 +330,25 @@ export default function TicketDetailModal({
                   {isPending && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#ffdad6] text-[#93000a] text-xs font-bold">
                       <span className="w-2 h-2 rounded-full bg-[#ba1a1a] animate-ping" />
-                      1. รอดำเนินการ
+                      1. รอรับเรื่อง / คัดกรอง
                     </span>
                   )}
                   {isOpen && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold">
-                      <span className="w-2 h-2 rounded-full bg-indigo-600" />
-                      1. รอดำเนินการ
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#e2e7ff] text-[#340866] text-xs font-bold">
+                      <span className="w-2 h-2 rounded-full bg-[#4b267d]" />
+                      2. รอดำเนินการ
                     </span>
                   )}
                   {isInProgress && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#fed65b]/30 text-[#745c00] text-xs font-bold">
                       <span className="w-2 h-2 rounded-full bg-[#745c00] animate-pulse" />
-                      2. กำลังดำเนินการ
+                      3. กำลังดำเนินการ
                     </span>
                   )}
                   {isResolved && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold">
                       <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                      3. เสร็จสิ้น
+                      4. ดำเนินการเสร็จสิ้น
                     </span>
                   )}
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#4b267d] text-white text-xs font-semibold">
@@ -346,25 +363,25 @@ export default function TicketDetailModal({
                 {isPending && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#ffdad6] text-[#93000a] font-bold">
                     <span className="w-2 h-2 rounded-full bg-[#ba1a1a] animate-ping" />
-                    1. รอดำเนินการ (ใหม่)
+                    1. รอรับเรื่อง / คัดกรอง
                   </span>
                 )}
                 {isOpen && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold">
-                    <span className="w-2 h-2 rounded-full bg-indigo-600" />
-                    1. รอดำเนินการ (ใหม่)
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#e2e7ff] text-[#340866] font-bold">
+                    <span className="w-2 h-2 rounded-full bg-[#4b267d]" />
+                    2. รอดำเนินการ
                   </span>
                 )}
                 {isInProgress && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#fed65b]/30 text-[#745c00] font-bold">
                     <span className="w-2 h-2 rounded-full bg-[#745c00] animate-pulse" />
-                    2. กำลังดำเนินการ
+                    3. กำลังดำเนินการ
                   </span>
                 )}
                 {isResolved && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#340866]/10 text-[#340866] font-bold">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold">
                     <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                    3. ดำเนินการเสร็จสิ้น
+                    4. ดำเนินการเสร็จสิ้น
                   </span>
                 )}
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#4b267d] text-white font-semibold">
@@ -981,6 +998,23 @@ export default function TicketDetailModal({
                 )}
               </div>
 
+              {/* Quick Approve Button if Pending Review */}
+              {isPending && (
+                <div className="mb-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onStatusChange?.(ticket, 'OPEN');
+                      onClose();
+                    }}
+                    className="w-full py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm hover:shadow-md cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                    <span>{isGrouped ? '✔ อนุมัติรับเรื่องทั้งกลุ่ม (เผยแพร่)' : '✔ อนุมัติรับเรื่อง (เผยแพร่)'}</span>
+                  </button>
+                </div>
+              )}
+
               {/* Status Selector */}
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-bold uppercase text-[#4a4450]">
@@ -993,13 +1027,16 @@ export default function TicketDetailModal({
                     className="w-full h-10 pl-3 pr-8 rounded-lg bg-white border border-[#eaedff] text-xs font-semibold text-[#131b2e] appearance-none focus:outline-none focus:ring-2 focus:ring-[#340866] cursor-pointer shadow-xs"
                   >
                     <option value="pending">
-                      {isGrouped ? '🔴 1. รอดำเนินการ (ใหม่ - รอจ่ายงาน)' : '🔴 1. รอดำเนินการ (ใหม่)'}
+                      {isGrouped ? '📥 1. รอรับเรื่อง / คัดกรอง (รออนุมัติทั้งกลุ่ม)' : '📥 1. รอรับเรื่อง / คัดกรอง (รออนุมัติ)'}
+                    </option>
+                    <option value="open">
+                      {isGrouped ? '⏳ 2. รอดำเนินการ (อนุมัติรับเรื่องแล้ว - รอจ่ายงาน)' : '⏳ 2. รอดำเนินการ (อนุมัติรับเรื่องแล้ว)'}
                     </option>
                     <option value="in_progress">
-                      {isGrouped ? '🟡 2. กำลังดำเนินการ (ช่างลงพื้นที่ทั้งกลุ่ม)' : '🟡 2. กำลังดำเนินการ'}
+                      {isGrouped ? '⚙️ 3. กำลังดำเนินการ (ลงพื้นที่ทั้งกลุ่ม)' : '⚙️ 3. กำลังดำเนินการ'}
                     </option>
                     <option value="resolved">
-                      {isGrouped ? `🟢 3. ดำเนินการเสร็จสิ้น (ปิดงานสำเร็จพร้อมกัน ${totalPosts} รายการ)` : '🟢 3. ดำเนินการเสร็จสิ้น'}
+                      {isGrouped ? `✅ 4. ดำเนินการเสร็จสิ้น (ปิดงานสำเร็จพร้อมกัน ${totalPosts} รายการ)` : '✅ 4. ดำเนินการเสร็จสิ้น'}
                     </option>
                     <option value="transfer">
                       {isGrouped ? '🔄 โอนย้ายทั้งกลุ่มไปยังหน่วยงานอื่น' : '🔄 โอนย้ายไปยังหน่วยงานอื่น'}

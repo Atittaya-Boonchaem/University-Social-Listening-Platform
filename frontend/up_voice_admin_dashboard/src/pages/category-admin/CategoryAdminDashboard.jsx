@@ -117,12 +117,17 @@ export default function CategoryAdminDashboard() {
     setError('');
     try {
       invalidateProblemsCache();
-      const [pubData, internalData] = await Promise.all([
+      const [pubData, internalData, pendingData] = await Promise.all([
         fetchProblems({ page_size: 150, visibility_name: 'public' }, true),
         fetchProblems({ page_size: 150, visibility_name: 'internal' }, true),
+        fetchProblems({ page_size: 150, visibility_name: 'public', status_name: 'PENDING_REVIEW' }, true),
       ]);
 
-      const merged = [...(pubData.items || []), ...(internalData.items || [])];
+      const merged = [
+        ...(pubData.items || []),
+        ...(internalData.items || []),
+        ...(pendingData.items || []),
+      ];
       const unique = Array.from(new Map(merged.map(p => [p.problem_id, p])).values());
 
       const parents = unique.filter(p => !p.parent_problem_id);
@@ -210,13 +215,17 @@ export default function CategoryAdminDashboard() {
       return clusters.filter(c => {
         const matchesPrimary = (assignedCatId && c.category_id === assignedCatId) ||
                                (assignedCatName && c.category_name === assignedCatName);
-        const matchesMulti = c.posts?.some(p => 
-          p.llm_analysis?.multi_categories?.some(mc => 
+        const matchesMulti = c.posts?.some(p => {
+          let multiList = p.llm_analysis?.multi_categories;
+          if (typeof multiList === 'string') {
+            try { multiList = JSON.parse(multiList); } catch (e) { multiList = []; }
+          }
+          return Array.isArray(multiList) && multiList.some(mc => 
             (assignedCatId && mc.category_id === assignedCatId) ||
-            (assignedCatName && mc.category_name === assignedCatName)
-          )
-        );
-        return matchesPrimary || matchesMulti;
+            (assignedCatName && (mc.category_name === assignedCatName || mc.label_th === assignedCatName))
+          );
+        });
+        return Boolean(matchesPrimary || matchesMulti);
       });
     }
     return clusters;

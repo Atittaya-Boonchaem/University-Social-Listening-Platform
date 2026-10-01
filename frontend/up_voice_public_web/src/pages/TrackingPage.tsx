@@ -985,29 +985,29 @@ export default function TrackingPage() {
                 <div className="space-y-1.5">
                   <p className="font-bold text-slate-700 flex items-center gap-1.5">
                     <span className="material-symbols-outlined text-sm text-[#4b267d]">photo_camera</span>
-                    ภาพถ่ายหลักฐานจุดเกิดเหตุ ({resolvedImages.length > 0 ? `${resolvedImages.length} ภาพ` : '1 ภาพ'})
+                    ภาพถ่ายหลักฐานจุดเกิดเหตุ ({resolvedImages.length > 0 ? `${resolvedImages.length} ภาพ` : 'ไม่มีการแนบรูปภาพ'})
                   </p>
                   
-                  <div className="rounded-xl border border-slate-200 overflow-hidden bg-slate-100 p-2 flex items-center gap-3">
-                    <div className="w-24 h-20 rounded-lg bg-slate-300 flex items-center justify-center text-slate-500 overflow-hidden relative group shrink-0">
-                      {resolvedImages.length > 0 ? (
+                  {resolvedImages.length > 0 ? (
+                    <div className="rounded-xl border border-slate-200 overflow-hidden bg-slate-100 p-2 flex items-center gap-3">
+                      <div className="w-24 h-20 rounded-lg bg-slate-300 flex items-center justify-center text-slate-500 overflow-hidden relative group shrink-0">
                         <img src={resolvedImages[0]} alt="Evidence" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-[#4b267d] to-[#6f45a7] flex items-center justify-center text-white font-bold text-xs">
-                          รูปหลักฐาน
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-1 text-[11px] text-slate-600">
-                      <div className="font-medium text-slate-800">
-                        {modalTicketCode}_evidence.jpg
                       </div>
-                      <div>ขนาดไฟล์ 2.4 MB • พิกัด {modalLoc}</div>
-                      <span className="inline-block text-[10px] text-[#4b267d] bg-purple-50 px-2 py-0.5 rounded font-semibold">
-                        แนบพิกัด GPS อัตโนมัติ
-                      </span>
+                      <div className="space-y-1 text-[11px] text-slate-600">
+                        <div className="font-medium text-slate-800">
+                          {modalTicketCode}_evidence.jpg
+                        </div>
+                        <div>พิกัด {modalLoc}</div>
+                        <span className="inline-block text-[10px] text-[#4b267d] bg-purple-50 px-2 py-0.5 rounded font-semibold">
+                          ภาพถ่ายหลักฐานประกอบคำร้อง
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-4 text-center text-slate-400 text-xs">
+                      ผู้แจ้งไม่ได้แนบไฟล์รูปถ่ายสำหรับคำร้องนี้
+                    </div>
+                  )}
                 </div>
 
                 {/* Detailed Info Grid */}
