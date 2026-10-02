@@ -247,6 +247,7 @@ export default function CategoryAdminDashboard() {
         map.set(loc, {
           name: loc,
           total: 0,
+          pending: 0,
           open: 0,
           in_progress: 0,
           resolved: 0,
@@ -256,9 +257,18 @@ export default function CategoryAdminDashboard() {
       }
       const item = map.get(loc);
       item.total += 1;
-      if (c.status === 'OPEN') item.open += 1;
-      else if (c.status === 'IN_PROGRESS') item.in_progress += 1;
-      else item.resolved += 1;
+      const s = (c.status || '').toUpperCase();
+      if (s === 'PENDING_REVIEW' || s === 'PENDING' || s === 'NEW') {
+        item.pending += 1;
+      } else if (s === 'OPEN') {
+        item.open += 1;
+      } else if (s === 'IN_PROGRESS') {
+        item.in_progress += 1;
+      } else if (s === 'RESOLVED' || s === 'CLOSED') {
+        item.resolved += 1;
+      } else {
+        item.open += 1;
+      }
       item.clusters.push(c);
 
       if (loc.includes('หอ') || loc.includes('Dorm')) item.icon = 'apartment';
@@ -895,9 +905,10 @@ export default function CategoryAdminDashboard() {
                   </tr>
                 ) : (
                   filteredLocationStats.map((loc, i) => {
+                    const pendingPct = loc.total ? Math.round((loc.pending / loc.total) * 100) : 0;
                     const openPct = loc.total ? Math.round((loc.open / loc.total) * 100) : 0;
                     const progPct = loc.total ? Math.round((loc.in_progress / loc.total) * 100) : 0;
-                    const resPct = loc.total ? Math.max(0, 100 - openPct - progPct) : 0;
+                    const resPct = loc.total ? Math.max(0, 100 - pendingPct - openPct - progPct) : 0;
 
                     return (
                       <tr key={i} className="hover:bg-[#f2f3ff]/60 transition-colors">
@@ -932,20 +943,47 @@ export default function CategoryAdminDashboard() {
                           </div>
                         </td>
 
-                        {/* Status Progress Bar Breakdown */}
+                        {/* Status Progress Bar Breakdown - 4 Stages */}
                         <td className="py-3.5 px-4 align-top">
                           <div className="space-y-1.5">
-                            <div className="flex items-center gap-1.5 text-[11px] font-mono">
-                              <span className="text-[#ba1a1a] font-bold">รอการดำเนินการ {loc.open}</span>
+                            <div className="flex items-center gap-1.5 text-[11px] font-mono flex-wrap">
+                              {loc.pending > 0 && (
+                                <>
+                                  <span className="text-sky-700 font-bold flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                                    รอรับเรื่อง {loc.pending}
+                                  </span>
+                                  <span className="text-slate-300">•</span>
+                                </>
+                              )}
+                              <span className="text-amber-700 font-bold flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                รอดำเนินการ {loc.open}
+                              </span>
                               <span className="text-slate-300">•</span>
-                              <span className="text-[#d97706] font-bold">กำลังดำเนินการ {loc.in_progress}</span>
+                              <span className="text-purple-700 font-bold flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                                กำลังดำเนินการ {loc.in_progress}
+                              </span>
                               <span className="text-slate-300">•</span>
-                              <span className="text-[#4a4450]">เสร็จ {loc.resolved}</span>
+                              <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                เสร็จสิ้น {loc.resolved}
+                              </span>
                             </div>
-                            <div className="w-full bg-[#eaedff] h-2 rounded-full overflow-hidden flex">
-                              <div style={{ width: `${openPct}%` }} className="bg-[#ba1a1a] h-full" title={`รอดำเนินการ ${openPct}%`}></div>
-                              <div style={{ width: `${progPct}%` }} className="bg-[#fed65b] h-full" title={`กำลังดำเนินการ ${progPct}%`}></div>
-                              <div style={{ width: `${resPct}%` }} className="bg-[#4b267d] h-full" title={`เสร็จสิ้น ${resPct}%`}></div>
+                            <div className="w-full bg-[#eaedff] h-2.5 rounded-full overflow-hidden flex shadow-inner">
+                              {pendingPct > 0 && (
+                                <div style={{ width: `${pendingPct}%` }} className="bg-sky-500 h-full transition-all" title={`รอรับเรื่อง ${loc.pending} (${pendingPct}%)`}></div>
+                              )}
+                              {openPct > 0 && (
+                                <div style={{ width: `${openPct}%` }} className="bg-amber-500 h-full transition-all" title={`รอดำเนินการ ${loc.open} (${openPct}%)`}></div>
+                              )}
+                              {progPct > 0 && (
+                                <div style={{ width: `${progPct}%` }} className="bg-purple-600 h-full transition-all" title={`กำลังดำเนินการ ${loc.in_progress} (${progPct}%)`}></div>
+                              )}
+                              {resPct > 0 && (
+                                <div style={{ width: `${resPct}%` }} className="bg-emerald-500 h-full transition-all" title={`เสร็จสิ้น ${loc.resolved} (${resPct}%)`}></div>
+                              )}
                             </div>
                           </div>
                         </td>

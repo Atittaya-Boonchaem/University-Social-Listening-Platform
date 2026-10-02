@@ -497,14 +497,9 @@ export default function ReportProblem({
                 longitude: Number(item.longitude),
               }));
 
-            const map = new Map<string, Building>();
-            for (const b of DEFAULT_UP_BUILDINGS) {
-              map.set(b.name.toLowerCase().trim(), b);
+            if (apiBuildings.length > 0) {
+              setBuildings(apiBuildings);
             }
-            for (const b of apiBuildings) {
-              map.set(b.name.toLowerCase().trim(), b);
-            }
-            setBuildings(Array.from(map.values()));
           }
         }
       } catch (err) {
