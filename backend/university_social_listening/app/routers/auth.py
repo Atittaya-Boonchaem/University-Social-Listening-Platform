@@ -21,7 +21,7 @@ from fastapi.responses import RedirectResponse
 from app.database import get_db, config
 from app.models import (
     User, Student, Staff, PublicUser,
-    Faculty, SuperAdmin, CategoryAdmin,
+    Faculty, SuperAdmin, CategoryAdmin, UserBan,
 )
 from app.schemas import (
     StudentRegisterCreate, StaffRegisterCreate, PublicUserRegisterCreate,
@@ -818,10 +818,64 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
         # Check if user exists by email
         user = db.query(User).filter(User.email == email).first()
 
-        # Block deleted or suspended users from re-logging in via SSO
-        if user and (user.is_deleted or not user.is_active):
-            frontend_url = os.getenv("PUBLIC_WEB_URL", "https://university-social-listening-platfor.vercel.app").rstrip("/")
-            return RedirectResponse(f"{frontend_url}/login?sso_error=account_deleted")
+        # Check if user is banned/suspended
+        if user:
+            active_ban = db.query(UserBan).filter(
+                UserBan.user_id == user.user_id,
+                UserBan.is_active == True,
+            ).first()
+            if active_ban or (user.strike_count and user.strike_count >= 3) or (not user.is_active and not user.is_deleted):
+                frontend_url = os.getenv("PUBLIC_WEB_URL", "https://university-social-listening-platfor.vercel.app").rstrip("/")
+                return RedirectResponse(f"{frontend_url}/login?sso_error=account_suspended")
+
+            # If user was previously deleted (not banned), allow re-registration via fresh onboarding
+            if user.is_deleted:
+                user.is_deleted = False
+                user.is_active = True
+                user.strike_count = 0
+
+                prefix = email.split('@')[0]
+                if prefix and prefix[0].isdigit():
+                    student_rec = db.query(Student).filter(Student.user_id == user.user_id).first()
+                    if not student_rec:
+                        existing_st = db.query(Student).filter(Student.student_id == prefix).first()
+                        if existing_st and existing_st.user_id != user.user_id:
+                            db.delete(existing_st)
+                            db.flush()
+                        student_rec = Student(
+                            user_id=user.user_id,
+                            student_id=prefix,
+                            student_name=display_name,
+                        )
+                        db.add(student_rec)
+                    else:
+                        student_rec.student_id = prefix
+                        student_rec.student_name = display_name
+                        student_rec.faculty_id = None
+                        student_rec.year = None
+                        student_rec.birthdate = None
+                        student_rec.gender = None
+                else:
+                    staff_rec = db.query(Staff).filter(Staff.user_id == user.user_id).first()
+                    if not staff_rec:
+                        existing_stf = db.query(Staff).filter(Staff.employee_id == f"SSO-{prefix}").first()
+                        if existing_stf and existing_stf.user_id != user.user_id:
+                            db.delete(existing_stf)
+                            db.flush()
+                        staff_rec = Staff(
+                            user_id=user.user_id,
+                            employee_id=f"SSO-{prefix}",
+                            staff_name=display_name,
+                        )
+                        db.add(staff_rec)
+                    else:
+                        staff_rec.employee_id = f"SSO-{prefix}"
+                        staff_rec.staff_name = display_name
+                        staff_rec.department = None
+
+                db.query(CategoryAdmin).filter(CategoryAdmin.user_id == user.user_id).delete()
+                db.commit()
+                db.refresh(user)
 
         is_new_user = False
         if not user:
@@ -865,7 +919,7 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
         # Check profile completeness (birthdate or gender missing → needs onboarding)
         student_rec = db.query(Student).filter(Student.user_id == user.user_id).first()
         staff_rec = db.query(Staff).filter(Staff.user_id == user.user_id).first()
-        if student_rec and (student_rec.birthdate is None or student_rec.gender is None):
+        if student_rec and (student_rec.birthdate is None or student_rec.gender is None or student_rec.faculty_id is None):
             is_new_user = True
         elif staff_rec and staff_rec.department is None:
             is_new_user = True
