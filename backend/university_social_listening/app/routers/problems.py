@@ -117,13 +117,28 @@ def get_visibility_by_name(db: Session, name: str) -> VisibilityType:
     return v
 
 
+def extract_student_cohort(raw_id: Optional[str]) -> str:
+    """Extract 2-digit UP admission cohort (e.g. 60-69, 58-59) from student ID or email."""
+    if not raw_id:
+        return "66"
+    import re
+    # Match standard university cohort years (e.g. 64, 65, 66, 67, 68)
+    match = re.search(r'(6\d|5[89])', str(raw_id))
+    if match:
+        return match.group(1)
+    digits = re.sub(r'\D', '', str(raw_id))
+    if len(digits) >= 2 and (58 <= int(digits[:2]) <= 75):
+        return digits[:2]
+    return "66"
+
+
 def get_author_info(user_id: int, db: Session) -> Optional[dict]:
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
         return None
     student = db.query(Student).filter(Student.user_id == user_id).first()
     if student:
-        year = str(student.student_id)[:2] if (student.student_id and len(str(student.student_id)) >= 2) else "66"
+        year = extract_student_cohort(student.student_id)
         return {"user_id": user_id, "display_name": f"นิสิต มพ. {year}", "role": "student", "student_id": student.student_id}
     stf = db.query(Staff).filter(Staff.user_id == user_id).first()
     if stf:
@@ -316,7 +331,7 @@ def batch_serialize_problems(
         for uid in missing_uids:
             if uid in student_dict:
                 st = student_dict[uid]
-                year = str(st.student_id)[:2] if (st.student_id and len(str(st.student_id)) >= 2) else "66"
+                year = extract_student_cohort(st.student_id)
                 info = {"user_id": uid, "display_name": f"นิสิต มพ. {year}", "role": "student", "student_id": st.student_id}
             elif uid in staff_dict:
                 stf = staff_dict[uid]

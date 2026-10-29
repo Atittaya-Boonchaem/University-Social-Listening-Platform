@@ -176,6 +176,11 @@ def get_current_user(
         user = db.query(User).filter(User.user_id == user_id).first()
         if not user:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+        if user.is_deleted or not user.is_active:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "บัญชีของคุณถูกระงับหรือถูกลบออกจากระบบ (Account is suspended or deleted)"
+            )
         return user
     except JWTError:
         # If token is invalid or expired, fallback to CategoryAdmin user
@@ -233,7 +238,10 @@ def get_current_user_optional(
 
         if not user_id:
             return None
-        return db.query(User).filter(User.user_id == user_id).first()
+        u = db.query(User).filter(User.user_id == user_id).first()
+        if u and (u.is_deleted or not u.is_active):
+            return None
+        return u
     except JWTError:
         try:
             # Fallback for local development if token expired recently
@@ -809,6 +817,11 @@ def sso_callback(code: str, db: Session = Depends(get_db)):
 
         # Check if user exists by email
         user = db.query(User).filter(User.email == email).first()
+
+        # Block deleted or suspended users from re-logging in via SSO
+        if user and (user.is_deleted or not user.is_active):
+            frontend_url = os.getenv("PUBLIC_WEB_URL", "https://university-social-listening-platfor.vercel.app").rstrip("/")
+            return RedirectResponse(f"{frontend_url}/login?sso_error=account_deleted")
 
         is_new_user = False
         if not user:

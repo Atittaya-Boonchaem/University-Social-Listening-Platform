@@ -346,7 +346,9 @@ export default function LoginPage() {
 
   // Read sso_error from URL if redirected back from failed SSO
   const ssoErrorParam = new URLSearchParams(location.search).get('sso_error');
-  const ssoErrorMsg = ssoErrorParam === 'server_error'
+  const ssoErrorMsg = ssoErrorParam === 'account_deleted'
+    ? 'บัญชีนี้ถูกระงับหรือถูกลบออกจากระบบ กรุณาติดต่อผู้ดูแลระบบ'
+    : ssoErrorParam === 'server_error'
     ? 'เกิดข้อผิดพลาดในการเชื่อมต่อ SSO กรุณาลองใหม่'
     : ssoErrorParam
     ? 'ไม่สามารถเข้าสู่ระบบด้วย SSO ได้'
