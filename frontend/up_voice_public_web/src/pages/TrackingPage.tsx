@@ -186,23 +186,19 @@ export default function TrackingPage() {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
         let items: ProblemItem[] = [];
-        try {
-          if (token) {
+        if (token) {
+          try {
             const myRes = await axios.get(`${API_BASE}/problems/my-problems`, { headers });
             const data = myRes.data?.data?.items || myRes.data?.data || myRes.data?.items;
-            if (Array.isArray(data) && data.length > 0) {
+            if (Array.isArray(data)) {
               items = data;
             }
+          } catch (err) {
+            console.error('Failed to load my-problems:', err);
           }
-        } catch {
-          // Fallback to public list
         }
 
-        if (items.length === 0) {
-          const listRes = await axios.get(`${API_BASE}/problems/list`, { headers });
-          items = listRes.data?.data?.items || listRes.data?.data || listRes.data?.items || [];
-        }
-
+        // Strictly show only the user's own tracked problems, do not fallback to all public feed problems
         setProblems(items);
       } catch (err) {
         console.error('Failed to load tracking data:', err);
@@ -566,12 +562,26 @@ export default function TrackingPage() {
             <span className="w-10 h-10 border-4 border-[#4B267D] border-t-transparent rounded-full animate-spin" />
             <p className="text-sm font-semibold text-slate-500">กำลังโหลดรายการคำร้อง...</p>
           </div>
+        ) : !localStorage.getItem('access_token') ? (
+          <div className="bg-white rounded-2xl p-12 text-center border border-purple-100/60 shadow-sm space-y-3">
+            <span className="material-symbols-outlined text-5xl text-purple-300">lock_person</span>
+            <h3 className="text-base font-bold text-slate-800">กรุณาเข้าสู่ระบบเพื่อติดตามสถานะคำร้องของคุณ</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              เข้าสู่ระบบด้วย Microsoft SSO หรือบัญชีของคุณเพื่อตรวจสอบประวัติคำร้องและความคืบหน้าของงานซ่อม
+            </p>
+            <button
+              onClick={() => navigate('/login')}
+              className="mt-2 px-5 py-2.5 bg-[#4b267d] text-white rounded-xl text-xs font-bold shadow-md hover:bg-[#340866] transition cursor-pointer"
+            >
+              เข้าสู่ระบบ (Sign In)
+            </button>
+          </div>
         ) : filteredProblems.length === 0 ? (
           <div className="bg-white rounded-2xl p-12 text-center border border-purple-100/60 shadow-sm space-y-3">
             <span className="material-symbols-outlined text-5xl text-purple-300">fact_check</span>
-            <h3 className="text-base font-bold text-slate-800">ไม่พบคำร้องที่ตรงกับเงื่อนไข</h3>
+            <h3 className="text-base font-bold text-slate-800">ยังไม่มีประวัติคำร้องของคุณ</h3>
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              คุณสามารถแจ้งปัญหาใหม่เพื่อส่งเรื่องให้ทีมงานและติดตามความคืบหน้าได้ตลอด 24 ชั่วโมง
+              คุณยังไม่ได้แจ้งปัญหาเข้ามาในระบบ หากพบปัญหาในมหาวิทยาลัย สามารถแจ้งเรื่องเพื่อส่งต่อให้เจ้าหน้าที่ได้ทันที
             </p>
             <button
               onClick={() => navigate('/report')}
@@ -918,7 +928,7 @@ export default function TrackingPage() {
         const lng = selectedProblemForModal.longitude && !isNaN(Number(selectedProblemForModal.longitude)) ? Number(selectedProblemForModal.longitude) : UP_CENTER[1];
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/65 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-5 bg-slate-900/65 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh] border border-purple-100">
               
               {/* Modal Header */}
@@ -1201,7 +1211,7 @@ export default function TrackingPage() {
         const cTicketCode = cancelModalProblem.ticket_id || `UP-2569-${String(cPid).padStart(5, '0')}`;
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden flex flex-col border border-rose-100">
               
               {/* Alert Icon & Header */}

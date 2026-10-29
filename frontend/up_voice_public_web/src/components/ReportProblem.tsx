@@ -1175,7 +1175,7 @@ export default function ReportProblem({
               </div>
 
               {/* Map Preview Container */}
-              <div className="h-[155px] rounded-xl overflow-hidden border border-[#e9e3ee] relative bg-slate-100">
+              <div className="h-[155px] rounded-xl overflow-hidden border border-[#e9e3ee] relative bg-slate-100 isolate">
                 <MapContainer
                   center={[selectedLocation.lat, selectedLocation.lng]}
                   zoom={16}
@@ -1192,7 +1192,7 @@ export default function ReportProblem({
                 </MapContainer>
 
                 {/* Bottom Overlay Badge */}
-                <div className="absolute bottom-2 right-2 bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-lg text-[10px] font-bold text-[#4b267d] border border-slate-200 shadow-xs z-[400] flex items-center gap-1">
+                <div className="absolute bottom-2 right-2 bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-lg text-[10px] font-bold text-[#4b267d] border border-slate-200 shadow-xs z-10 flex items-center gap-1">
                   <span>📍</span>
                   <span>โซนการศึกษา มพ.</span>
                 </div>
@@ -1516,7 +1516,7 @@ export default function ReportProblem({
       {/* ── UP CONNECT BRANDED LEAFLET MAP MODAL ────────────────────────────── */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {isMapModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/65 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-5 bg-slate-900/65 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-[26px] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh] border border-purple-200">
             
             {/* Modal Header with UP Brand Gradient */}
