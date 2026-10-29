@@ -1,11 +1,51 @@
+# Environment & Secrets
 .env
+.env.local
+.env.*.local
+
+# Python
 venv/
+.venv/
 __pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+
+# Node.js
 node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Databases & Cache
 *.db
+*.sqlite
+*.sqlite3
+
+# Uploads & Temp
 backend/university_social_listening/uploads/
-backend/university_social_listening/app/ai_data/
+backend/university_social_listening/ai_data/
+*.zip
+
+# Windows Backup & Duplicate Files
+* - Copy/
+* - Copy.*
+*-Copy/
+* copy.*
+
+# AI Checkpoints and Weights
+checkpoint-*/
+checkpoints/
+*.pt
+*.pth
+
+# IDE & OS
 .idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Large Model Weights (if distributed separately)
 webapp_wangchanberta_deployment/model/*.safetensors
 webapp_wangchanberta_deployment/model/*.bin
 webapp_wangchanberta_deployment/model/*.pth

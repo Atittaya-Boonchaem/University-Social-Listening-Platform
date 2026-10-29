@@ -1,161 +1,105 @@
-# UP AI Chat Only — เริ่มโปรเจกต์ใหม่จากศูนย์
+# 🎓 UP Voice — University Social Listening & Problem Reporting Platform
+### ระบบรับฟังเสียงและบริหารจัดการเรื่องร้องเรียนอัจฉริยะ มหาวิทยาลัยพะเยา
+*โครงงานปริญญานิพนธ์ / Senior Research Project — มหาวิทยาลัยพะเยา (UP)*
 
-โปรเจกต์นี้มีเฉพาะ "แชท AI รวบรวมข้อมูลแจ้งปัญหา" ก่อน
-ยังไม่มีฐานข้อมูล, ระบบ Login, ระบบ Ticket, Dashboard หรือแผนที่
+---
 
-## โครงสร้าง
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/Frontend-React_18-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/Language-TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
+[![MySQL](https://img.shields.io/badge/Database-MySQL_8.0-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com)
+[![NLP](https://img.shields.io/badge/AI-WangchanBERTa-purple)](https://github.com/vistec-AI/wangchanberta)
 
-```text
-up-ai-chat-only/
-├─ backend/
-│  ├─ main.py
-│  ├─ requirements.txt
-│  └─ .env.example
-├─ frontend/
-│  ├─ package.json
-│  ├─ index.html
-│  ├─ .env.example
-│  └─ src/
-│     ├─ App.tsx
-│     ├─ main.tsx
-│     └─ styles.css
-└─ README.md
-```
+---
 
-## สิ่งที่ต้องติดตั้งก่อน
+## 📖 เกี่ยวกับโครงงาน (About the Project)
 
-1. Python 3.11 หรือใหม่กว่า
-2. Node.js 20 หรือใหม่กว่า
-3. API Key ของ Typhoon ถ้าต้องการใช้ LLM จริง
+**UP Voice** เป็นระบบรับฟังเสียงและรวบรวมเรื่องร้องเรียน ปัญหาโครงสร้างพื้นฐาน การเรียนการสอน และการจราจรภายในมหาวิทยาลัยพะเยา โดยใช้ปัญญาประดิษฐ์ (AI) ในการจำแนกหมวดหมู่ข้อร้องเรียน 7 ด้าน และจับคู่พิกัดสถานที่อัตโนมัติ เพื่อส่งมอบงานให้แก่เจ้าหน้าที่ผู้รับผิดชอบได้อย่างถูกต้อง รวดเร็ว และโปร่งใส
 
-## 1. เปิด Backend
+### 🌟 ฟีเจอร์หลักของระบบ (Key Features)
+1. **Public Web (สำหรับนิสิตและบุคคลทั่วไป)**:
+   - ฟอร์มแจ้งปัญหาพร้อมระบบ AI แนะนำหมวดหมู่และพิกัดอาคาร 45 แห่งใน มพ. แบบ Real-time
+   - ระบบติดตามสถานะเรื่องร้องเรียน (Ticket Tracking System) พร้อมประวัติการดำเนินงาน 4 ขั้นตอน (OPEN -> IN_PROGRESS -> RESOLVED -> CLOSED)
+   - หน้าฟีดสาธารณะสำหรับอ่านและโหวต (Upvote) เพื่อผลักดันประเด็นสำคัญ
+2. **Admin Dashboard (สำหรับเจ้าหน้าที่และผู้ดูแล)**:
+   - แดชบอร์ดสรุปสถิติภาพรวม กราฟแท่ง กราฟวงกลม และแนวโน้มปัญหา
+   - ระบบแผนที่พิกัดปัญหา (Campus Live Map & Heatmap)
+   - ระบบบริหารจัดการตั๋วงาน (Ticket Management) การมอบหมายงาน และอัปเดตสถานะ
+   - ระบบบริหารจัดการผู้ใช้ กำหนดสิทธิ์ Super Admin และ Category Admin
+3. **Executive Dashboard (สำหรับผู้บริหาร)**:
+   - ระบบแสดงตัวชี้วัดสำคัญ (Key Performance Indicators) สถิติเวลาเฉลี่ยในการแก้ไขปัญหา (MTTR) และการจัดอันดับปัญหาตามหมวดหมู่
+4. **AI & NLP Engine**:
+   - ตรวจจับและคัดกรองคำหยาบคาย (Profanity Filter)
+   - โมเดลประมวลผลภาษาไทย **WangchanBERTa Multi-Label Classification** จำแนก 7 หมวดหมู่หลัก
 
-เปิด Terminal ที่โฟลเดอร์ `backend`
+---
 
-### Windows
+## 🚀 เริ่มต้นใช้งานด่วน (Quick Start)
 
-```powershell
-cd backend
-py -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-copy .env.example .env
-```
+> 💡 สำหรับคู่มือการติดตั้งฉบับสมบูรณ์ โปรดอ่านที่ [คู่มือการติดตั้งระบบ (INSTALLATION_GUIDE.md)](./INSTALLATION_GUIDE.md)
 
-เปิด `.env` แล้วใส่:
+### วิธีเปิดระบบบน Windows (One-Click)
 
-```env
-TYPHOON_API_KEY=YOUR_REAL_API_KEY
-TYPHOON_MODEL=typhoon-v2.5-30b-a3b-instruct
-```
+1. **ติดตั้งไลบรารีทั้งหมด**:
+   ```cmd
+   scripts\setup_project.bat
+   ```
+2. **เตรียมฐานข้อมูลและบัญชีทดสอบ**:
+   ```cmd
+   cd backend\university_social_listening
+   .venv\Scripts\activate
+   python scripts\init_demo_database.py
+   cd ..\..
+   ```
+3. **รันระบบทั้งหมด**:
+   ```cmd
+   scripts\start_all.bat
+   ```
 
-จากนั้น:
+ระบบจะเปิดหน้าต่างเบราว์เซอร์ให้โดยอัตโนมัติ:
+- **Public Web**: [http://localhost:5174](http://localhost:5174)
+- **Admin Dashboard**: [http://localhost:5173](http://localhost:5173)
+- **API Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-```powershell
-uvicorn main:app --reload --port 8000
-```
+---
 
-ถ้าสำเร็จจะเห็นประมาณ:
+## 🔑 บัญชีสำหรับทดสอบระบบ (Default Test Accounts)
 
-```text
-Uvicorn running on http://127.0.0.1:8000
-```
+| บทบาท (Role) | อีเมล (Email) | รหัสผ่าน (Password) |
+|---|---|---|
+| **Super Admin** | `superadmin@up.ac.th` | `123456` |
+| **Category Admin (อาคาร)** | `admin.facilities@up.ac.th` | `123456` |
+| **Category Admin (ขนส่ง)** | `admin.traffic@up.ac.th` | `123456` |
+| **Student (นิสิต)** | `student@up.ac.th` | `123456` |
+| **Staff (บุคลากร)** | `staff@up.ac.th` | `123456` |
 
-ทดสอบเปิด:
+---
 
-```text
-http://localhost:8000/
-```
-
-ควรเห็น:
-
-```json
-{"ok":true,"service":"UP AI Chat Only"}
-```
-
-## 2. เปิด Frontend
-
-เปิด Terminal อีกหน้าหนึ่ง แล้วเข้าโฟลเดอร์ `frontend`
-
-```powershell
-cd frontend
-npm install
-copy .env.example .env
-npm run dev
-```
-
-Vite จะบอก URL เช่น:
+## 📁 โครงสร้างโปรเจกต์ (Project Structure)
 
 ```text
-http://localhost:5173
+├── backend/
+│   └── university_social_listening/   # FastAPI Application & AI Engine
+├── frontend/
+│   ├── up_voice_public_web/           # Student & Public Web (Port 5174)
+│   ├── up_voice_admin_dashboard/      # Admin Management Portal (Port 5173)
+│   └── up_voice_executive_dashboard/  # Executive Analytics Portal (Port 5175)
+├── scripts/
+│   ├── setup_project.bat              # สคริปต์ติดตั้งระบบอัตโนมัติ
+│   ├── start_all.bat                  # สคริปต์รันระบบทั้งหมด
+│   └── package_source_code.bat        # สคริปต์เตรียม ZIP Source Code ส่งอาจารย์
+├── docs/                              # เอกสารทางเทคนิคและสถาปัตยกรรม
+├── INSTALLATION_GUIDE.md              # คู่มือการติดตั้งระบบฉบับสมบูรณ์
+└── README.md                          # เอกสารนี้
 ```
 
-เปิด URL นั้นใน Browser
+---
 
-## 3. Flow ที่ต้องทดสอบ
+## 📦 การส่งมอบโครงงาน (Deliverables)
 
-พิมพ์:
-
-```text
-เก้าอี้บางตัวในห้องเรียนเสียงดังเวลาใช้งาน ทำให้รบกวนการเรียนการสอน
+สคริปต์บีบอัด Source Code สำหรับส่งอาจารย์:
+```cmd
+scripts\package_source_code.bat
 ```
-
-AI ต้องถาม:
-
-```text
-รับทราบปัญหาแล้วครับ แต่ตอนนี้ยังระบุจุดเกิดเหตุไม่ได้ชัดเจน
-ขอชื่อคณะ/อาคาร และหมายเลขห้องที่เกิดปัญหาด้วยครับ
-เช่น อาคาร ICT ห้อง 1102
-```
-
-พิมพ์:
-
-```text
-ห้อง 1102
-```
-
-AI ต้องถามต่อ:
-
-```text
-รับทราบหมายเลขห้องแล้วครับ ขอชื่อคณะหรืออาคารของห้องนี้เพิ่มเติมด้วยครับ
-```
-
-พิมพ์:
-
-```text
-อาคาร ICT
-```
-
-จึงจะสร้าง:
-
-```text
-พบปัญหาเก้าอี้บางตัวมีเสียงดังขณะใช้งาน ณ อาคาร ICT ห้อง 1102
-ส่งผลรบกวนการเรียนการสอน จึงขอแจ้งเจ้าหน้าที่เข้าตรวจสอบและแก้ไข
-```
-
-## สำคัญ
-
-ถ้าไม่ใส่ `TYPHOON_API_KEY` ระบบยังสามารถทำงานด้วย fallback แบบ rule-based ได้
-แต่จะไม่ใช่ LLM จริง
-
-Backend จะเป็นคนตรวจว่า:
-- ปัญหาคืออะไร
-- ถ้าเป็นปัญหาในห้อง ต้องรู้ "อาคาร/คณะ"
-- ต้องรู้ "เลขห้อง"
-- ข้อมูลยังไม่ครบ = ห้ามสร้าง description
-
-Frontend จะไม่ใส่ข้อความลง "รายละเอียดปัญหา" จนกว่า Backend จะส่ง:
-`is_complete=true` และ `ready_for_ticket=true`
-
-## หากแก้โค้ด
-
-Backend:
-```text
-backend/main.py
-```
-
-Frontend:
-```text
-frontend/src/App.tsx
-frontend/src/styles.css
-```
+*(จะคัดแยกเฉพาะโค้ดที่จำเป็น โดยตัด `node_modules` และ `venv` ออก เพื่อให้ไฟล์มีขนาดกะทัดรัดและพร้อมส่งมอบทันที)*
