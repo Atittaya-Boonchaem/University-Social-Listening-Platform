@@ -899,7 +899,7 @@ export default function TicketDetailModal({
               </div>
 
               {/* Map Canvas */}
-              <div className="rounded-xl overflow-hidden border border-[#eaedff] h-48 sm:h-52 relative shadow-xs flex flex-col">
+              <div className="rounded-xl overflow-hidden border border-[#eaedff] h-48 sm:h-52 relative shadow-xs flex flex-col isolate">
                 <MapContainer
                   center={coords}
                   zoom={16}
@@ -1090,7 +1090,7 @@ export default function TicketDetailModal({
       {/* Confirmation Modal for Unmerging Tickets */}
       {unmergeTarget && (
         <div 
-          className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
+          className="fixed inset-0 z-[10010] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={(e) => {
             e.stopPropagation();
             setUnmergeTarget(null);
