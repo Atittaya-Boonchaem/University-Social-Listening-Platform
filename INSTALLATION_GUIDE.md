@@ -8,18 +8,19 @@
 1. [บทนำและสถาปัตยกรรมระบบ (System Overview)](#1-บทนำและสถาปัตยกรรมระบบ)
 2. [ความต้องการขั้นต่ำของระบบ (System Requirements)](#2-ความต้องการขั้นต่ำของระบบ)
 3. [โครงสร้าง Source Code ของโครงการ (Project Directory Structure)](#3-โครงสร้าง-source-code-ของโครงการ)
-4. [วิธีติดตั้งแบบด่วน One-Click (Quick Start - Recommended)](#4-วิธีติดตั้งแบบด่วน-one-click-recommended)
-5. [วิธีติดตั้งแบบละเอียดทีละขั้นตอน (Step-by-Step Manual Setup)](#5-วิธีติดตั้งแบบละเอียดทีละขั้นตอน)
-   - [5.1 การติดตั้งและเตรียมฐานข้อมูล (Database Setup)](#51-การติดตั้งและเตรียมฐานข้อมูล)
-   - [5.2 การติดตั้งและรัน Backend API (FastAPI)](#52-การติดตั้งและรัน-backend-api)
-   - [5.3 การตั้งค่าโมเดล AI จำแนกหมวดหมู่ (WangchanBERTa)](#53-การตั้งค่าโมเดล-ai-จำแนกหมวดหมู่)
-   - [5.4 การติดตั้งและรัน Public Web (หน้าเว็บสำหรับนิสิต)](#54-การติดตั้งและรัน-public-web)
-   - [5.5 การติดตั้งและรัน Admin Dashboard (สำหรับเจ้าหน้าที่)](#55-การติดตั้งและรัน-admin-dashboard)
-   - [5.6 การติดตั้งและรัน Executive Dashboard (สำหรับผู้บริหาร)](#56-การติดตั้งและรัน-executive-dashboard)
-6. [บัญชีผู้ใช้งานเริ่มต้นสำหรับทดสอบ (Default Test Accounts)](#6-บัญชีผู้ใช้งานเริ่มต้นสำหรับทดสอบ)
-7. [การทดสอบความถูกต้องของระบบ (System Verification Checklist)](#7-การทดสอบความถูกต้องของระบบ)
-8. [ปัญหาที่พบบ่อยและวิธีแก้ไข (Troubleshooting & FAQs)](#8-ปัญหาที่พบบ่อยและวิธีแก้ไข)
-9. [การเตรียม Source Code และแปลงเอกสารส่งอาจารย์ (Packaging for Submission)](#9-การเตรียม-source-code-และแปลงเอกสารส่งอาจารย์)
+4. [วิธีรันระบบผ่าน Docker (Docker Compose - แนะนำสำหรับอาจารย์และผู้ตรวจ)](#4-วิธีรันระบบผ่าน-docker-docker-compose---แนะนำสำหรับอาจารย์และผู้ตรวจ)
+5. [วิธีติดตั้งแบบด่วน One-Click บน Windows (Local Scripts)](#5-วิธีติดตั้งแบบด่วน-one-click-บน-windows-local-scripts)
+6. [วิธีติดตั้งแบบละเอียดทีละขั้นตอน (Step-by-Step Manual Setup)](#6-วิธีติดตั้งแบบละเอียดทีละขั้นตอน)
+   - [6.1 การติดตั้งและเตรียมฐานข้อมูล (Database Setup)](#61-การติดตั้งและเตรียมฐานข้อมูล)
+   - [6.2 การติดตั้งและรัน Backend API (FastAPI)](#62-การติดตั้งและรัน-backend-api)
+   - [6.3 การตั้งค่าโมเดล AI จำแนกหมวดหมู่ (WangchanBERTa)](#63-การตั้งค่าโมเดล-ai-จำแนกหมวดหมู่)
+   - [6.4 การติดตั้งและรัน Public Web (หน้าเว็บสำหรับนิสิต)](#64-การติดตั้งและรัน-public-web)
+   - [6.5 การติดตั้งและรัน Admin Dashboard (สำหรับเจ้าหน้าที่)](#65-การติดตั้งและรัน-admin-dashboard)
+   - [6.6 การติดตั้งและรัน Executive Dashboard (สำหรับผู้บริหาร)](#66-การติดตั้งและรัน-executive-dashboard)
+7. [บัญชีผู้ใช้งานเริ่มต้นสำหรับทดสอบ (Default Test Accounts)](#7-บัญชีผู้ใช้งานเริ่มต้นสำหรับทดสอบ)
+8. [การทดสอบความถูกต้องของระบบ (System Verification Checklist)](#8-การทดสอบความถูกต้องของระบบ)
+9. [ปัญหาที่พบบ่อยและวิธีแก้ไข (Troubleshooting & FAQs)](#9-ปัญหาที่พบบ่อยและวิธีแก้ไข)
+10. [การเตรียม Source Code และแปลงเอกสารส่งอาจารย์ (Packaging for Submission)](#10-การเตรียม-source-code-และแปลงเอกสารส่งอาจารย์)
 
 ---
 
@@ -116,9 +117,58 @@ app-min/
 
 ---
 
-## 4. วิธีติดตั้งแบบด่วน One-Click (Recommended)
+## 4. วิธีรันระบบผ่าน Docker (Docker Compose - แนะนำสำหรับอาจารย์และผู้ตรวจ)
 
-หากใช้งานบนระบบปฏิบัติการ **Windows** สามารถติดตั้งและเปิดระบบได้อย่างง่ายดายผ่านสคริปต์สำเร็จรูปใน 3 ขั้นตอน:
+สำหรับอาจารย์ คณะกรรมการสอบ หรือผู้ตรวจโครงงาน สามารถรันระบบทั้งหมดได้ทันทีผ่าน **Docker Desktop** โดยไม่ต้องลง Python, Node.js หรือตั้งค่าสภาพแวดล้อมจำลอง (Virtual Environment) เอง
+
+### ข้อกำหนดก่อนรัน:
+- ติดตั้ง **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** และเปิดใช้งานให้เรียบร้อย
+
+### ขั้นตอนการรันระบบ (3 ขั้นตอน):
+
+#### ขั้นตอนที่ 1: ตรวจสอบหรือเตรียมไฟล์การตั้งค่า Environment
+คัดลอกไฟล์ตัวอย่าง `.env.docker.example` ไปไว้ที่ `backend/university_social_listening/.env`:
+```bash
+# บน Windows PowerShell หรือ Terminal
+cp .env.docker.example backend/university_social_listening/.env
+```
+*(หากทีมงานได้แนบไฟล์ `.env` ที่เชื่อมต่อกับฐานข้อมูล Cloud (TiDB Cloud) มาให้แล้ว ให้ข้ามขั้นตอนนี้ได้เลย)*
+
+#### ขั้นตอนที่ 2: สั่ง Build และรัน Container ทั้งหมด
+เปิด Terminal ที่โฟลเดอร์หลักของโปรเจกต์ (`app-min/`) แล้วสั่งคำสั่ง:
+```bash
+docker compose up --build
+```
+*(ในรอบแรก Docker จะทำการดาวน์โหลด base images และ build แพ็กเกจของระบบ ซึ่งอาจใช้เวลาประมาณ 3 - 5 นาที ขึ้นอยู่กับความเร็วอินเทอร์เน็ต)*
+
+#### ขั้นตอนที่ 3: เปิดใช้งานระบบผ่าน Web Browser
+เมื่อระบบเริ่มทำงานเรียบร้อย สามารถเปิดเว็บเบราว์เซอร์เข้าใช้งานได้ตามพอร์ตดังนี้:
+
+| บริการ / หน้าเว็บ | ที่อยู่ URL สำหรับเข้าใช้งาน | รายละเอียด |
+|---|---|---|
+| **Public Web** | [http://localhost:5174](http://localhost:5174) | หน้าระบบสำหรับนิสิตและบุคลากร (แจ้งปัญหา, ติดตามสถานะ, ฟีด) |
+| **Admin Dashboard** | [http://localhost:5173](http://localhost:5173) | หน้าระบบสำหรับเจ้าหน้าที่และผู้ดูแลระบบ (Ticket Management, Analytics) |
+| **Backend API (Swagger Docs)** | [http://localhost:8000/docs](http://localhost:8000/docs) | เอกสารและทดสอบ RESTful API ของระบบ |
+
+#### คำสั่งจัดการ Container เพิ่มเติม:
+- **สั่งหยุดการทำงาน**: กด `Ctrl + C` ใน Terminal หรือสั่ง:
+  ```bash
+  docker compose down
+  ```
+- **สั่งรันแบบ Background (Detached mode)**:
+  ```bash
+  docker compose up -d
+  ```
+- **ดูบันทึกการทำงาน (Logs)**:
+  ```bash
+  docker compose logs -f backend
+  ```
+
+---
+
+## 5. วิธีติดตั้งแบบด่วน One-Click บน Windows (Local Scripts)
+
+หากต้องการรันแบบ Native บนระบบปฏิบัติการ **Windows** โดยไม่ผ่าน Docker สามารถติดตั้งและเปิดระบบได้อย่างง่ายดายผ่านสคริปต์สำเร็จรูปใน 3 ขั้นตอน:
 
 ### ขั้นตอนที่ 1: ติดตั้งไลบรารีทั้งหมดในครั้งเดียว
 ดับเบิลคลิกไฟล์:
@@ -145,9 +195,9 @@ scripts\start_all.bat
 
 ---
 
-## 5. วิธีติดตั้งแบบละเอียดทีละขั้นตอน
+## 6. วิธีติดตั้งแบบละเอียดทีละขั้นตอน
 
-### 5.1 การติดตั้งและเตรียมฐานข้อมูล
+### 6.1 การติดตั้งและเตรียมฐานข้อมูล
 
 1. เปิดโปรแกรม **MySQL Workbench** แล้วเชื่อมต่อกับ Local MySQL Server
 2. เปิดแท็บ Query ใหม่ แล้วรันคำสั่งสร้างฐานข้อมูล:
@@ -160,7 +210,7 @@ scripts\start_all.bat
 
 ---
 
-### 5.2 การติดตั้งและรัน Backend API
+### 6.2 การติดตั้งและรัน Backend API
 
 1. เปิด **PowerShell** หรือ **Command Prompt** แล้วเข้าไปที่โฟลเดอร์ backend:
    ```powershell
@@ -202,7 +252,7 @@ scripts\start_all.bat
 
 ---
 
-### 5.3 การตั้งค่าโมเดล AI จำแนกหมวดหมู่
+### 6.3 การตั้งค่าโมเดล AI จำแนกหมวดหมู่
 
 ระบบ UP Voice รองรับการจำแนกปัญหาด้วยโมเดล 2 ระดับ:
 1. **ระดับที่ 1 (Fallback Rule-based & Semantic Classifier)**:
@@ -214,7 +264,7 @@ scripts\start_all.bat
 
 ---
 
-### 5.4 การติดตั้งและรัน Public Web (หน้าเว็บสำหรับนิสิต)
+### 6.4 การติดตั้งและรัน Public Web (หน้าเว็บสำหรับนิสิต)
 
 หน้าเว็บนี้สำหรับนิสิตและประชาชนทั่วไป ใช้แจ้งปัญหา ติดตามสถานะตั๋ว (Ticket Tracking) และดูฟีด
 
@@ -243,7 +293,7 @@ scripts\start_all.bat
 
 ---
 
-### 5.5 การติดตั้งและรัน Admin Dashboard (สำหรับเจ้าหน้าที่)
+### 6.5 การติดตั้งและรัน Admin Dashboard (สำหรับเจ้าหน้าที่)
 
 หน้าเว็บนี้สำหรับเจ้าหน้าที่ประจำหมวดหมู่ (Category Admin) และผู้ดูแลระบบสูงสุด (Super Admin) ใช้บริหารจัดการตั๋ว อัปเดตสถานะปัญหา และดูสถิติ
 
@@ -271,7 +321,7 @@ scripts\start_all.bat
 
 ---
 
-### 5.6 การติดตั้งและรัน Executive Dashboard (สำหรับผู้บริหาร)
+### 6.6 การติดตั้งและรัน Executive Dashboard (สำหรับผู้บริหาร)
 
 1. เปิด Terminal ใหม่ แล้วเข้าไปที่โฟลเดอร์:
    ```powershell
@@ -286,7 +336,7 @@ scripts\start_all.bat
 
 ---
 
-## 6. บัญชีผู้ใช้งานเริ่มต้นสำหรับทดสอบ
+## 7. บัญชีผู้ใช้งานเริ่มต้นสำหรับทดสอบ
 
 ระบบได้จัดเตรียมบัญชีตัวอย่างครอบคลุมทุกระดับสิทธิ์ สำหรับอาจารย์และกรรมการใช้ทดสอบระบบ:
 
@@ -303,7 +353,7 @@ scripts\start_all.bat
 
 ---
 
-## 7. การทดสอบความถูกต้องของระบบ
+## 8. การทดสอบความถูกต้องของระบบ
 
 เพื่อความมั่นใจก่อนส่งมอบงาน ให้ปฏิบัติตาม **Checklist** การทดสอบดังนี้:
 
@@ -323,17 +373,17 @@ scripts\start_all.bat
 
 ---
 
-## 8. ปัญหาที่พบบ่อยและวิธีแก้ไข
+## 9. ปัญหาที่พบบ่อยและวิธีแก้ไข
 
-### 8.1 Error: `Can't connect to MySQL server on 'localhost'`
+### 9.1 Error: `Can't connect to MySQL server on 'localhost'`
 - **สาเหตุ**: บริการ MySQL Server บนเครื่องยังไม่ได้เปิดทำงาน
 - **วิธีแก้**: กดปุ่ม Windows พิมพ์ `services.msc` ค้นหาบริการชื่อ `MySQL80` แล้วคลิกขวาเลือก **Start**
 
-### 8.2 Error: `Access denied for user 'root'@'localhost'`
+### 9.2 Error: `Access denied for user 'root'@'localhost'`
 - **สาเหตุ**: รหัสผ่านของ MySQL ในไฟล์ `.env` ไม่ถูกต้อง
 - **วิธีแก้**: เปิดไฟล์ `backend\university_social_listening\.env` แก้ไขค่า `DB_PASSWORD=` ให้ตรงกับรหัสผ่านจริงของ MySQL
 
-### 8.3 Error: `Port 5173 / 5174 / 8000 is already in use`
+### 9.3 Error: `Port 5173 / 5174 / 8000 is already in use`
 - **สาเหตุ**: มีโปรแกรมอื่นหรือ Terminal เดิมค้างเปิดพอร์ตอยู่
 - **วิธีแก้**: ปิดหน้าต่าง Command Prompt เก่าทั้งหมด หรือรันคำสั่งหา Process แล้วสั่ง kill:
   ```powershell
@@ -341,7 +391,7 @@ scripts\start_all.bat
   taskkill /PID <PID_NUMBER> /F
   ```
 
-### 8.4 Error: `Execution of scripts is disabled on this system` (PowerShell)
+### 9.4 Error: `Execution of scripts is disabled on this system` (PowerShell)
 - **สาเหตุ**: นโยบายความปลอดภัยของ PowerShell บล็อกการรัน activate script
 - **วิธีแก้**: เปิด PowerShell แบบ Run as Administrator แล้วพิมพ์คำสั่ง:
   ```powershell
@@ -350,9 +400,9 @@ scripts\start_all.bat
 
 ---
 
-## 9. การเตรียม Source Code และแปลงเอกสารส่งอาจารย์
+## 10. การเตรียม Source Code และแปลงเอกสารส่งอาจารย์
 
-### 9.1 การสร้างไฟล์ ZIP Source Code สะอาดสำหรับส่ง
+### 10.1 การสร้างไฟล์ ZIP Source Code สะอาดสำหรับส่ง
 ในการส่งมอบงาน ไม่ควรแนบโฟลเดอร์ขนาดใหญ่ เช่น `node_modules` (หลายร้อย MB) และ `venv` ไปด้วย ให้ทำดังนี้:
 1. ดับเบิลคลิกที่ไฟล์:
    ```text
@@ -360,7 +410,7 @@ scripts\start_all.bat
    ```
 2. ระบบจะคัดลอกเฉพาะ Source Code ที่จำเป็น บีบอัดเป็นไฟล์ `UP_Voice_SourceCode_YYYYMMDD.zip` ขนาดกะทัดรัด พร้อมส่งมอบผ่าน Google Drive, แผ่น CD/DVD หรือ Flash Drive ทันที
 
-### 9.2 วิธีการแปลงคู่มือการติดตั้งนี้เป็นไฟล์ PDF สวยงาม
+### 10.2 วิธีการแปลงคู่มือการติดตั้งนี้เป็นไฟล์ PDF สวยงาม
 1. เปิดไฟล์ `INSTALLATION_GUIDE.md` ในโปรแกรม **Visual Studio Code**
 2. ติดตั้ง Extension ชื่อ **Markdown PDF** หรือ **Markdown Preview Enhanced**
 3. คลิกขวาบนเนื้อหาไฟล์ แล้วเลือก **Markdown PDF: Export (pdf)**

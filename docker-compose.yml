@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend/university_social_listening
+      dockerfile: Dockerfile
+    container_name: up-voice-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/university_social_listening/.env
+    volumes:
+      - ./backend/university_social_listening/uploads:/app/uploads
+    restart: unless-stopped
+
+  public-web:
+    build:
+      context: ./frontend/up_voice_public_web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    container_name: up-voice-public-web
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  admin-dashboard:
+    build:
+      context: ./frontend/up_voice_admin_dashboard
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    container_name: up-voice-admin-dashboard
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+

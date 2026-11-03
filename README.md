@@ -39,7 +39,17 @@
 
 > 💡 สำหรับคู่มือการติดตั้งฉบับสมบูรณ์ โปรดอ่านที่ [คู่มือการติดตั้งระบบ (INSTALLATION_GUIDE.md)](./INSTALLATION_GUIDE.md)
 
-### วิธีเปิดระบบบน Windows (One-Click)
+### วิธีที่ 1: รันผ่าน Docker (แนะนำสำหรับอาจารย์และผู้ตรวจ 🐳)
+
+เพียงเปิด Terminal ที่โฟลเดอร์นี้ แล้วสั่ง:
+```bash
+docker compose up --build
+```
+ระบบจะทำการ build และรันทั้ง Backend, Public Web และ Admin Dashboard ให้อัตโนมัติ!
+
+---
+
+### วิธีที่ 2: วิธีเปิดระบบบน Windows (One-Click)
 
 1. **ติดตั้งไลบรารีทั้งหมด**:
    ```cmd
