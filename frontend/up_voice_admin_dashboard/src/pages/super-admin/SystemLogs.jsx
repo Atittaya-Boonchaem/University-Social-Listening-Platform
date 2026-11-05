@@ -1,8 +1,9 @@
 // src/pages/super-admin/SystemLogs.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
-  FileText, LogIn, Shield, Search, RefreshCw, ChevronRight,
+  FileText, LogIn, Shield, ExternalLink, Search, RefreshCw, ChevronRight,
   X, Clock, User, Monitor, Smartphone, Laptop, AlertTriangle,
   CheckCircle2, Lock, Eye, Activity, Database, Edit3,
   Trash2, Plus, Settings, Download, Filter, Wifi, WifiOff
@@ -242,23 +243,28 @@ function LoginLogsTab({ logs, loading }) {
 // 🔍 Audit Detail Modal (Rendered with React Portal to body)
 // ─────────────────────────────────────────────────────────────
 function AuditDetailModal({ log, onClose }) {
-  if (!log) return null;
+  const tableRoute = log ? getTableRoute(log.table_name) : null;
 
+  // Rules of Hooks: useEffect MUST be called unconditionally at top of component
   useEffect(() => {
+    if (!log) return;
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [log, onClose]);
+
+  if (!log) return null;
+  if (typeof document === 'undefined') return null;
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
+      className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden"
+        className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden relative z-10"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -275,6 +281,7 @@ function AuditDetailModal({ log, onClose }) {
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
             title="ปิดหน้าต่าง (Esc)"
@@ -289,11 +296,21 @@ function AuditDetailModal({ log, onClose }) {
             <span className="font-bold text-slate-500">ประเภทกิจกรรม:</span>
             <ActionBadge action={log.action_type} />
           </div>
-          <div className="flex items-center gap-2 text-slate-500">
-            <span className="font-bold">เป้าหมาย:</span>
-            <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-[#4B267D]">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-500">เป้าหมาย:</span>
+            <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-[#4B267D] font-bold">
               {log.table_name} #{log.record_id}
             </span>
+            {tableRoute && (
+              <Link
+                to={tableRoute.to}
+                onClick={onClose}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#4B267D] hover:underline ml-1"
+              >
+                <span>ไปยังหน้า{tableRoute.label}</span>
+                <ExternalLink size={11} />
+              </Link>
+            )}
           </div>
         </div>
 
@@ -305,7 +322,7 @@ function AuditDetailModal({ log, onClose }) {
               <span className="w-2 h-2 rounded-full bg-red-500" />
               ค่าก่อนเปลี่ยน (Old Value)
             </p>
-            <pre className="bg-red-50/70 border border-red-200 rounded-xl p-3 text-[11px] text-slate-700 overflow-auto max-h-60 font-mono whitespace-pre-wrap leading-relaxed">
+            <pre className="bg-red-50/70 border border-red-200 rounded-xl p-3 text-[11px] text-slate-700 overflow-auto max-h-60 font-mono whitespace-pre-wrap leading-relaxed select-text">
               {formatLogValue(log.old_value)}
             </pre>
           </div>
@@ -316,7 +333,7 @@ function AuditDetailModal({ log, onClose }) {
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
               ค่าหลังเปลี่ยน (New Value)
             </p>
-            <pre className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-[11px] text-slate-700 overflow-auto max-h-60 font-mono whitespace-pre-wrap leading-relaxed">
+            <pre className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-[11px] text-slate-700 overflow-auto max-h-60 font-mono whitespace-pre-wrap leading-relaxed select-text">
               {formatLogValue(log.new_value)}
             </pre>
           </div>
@@ -327,12 +344,25 @@ function AuditDetailModal({ log, onClose }) {
           <span className="text-slate-400 text-[11px]">
             บันทึกเมื่อ: {formatThaiDate(log.created_at)}
           </span>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-900 transition-colors cursor-pointer"
-          >
-            ปิดหน้าต่าง
-          </button>
+          <div className="flex items-center gap-2">
+            {tableRoute && (
+              <Link
+                to={tableRoute.to}
+                onClick={onClose}
+                className="px-3 py-1.5 bg-[#FAF8FC] hover:bg-[#F3EEFA] border border-[#E9D5FF] text-[#4B267D] rounded-xl text-xs font-bold transition-colors inline-flex items-center gap-1"
+              >
+                <ExternalLink size={12} />
+                <span>เปิดหน้า{tableRoute.label}</span>
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-1.5 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-900 transition-colors cursor-pointer"
+            >
+              ปิดหน้าต่าง
+            </button>
+          </div>
         </div>
       </div>
     </div>,
@@ -430,37 +460,51 @@ function SystemAuditTab({ logs, loading }) {
                     </td>
                     {/* Action */}
                     <td className="px-4 py-3"><ActionBadge action={log.action_type} /></td>
-                    {/* Table / Record */}
+                    {/* Table / Record (Clickable Link to management page) */}
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                          {log.table_name || '—'}
-                        </span>
-                        {log.record_id && (
-                          <span className="text-[11px] text-slate-400">#{log.record_id}</span>
-                        )}
-                      </div>
+                      {(() => {
+                        const route = getTableRoute(log.table_name);
+                        return route ? (
+                          <Link
+                            to={route.to}
+                            className="inline-flex items-center gap-1.5 font-mono text-[11px] bg-slate-100 hover:bg-purple-100 text-slate-700 hover:text-[#4B267D] px-2 py-0.5 rounded transition-colors font-bold border border-transparent hover:border-purple-200"
+                            title={`ไปยังหน้า${route.label}`}
+                          >
+                            <span>{log.table_name || '—'}</span>
+                            {log.record_id && (
+                              <span className="text-[#4B267D]">#{log.record_id}</span>
+                            )}
+                            <ExternalLink size={10} className="text-slate-400" />
+                          </Link>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                              {log.table_name || '—'}
+                            </span>
+                            {log.record_id && (
+                              <span className="text-[11px] text-slate-400">#{log.record_id}</span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     {/* Time */}
                     <td className="px-4 py-3">
-                      <span className="text-[11px] text-slate-600 flex items-center gap-1">
+                      <span className="text-[11px] text-slate-600 flex items-center gap-1 whitespace-nowrap">
                         <Clock size={11} className="text-slate-400" />
                         {formatThaiDate(log.created_at)}
                       </span>
                     </td>
                     {/* Detail */}
                     <td className="px-4 py-3">
-                      {(log.old_value || log.new_value) ? (
-                        <button
-                          onClick={() => setSelectedLog(log)}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#4B267D] hover:text-[#381C5F] transition-colors px-2 py-1 rounded-lg hover:bg-purple-50 cursor-pointer"
-                        >
-                          <Eye size={12} />
-                          ดูการเปลี่ยนแปลง
-                        </button>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 italic">—</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLog(log)}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[#4B267D] hover:text-[#381C5F] transition-colors px-2.5 py-1 rounded-lg hover:bg-purple-100/70 bg-purple-50/80 border border-purple-200/60 cursor-pointer shadow-2xs"
+                      >
+                        <Eye size={12} />
+                        ดูการเปลี่ยนแปลง
+                      </button>
                     </td>
                   </tr>
                 ))}
