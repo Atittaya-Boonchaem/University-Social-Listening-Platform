@@ -82,6 +82,43 @@ function formatThaiDate(str) {
   }
 }
 
+function formatLogValue(val) {
+  if (val === null || val === undefined) return '— (ไม่มีข้อมูล / เป็นค่าว่าง)';
+  if (typeof val === 'object') {
+    try {
+      return JSON.stringify(val, null, 2);
+    } catch {
+      return String(val);
+    }
+  }
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return val;
+    }
+  }
+  return String(val);
+}
+
+function getTableRoute(tableName) {
+  switch ((tableName || '').toLowerCase()) {
+    case 'users':
+      return { to: '/super-admin/users', label: 'จัดการผู้ใช้งาน' };
+    case 'buildings':
+      return { to: '/super-admin/buildings', label: 'จัดการอาคาร & พิกัด' };
+    case 'categories':
+      return { to: '/super-admin/categories', label: 'จัดการหมวดหมู่' };
+    case 'problems':
+      return { to: '/super-admin', label: 'แดชบอร์ดภาพรวม' };
+    case 'llm_settings':
+      return { to: '/super-admin/llm-settings', label: 'การตั้งค่า AI' };
+    default:
+      return null;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────
 // 🎨 Summary Stat Card
 // ─────────────────────────────────────────────────────────────
