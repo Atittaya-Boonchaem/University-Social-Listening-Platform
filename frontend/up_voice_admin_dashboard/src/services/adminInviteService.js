@@ -99,3 +99,12 @@ export async function acceptInvite(payload) {
   const res = await api.post('/users/register-invite', payload);
   return res.data;
 }
+
+/**
+ * Direct create an admin account (Super Admin only).
+ * @param {Object} payload - { first_name, last_name, email, password, role, category_id }
+ */
+export async function directCreateAdmin(payload) {
+  const res = await api.post('/users/direct-create-admin', payload);
+  return res.data;
+}

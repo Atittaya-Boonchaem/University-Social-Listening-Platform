@@ -10,12 +10,13 @@ import {
   fetchPendingInvites,
   revokePendingInvite,
   resendInvite,
-  extendInvite
+  extendInvite,
+  directCreateAdmin
 } from '../../services/adminInviteService';
 import { 
   Mail, Plus, Trash2, CheckCircle2, AlertCircle, ChevronDown, 
   Users, Shield, ShieldCheck, Tag, X, Clock, Copy, 
-  RotateCw, CalendarPlus, AlertTriangle 
+  RotateCw, CalendarPlus, AlertTriangle, Eye, EyeOff, Sparkles, UserPlus, KeyRound
 } from 'lucide-react';
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -230,9 +231,107 @@ const InviteSuccessModal = ({ invite, onClose }) => {
   );
 };
 
-// ── Invite Admin Modal ─────────────────────────────────────────
-const InviteModal = ({ isOpen, onClose, categories, onAssign, submitting }) => {
-  const [form, setForm] = useState({ 
+// ── Direct Create Success Modal ────────────────────────────────
+const DirectCreateSuccessModal = ({ data, onClose }) => {
+  const [copied, setCopied] = useState(false);
+
+  if (!data) return null;
+
+  const loginUrl = window.location.origin + '/login';
+
+  const copyText = `ข้อมูลเข้าสู่ระบบ UP Connect (สำหรับผู้ดูแลระบบ):
+----------------------------------
+ชื่อผู้ใช้: ${data.displayName}
+อีเมล (Email): ${data.email}
+รหัสผ่าน (Password): ${data.password}
+บทบาท: ${data.role}
+หมวดหมู่: ${data.categoryName || 'ภาพรวมระบบ'}
+ลิงก์เข้าสู่ระบบ: ${loginUrl}
+----------------------------------`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(copyText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-7 border border-emerald-100 animate-[pageFadeIn_0.2s_ease]">
+        <div className="w-14 h-14 rounded-2xl bg-emerald-500 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/25">
+          <CheckCircle2 size={30} />
+        </div>
+        
+        <h3 className="text-xl font-bold text-slate-800 text-center mb-1">
+          สร้างบัญชีผู้ดูแลระบบสำเร็จ!
+        </h3>
+        <p className="text-xs text-slate-500 text-center mb-4">
+          บัญชีพร้อมใช้งานแล้ว บุคลากรสามารถนำข้อมูลนี้ไปล็อกอินได้ทันที
+        </p>
+
+        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 mb-5 space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-medium">ชื่อ-นามสกุล:</span>
+            <span className="font-bold text-slate-800">{data.displayName}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-medium">อีเมล (Email):</span>
+            <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{data.email}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-medium">รหัสผ่าน (Password):</span>
+            <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{data.password}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-medium">บทบาท:</span>
+            <span className="font-semibold text-slate-700">{data.role}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-medium">หมวดหมู่:</span>
+            <span className="font-semibold text-purple-700">{data.categoryName || 'ภาพรวมระบบ'}</span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleCopy}
+          className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-sm mb-2.5 ${
+            copied
+              ? 'bg-emerald-600 text-white'
+              : 'bg-[#2B164D] hover:bg-[#3d2268] text-white active:scale-95'
+          }`}
+        >
+          {copied ? (
+            <>
+              <CheckCircle2 size={16} />
+              <span>คัดลอกข้อมูลเข้าสู่ระบบเรียบร้อยแล้ว!</span>
+            </>
+          ) : (
+            <>
+              <Copy size={16} />
+              <span>📋 คัดลอกข้อมูลส่งให้บุคลากร</span>
+            </>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors"
+        >
+          เสร็จสิ้น (ปิดหน้าต่าง)
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ── Add / Invite Admin Modal (Dual Tabs) ─────────────────────────
+const InviteModal = ({ isOpen, onClose, categories, onAssign, onDirectCreate, submitting }) => {
+  const [activeTab, setActiveTab] = useState('direct'); // 'direct' | 'invite'
+
+  // Tab 1: Invite State
+  const [inviteForm, setInviteForm] = useState({ 
     email: '', 
     loginMethod: 'local',
     role: 'category_admin',
@@ -240,167 +339,415 @@ const InviteModal = ({ isOpen, onClose, categories, onAssign, submitting }) => {
     expiration_days: 7
   });
 
+  // Tab 2: Direct Create State
+  const [directForm, setDirectForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    role: 'category_admin',
+    category_id: '',
+  });
+
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Auto-generate strong password
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+    let pwd = '';
+    for (let i = 0; i < 10; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setDirectForm((prev) => ({ ...prev, password: pwd }));
+    setShowPassword(true);
+  };
+
   // Reset form when opened
   useEffect(() => {
-    if (isOpen) setForm({ email: '', loginMethod: 'local', role: 'category_admin', category_id: '', expiration_days: 7 });
+    if (isOpen) {
+      setInviteForm({ email: '', loginMethod: 'local', role: 'category_admin', category_id: '', expiration_days: 7 });
+      setDirectForm({ firstName: '', lastName: '', email: '', password: '', role: 'category_admin', category_id: '' });
+      setShowPassword(false);
+      setActiveTab('direct');
+    }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleInviteSubmit = (e) => {
     e.preventDefault();
-    onAssign(form);
+    onAssign(inviteForm);
+  };
+
+  const handleDirectSubmit = (e) => {
+    e.preventDefault();
+    onDirectCreate({
+      first_name: directForm.firstName.trim(),
+      last_name: directForm.lastName.trim(),
+      email: directForm.email.trim(),
+      password: directForm.password,
+      role: directForm.role,
+      category_id: directForm.role === 'category_admin' ? Number(directForm.category_id) : null
+    });
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-[pageFadeIn_0.2s_ease] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-[pageFadeIn_0.2s_ease] flex flex-col border border-purple-50">
         {/* Header */}
-        <div className="px-6 py-5 flex items-center justify-between border-b border-gray-100 bg-white">
+        <div className="px-6 py-4 flex items-center justify-between border-b border-gray-100 bg-white">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Invite User</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Send a sign-up invitation with validity period</p>
+            <h2 className="text-lg font-bold text-gray-900">
+              {activeTab === 'direct' ? 'สร้างบัญชีแอดมินโดยตรง' : 'เชิญผู้ดูแลระบบ'}
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {activeTab === 'direct' 
+                ? 'สร้างบัญชีให้ทันที พร้อมนำอีเมลและรหัสผ่านไปล็อกอินใช้งานได้เลย' 
+                : 'ส่งลิงก์คำเชิญผ่านอีเมลให้ผู้ดูแลระบบลงทะเบียน'}
+            </p>
           </div>
           <button
             onClick={onClose}
             disabled={submitting}
-            className="p-1.5 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-50"
+            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-50"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 bg-white">
-          {/* Row 1: Email */}
-          <div>
-            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-              EMAIL <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              disabled={submitting}
-              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 transition-shadow bg-white"
-              placeholder="user@example.com"
-              required
-            />
-          </div>
+        {/* Tab Selection */}
+        <div className="flex border-b border-gray-100 bg-slate-50/80 p-1.5 gap-1.5">
+          <button
+            type="button"
+            onClick={() => setActiveTab('direct')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'direct'
+                ? 'bg-white text-indigo-700 shadow-sm border border-slate-200/60'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+            }`}
+          >
+            <UserPlus size={14} className={activeTab === 'direct' ? 'text-indigo-600' : 'text-slate-400'} />
+            สร้างบัญชีโดยตรง (Direct Create)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('invite')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'invite'
+                ? 'bg-white text-indigo-700 shadow-sm border border-slate-200/60'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+            }`}
+          >
+            <Mail size={14} className={activeTab === 'invite' ? 'text-indigo-600' : 'text-slate-400'} />
+            เชิญผ่านอีเมล (Invite Link)
+          </button>
+        </div>
 
-          {/* Row 2: Login Method & Category */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                LOGIN METHOD
-              </label>
-              <div className="relative">
-                <select
-                  value={form.loginMethod}
-                  onChange={(e) => setForm({ ...form, loginMethod: e.target.value })}
+        {/* Tab 1: Direct Account Creation Form */}
+        {activeTab === 'direct' && (
+          <form onSubmit={handleDirectSubmit} className="p-6 space-y-4 bg-white">
+            {/* Row 1: Name */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                  ชื่อ (FIRST NAME) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={directForm.firstName}
+                  onChange={(e) => setDirectForm({ ...directForm, firstName: e.target.value })}
                   disabled={submitting}
-                  className="appearance-none w-full pl-3 pr-8 py-2 border border-gray-200 rounded-md text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 transition-shadow bg-white"
-                >
-                  <option value="local">Local (Username / Password)</option>
-                  <option value="sso">University SSO</option>
-                </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 transition-shadow bg-white"
+                  placeholder="เช่น สมชาย"
+                  required
+                />
               </div>
-            </div>
-            
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                SELECT CATEGORY {form.role === 'category_admin' && <span className="text-red-500">*</span>}
-              </label>
-              <div className="relative">
-                <select
-                  value={form.category_id}
-                  onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-                  disabled={submitting || form.role !== 'category_admin'}
-                  className="appearance-none w-full pl-3 pr-8 py-2 border border-gray-200 rounded-md text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 disabled:bg-gray-50 transition-shadow bg-white"
-                  required={form.role === 'category_admin'}
-                >
-                  <option value="" disabled>— Choose —</option>
-                  {categories.map((c) => (
-                    <option key={c.category_id} value={c.category_id}>{c.category_name}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              </div>
-            </div>
-          </div>
-
-          {/* Row 3: Role & Expiration Duration */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                ROLE <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <select
-                  value={form.role}
-                  onChange={(e) => {
-                    const newRole = e.target.value;
-                    setForm({ ...form, role: newRole, category_id: newRole === 'category_admin' ? form.category_id : '' });
-                  }}
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                  นามสกุล (LAST NAME) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={directForm.lastName}
+                  onChange={(e) => setDirectForm({ ...directForm, lastName: e.target.value })}
                   disabled={submitting}
-                  className="appearance-none w-full pl-3 pr-8 py-2 border border-gray-200 rounded-md text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 bg-white transition-shadow"
-                >
-                  <option value="category_admin">Category Admin</option>
-                  <option value="super_admin">Super Admin</option>
-                  <option value="staff">Staff</option>
-                </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 transition-shadow bg-white"
+                  placeholder="เช่น ใจดี"
+                  required
+                />
               </div>
             </div>
 
+            {/* Row 2: Email */}
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                อีเมลเข้าใช้งาน (EMAIL) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                value={directForm.email}
+                onChange={(e) => setDirectForm({ ...directForm, email: e.target.value })}
+                disabled={submitting}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 transition-shadow bg-white"
+                placeholder="staff@up.ac.th หรือ email@example.com"
+                required
+              />
+            </div>
+
+            {/* Row 3: Password + Generator */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                  กำหนดรหัสผ่าน (PASSWORD) <span className="text-red-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={generateRandomPassword}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 hover:underline active:scale-95 transition-all"
+                >
+                  <Sparkles size={12} />
+                  สุ่มรหัสผ่านอัตโนมัติ
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={directForm.password}
+                  onChange={(e) => setDirectForm({ ...directForm, password: e.target.value })}
+                  disabled={submitting}
+                  className="w-full pl-3 pr-10 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 transition-shadow bg-white font-mono"
+                  placeholder="ความยาวอย่างน้อย 6 ตัวอักษร"
+                  minLength={6}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Row 4: Role & Category */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                  บทบาท (ROLE) <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={directForm.role}
+                    onChange={(e) => {
+                      const newRole = e.target.value;
+                      setDirectForm({ ...directForm, role: newRole, category_id: newRole === 'category_admin' ? directForm.category_id : '' });
+                    }}
+                    disabled={submitting}
+                    className="appearance-none w-full pl-3 pr-8 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 bg-white transition-shadow"
+                  >
+                    <option value="category_admin">Category Admin (แอดมินหมวดหมู่)</option>
+                    <option value="staff">Staff (เจ้าหน้าที่ทั่วไป)</option>
+                    <option value="super_admin">Super Admin (ผู้ดูแลระบบสูงสุด)</option>
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                  หมวดหมู่ที่รับผิดชอบ {directForm.role === 'category_admin' && <span className="text-red-500">*</span>}
+                </label>
+                <div className="relative">
+                  <select
+                    value={directForm.category_id}
+                    onChange={(e) => setDirectForm({ ...directForm, category_id: e.target.value })}
+                    disabled={submitting || directForm.role !== 'category_admin'}
+                    className="appearance-none w-full pl-3 pr-8 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 disabled:bg-gray-50 transition-shadow bg-white"
+                    required={directForm.role === 'category_admin'}
+                  >
+                    <option value="" disabled>— เลือกหมวดหมู่ —</option>
+                    {categories.map((c) => (
+                      <option key={c.category_id} value={c.category_id}>{c.category_name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+            </div>
+
+            {/* Note banner */}
+            <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 text-xs text-indigo-900 flex items-start gap-2">
+              <span className="text-base leading-none">💡</span>
+              <span className="leading-relaxed">
+                บัญชีจะเปิดใช้งานทันที Super Admin สามารถคัดลอกอีเมลและรหัสผ่านส่งให้บุคลากรนำไปล็อกอินเข้าสู่ระบบได้เลย
+              </span>
+            </div>
+
+            {/* Footer actions */}
+            <div className="pt-3 flex justify-end gap-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || !directForm.email || !directForm.firstName || !directForm.password || (directForm.role === 'category_admin' && !directForm.category_id)}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm hover:shadow disabled:opacity-60 flex items-center justify-center min-w-[150px]"
+              >
+                {submitting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin mr-2" />
+                    กำลังสร้างบัญชี...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus size={15} className="mr-1.5" />
+                    สร้างบัญชีทันที
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Tab 2: Existing Invite by Email Form */}
+        {activeTab === 'invite' && (
+          <form onSubmit={handleInviteSubmit} className="p-6 space-y-4 bg-white">
+            {/* Row 1: Email */}
             <div>
               <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                อายุคำเชิญ (EXPIRE IN)
+                EMAIL <span className="text-red-500">*</span>
               </label>
-              <div className="relative">
-                <select
-                  value={form.expiration_days}
-                  onChange={(e) => setForm({ ...form, expiration_days: Number(e.target.value) })}
-                  disabled={submitting}
-                  className="appearance-none w-full pl-3 pr-8 py-2 border border-gray-200 rounded-md text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 bg-white transition-shadow"
-                >
-                  <option value={3}>3 วัน (3 Days)</option>
-                  <option value={7}>7 วัน (7 Days - แนะนำ)</option>
-                  <option value={14}>14 วัน (14 Days)</option>
-                  <option value={30}>30 วัน (30 Days)</option>
-                </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                type="email"
+                value={inviteForm.email}
+                onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                disabled={submitting}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 transition-shadow bg-white"
+                placeholder="user@example.com"
+                required
+              />
+            </div>
+
+            {/* Row 2: Login Method & Category */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                  LOGIN METHOD
+                </label>
+                <div className="relative">
+                  <select
+                    value={inviteForm.loginMethod}
+                    onChange={(e) => setInviteForm({ ...inviteForm, loginMethod: e.target.value })}
+                    disabled={submitting}
+                    className="appearance-none w-full pl-3 pr-8 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 transition-shadow bg-white"
+                  >
+                    <option value="local">Local (Username / Password)</option>
+                    <option value="sso">University SSO</option>
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                  SELECT CATEGORY {inviteForm.role === 'category_admin' && <span className="text-red-500">*</span>}
+                </label>
+                <div className="relative">
+                  <select
+                    value={inviteForm.category_id}
+                    onChange={(e) => setInviteForm({ ...inviteForm, category_id: e.target.value })}
+                    disabled={submitting || inviteForm.role !== 'category_admin'}
+                    className="appearance-none w-full pl-3 pr-8 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 disabled:bg-gray-50 transition-shadow bg-white"
+                    required={inviteForm.role === 'category_admin'}
+                  >
+                    <option value="" disabled>— Choose —</option>
+                    {categories.map((c) => (
+                      <option key={c.category_id} value={c.category_id}>{c.category_name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Footer actions */}
-          <div className="pt-4 mt-4 flex justify-end gap-3 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || !form.email || (form.role === 'category_admin' && !form.category_id)}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-md transition-colors disabled:opacity-70 flex items-center justify-center min-w-[140px]"
-            >
-              {submitting ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin mr-2" />
-                  Sending...
-                </>
-              ) : (
-                'Send Invitation'
-              )}
-            </button>
-          </div>
-        </form>
+            {/* Row 3: Role & Expiration Duration */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                  ROLE <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={inviteForm.role}
+                    onChange={(e) => {
+                      const newRole = e.target.value;
+                      setInviteForm({ ...inviteForm, role: newRole, category_id: newRole === 'category_admin' ? inviteForm.category_id : '' });
+                    }}
+                    disabled={submitting}
+                    className="appearance-none w-full pl-3 pr-8 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 bg-white transition-shadow"
+                  >
+                    <option value="category_admin">Category Admin</option>
+                    <option value="super_admin">Super Admin</option>
+                    <option value="staff">Staff</option>
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                  อายุคำเชิญ (EXPIRE IN)
+                </label>
+                <div className="relative">
+                  <select
+                    value={inviteForm.expiration_days}
+                    onChange={(e) => setInviteForm({ ...inviteForm, expiration_days: Number(e.target.value) })}
+                    disabled={submitting}
+                    className="appearance-none w-full pl-3 pr-8 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 bg-white transition-shadow"
+                  >
+                    <option value={3}>3 วัน (3 Days)</option>
+                    <option value={7}>7 วัน (7 Days - แนะนำ)</option>
+                    <option value={14}>14 วัน (14 Days)</option>
+                    <option value={30}>30 วัน (30 Days)</option>
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer actions */}
+            <div className="pt-3 flex justify-end gap-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || !inviteForm.email || (inviteForm.role === 'category_admin' && !inviteForm.category_id)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-70 flex items-center justify-center min-w-[140px]"
+              >
+                {submitting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin mr-2" />
+                    Sending...
+                  </>
+                ) : (
+                  'Send Invitation'
+                )}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -435,6 +782,7 @@ const CategoryAdminInvites = () => {
   const [loading, setLoading] = useState(true);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [createdInviteModal, setCreatedInviteModal] = useState(null);
+  const [directCreatedModal, setDirectCreatedModal] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState({ msg: '', type: '' });
   
@@ -509,6 +857,32 @@ const CategoryAdminInvites = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleDirectCreate = async (payload) => {
+    setSubmitting(true);
+    try {
+      const res = await directCreateAdmin(payload);
+      setIsInviteModalOpen(false);
+
+      const categoryObj = categories.find(c => String(c.category_id) === String(payload.category_id));
+      const categoryName = categoryObj ? categoryObj.category_name : 'ภาพรวมระบบ';
+
+      setDirectCreatedModal({
+        displayName: `${payload.first_name} ${payload.last_name}`,
+        email: payload.email,
+        password: payload.password,
+        role: payload.role.replace('_', ' ').toUpperCase(),
+        categoryName: categoryName
+      });
+
+      showToast(`สร้างบัญชีให้ ${payload.email} สำเร็จเรียบร้อยแล้ว!`, 'success');
+      loadData();
+    } catch (err) {
+      showToast(err.response?.data?.detail || err.response?.data?.message || 'ไม่สามารถสร้างบัญชีได้', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleAssign = async (form) => {
     setSubmitting(true);
@@ -633,12 +1007,21 @@ const CategoryAdminInvites = () => {
         />
       )}
 
-      {/* Invite Modal */}
+      {/* Direct Create Success Modal */}
+      {directCreatedModal && (
+        <DirectCreateSuccessModal
+          data={directCreatedModal}
+          onClose={() => setDirectCreatedModal(null)}
+        />
+      )}
+
+      {/* Add / Invite Admin Modal */}
       <InviteModal 
         isOpen={isInviteModalOpen}
         onClose={() => !submitting && setIsInviteModalOpen(false)}
         categories={categories}
         onAssign={handleAssign}
+        onDirectCreate={handleDirectCreate}
         submitting={submitting}
       />
 
@@ -652,8 +1035,8 @@ const CategoryAdminInvites = () => {
           onClick={() => setIsInviteModalOpen(true)}
           className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-5 py-2.5 text-sm font-semibold transition-all shadow-sm hover:shadow active:scale-95"
         >
-          <Plus size={16} strokeWidth={2.5} />
-          Invite Admin
+          <UserPlus size={16} strokeWidth={2.5} />
+          เพิ่ม / เชิญแอดมิน
         </button>
       </div>
 

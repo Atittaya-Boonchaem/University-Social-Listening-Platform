@@ -106,6 +106,15 @@ class RegisterInviteCreate(BaseModel):
     last_name: str = Field(..., min_length=1, max_length=100)
     password: str = Field(..., min_length=6)
 
+class DirectAdminCreate(BaseModel):
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
+    email: EmailStr
+    password: str = Field(..., min_length=6)
+    role: str = Field(default="category_admin")
+    category_id: Optional[int] = None
+
+
 
 class UserLogin(BaseModel):
     email: Optional[EmailStr] = None

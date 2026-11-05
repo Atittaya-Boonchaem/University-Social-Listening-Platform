@@ -26,7 +26,7 @@ from app.models import (
 )
 from app.schemas import (
     StandardResponse, UserBanCreate, UserListItem, 
-    UserInviteCreate, RegisterInviteCreate,
+    UserInviteCreate, RegisterInviteCreate, DirectAdminCreate,
     UserInviteExtend, UserInviteResend
 )
 from app.routers.auth import get_current_user, get_user_role, get_display_name, hash_password
@@ -667,6 +667,127 @@ def register_via_invite(
 
 
 # ──────────────────────────────────────────────
+# ──────────────────────────────────────────────
+# Direct Admin Account Creation (Super Admin only)
+# ──────────────────────────────────────────────
+@router.post("/direct-create-admin", response_model=StandardResponse, tags=[TAG_SUPER_ADMIN])
+def direct_create_admin(
+    payload: DirectAdminCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_super_admin(current_user, db)
+
+    email_clean = payload.email.strip().lower()
+
+    # 1. Check if user already exists
+    existing_user = db.query(User).filter(User.email == email_clean).first()
+    if existing_user and (not existing_user.is_deleted) and existing_user.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail=f"มีบัญชีอีเมล {email_clean} อยู่ในระบบแล้วและกำลังใช้งานอยู่"
+        )
+
+    if existing_user:
+        # Reactivate soft-deleted or inactive user
+        target_user = existing_user
+        target_user.password_hash = hash_password(payload.password)
+        target_user.is_active = True
+        target_user.is_deleted = False
+        target_user.updated_at = datetime.utcnow()
+    else:
+        # 2. Create Base User
+        target_user = User(
+            email=email_clean,
+            password_hash=hash_password(payload.password),
+            is_active=True,
+            is_deleted=False
+        )
+        db.add(target_user)
+        db.flush()
+
+    full_name = f"{payload.first_name} {payload.last_name}".strip()
+    role_normalized = payload.role.strip().lower()
+
+    # 3. Create or update Staff record
+    staff = db.query(Staff).filter(Staff.user_id == target_user.user_id).first()
+    if staff:
+        staff.staff_name = full_name
+        staff.staff_role = role_normalized.replace("_", " ").title()
+    else:
+        dummy_emp_id = f"ADM-{uuid.uuid4().hex[:8].upper()}"
+        staff = Staff(
+            user_id=target_user.user_id,
+            employee_id=dummy_emp_id,
+            staff_name=full_name,
+            staff_role=role_normalized.replace("_", " ").title()
+        )
+        db.add(staff)
+    db.flush()
+
+    category_name = None
+    # 4. Assign role sub-tables
+    if role_normalized == "super_admin":
+        sa = db.query(SuperAdmin).filter(SuperAdmin.user_id == target_user.user_id).first()
+        if not sa:
+            sa = SuperAdmin(user_id=target_user.user_id, is_active=True)
+            db.add(sa)
+        else:
+            sa.is_active = True
+    elif role_normalized == "category_admin":
+        if not payload.category_id:
+            raise HTTPException(status_code=400, detail="กรุณาเลือกหมวดหมู่ที่รับผิดชอบสำหรับ Category Admin")
+        
+        from app.models import Category
+        cat = db.query(Category).filter(Category.category_id == payload.category_id).first()
+        if not cat:
+            raise HTTPException(status_code=404, detail="ไม่พบหมวดหมู่ที่ระบุ")
+        category_name = cat.category_name
+
+        ca = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == target_user.user_id).first()
+        if ca:
+            ca.category_id = payload.category_id
+            ca.is_active = True
+            ca.revoked_at = None
+        else:
+            ca = CategoryAdmin(
+                user_id=target_user.user_id,
+                category_id=payload.category_id,
+                admin_level="full",
+                is_active=True
+            )
+            db.add(ca)
+
+    # 5. Create Audit Log
+    audit = AuditLog(
+        admin_id=current_user.user_id,
+        action_type="DIRECT_CREATE_ADMIN",
+        table_name="users",
+        record_id=target_user.user_id,
+        new_value={
+            "email": email_clean,
+            "role": role_normalized,
+            "category_id": payload.category_id,
+            "staff_name": full_name
+        }
+    )
+    db.add(audit)
+    db.commit()
+
+    return StandardResponse(
+        success=True,
+        message=f"สร้างบัญชี {email_clean} สำเร็จเรียบร้อยแล้ว",
+        data={
+            "user_id": target_user.user_id,
+            "email": email_clean,
+            "display_name": full_name,
+            "role": role_normalized,
+            "category_id": payload.category_id,
+            "category_name": category_name
+        }
+    )
+
+
 # Get current user profile (Must be BEFORE /{user_id})
 # ──────────────────────────────────────────────
 @router.get("/me", response_model=StandardResponse, tags=[TAG_USER_PROBLEMS])
