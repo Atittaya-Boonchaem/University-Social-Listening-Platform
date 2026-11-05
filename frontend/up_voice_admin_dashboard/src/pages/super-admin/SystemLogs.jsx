@@ -1,5 +1,6 @@
 // src/pages/super-admin/SystemLogs.jsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FileText, LogIn, Shield, Search, RefreshCw, ChevronRight,
   X, Clock, User, Monitor, Smartphone, Laptop, AlertTriangle,
@@ -238,6 +239,108 @@ function LoginLogsTab({ logs, loading }) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 🔍 Audit Detail Modal (Rendered with React Portal to body)
+// ─────────────────────────────────────────────────────────────
+function AuditDetailModal({ log, onClose }) {
+  if (!log) return null;
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header */}
+        <div className="px-6 py-4 bg-gradient-to-r from-slate-900 to-[#4B267D] text-white flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-purple-200">
+              <Database size={18} />
+            </div>
+            <div>
+              <h3 className="font-black text-sm">รายละเอียดการเปลี่ยนแปลง (Audit Diff)</h3>
+              <p className="text-[11px] text-purple-200">
+                {log.admin_name || 'System'} · {log.table_name} #{log.record_id}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+            title="ปิดหน้าต่าง (Esc)"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Modal Info Banner */}
+        <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-500">ประเภทกิจกรรม:</span>
+            <ActionBadge action={log.action_type} />
+          </div>
+          <div className="flex items-center gap-2 text-slate-500">
+            <span className="font-bold">เป้าหมาย:</span>
+            <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-[#4B267D]">
+              {log.table_name} #{log.record_id}
+            </span>
+          </div>
+        </div>
+
+        {/* Modal Body: Old vs New Value */}
+        <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Old Value */}
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-red-600 flex items-center gap-1.5 uppercase tracking-wider">
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              ค่าก่อนเปลี่ยน (Old Value)
+            </p>
+            <pre className="bg-red-50/70 border border-red-200 rounded-xl p-3 text-[11px] text-slate-700 overflow-auto max-h-60 font-mono whitespace-pre-wrap leading-relaxed">
+              {formatLogValue(log.old_value)}
+            </pre>
+          </div>
+
+          {/* New Value */}
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 uppercase tracking-wider">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              ค่าหลังเปลี่ยน (New Value)
+            </p>
+            <pre className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-[11px] text-slate-700 overflow-auto max-h-60 font-mono whitespace-pre-wrap leading-relaxed">
+              {formatLogValue(log.new_value)}
+            </pre>
+          </div>
+        </div>
+
+        {/* Modal Footer */}
+        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex justify-between items-center text-xs">
+          <span className="text-slate-400 text-[11px]">
+            บันทึกเมื่อ: {formatThaiDate(log.created_at)}
+          </span>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-900 transition-colors cursor-pointer"
+          >
+            ปิดหน้าต่าง
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // 📋 TAB 2: System Audit Logs
 // ─────────────────────────────────────────────────────────────
 function SystemAuditTab({ logs, loading }) {
@@ -367,68 +470,9 @@ function SystemAuditTab({ logs, loading }) {
         )}
       </div>
 
-      {/* Detail Modal: Old → New Value */}
+      {/* Detail Modal: Rendered via Portal directly to body to avoid container clipping */}
       {selectedLog && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden">
-            {/* Modal Header */}
-            <div className="px-6 py-4 bg-gradient-to-r from-slate-900 to-[#4B267D] text-white flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <Database size={18} className="text-purple-300" />
-                <div>
-                  <h3 className="font-black text-sm">รายละเอียดการเปลี่ยนแปลง</h3>
-                  <p className="text-[11px] text-purple-200">
-                    {selectedLog.admin_name} · {selectedLog.table_name} #{selectedLog.record_id}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedLog(null)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <X size={15} />
-              </button>
-            </div>
-            {/* Modal Body */}
-            <div className="p-6 grid grid-cols-2 gap-4">
-              {/* Old Value */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-red-600 flex items-center gap-1.5 uppercase tracking-wider">
-                  <span className="w-2 h-2 rounded-full bg-red-500" />
-                  ค่าก่อนเปลี่ยน (Old Value)
-                </p>
-                <pre className="bg-red-50 border border-red-200 rounded-xl p-3 text-[11px] text-slate-700 overflow-auto max-h-56 font-mono whitespace-pre-wrap leading-relaxed">
-                  {selectedLog.old_value
-                    ? JSON.stringify(selectedLog.old_value, null, 2)
-                    : '— (ไม่มีค่าก่อนหน้า / เป็นการเพิ่มใหม่)'}
-                </pre>
-              </div>
-              {/* New Value */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 uppercase tracking-wider">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  ค่าหลังเปลี่ยน (New Value)
-                </p>
-                <pre className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-[11px] text-slate-700 overflow-auto max-h-56 font-mono whitespace-pre-wrap leading-relaxed">
-                  {selectedLog.new_value
-                    ? JSON.stringify(selectedLog.new_value, null, 2)
-                    : '— (ไม่มีค่าใหม่ / เป็นการลบ)'}
-                </pre>
-              </div>
-            </div>
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
-              <span className="text-[11px] text-slate-400">
-                บันทึกเมื่อ: {formatThaiDate(selectedLog.created_at)}
-              </span>
-              <button
-                onClick={() => setSelectedLog(null)}
-                className="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-900 transition-colors cursor-pointer"
-              >
-                ปิด
-              </button>
-            </div>
-          </div>
-        </div>
+        <AuditDetailModal log={selectedLog} onClose={() => setSelectedLog(null)} />
       )}
     </div>
   );
