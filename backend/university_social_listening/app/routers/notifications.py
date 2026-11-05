@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.database import get_db
-from app.models import Notification, Problem, User, ProblemStatus
-from app.middleware.auth import get_current_user
+from app.models import Notification, Problem, User, Status
+from app.routers.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +78,8 @@ def get_notifications(
         existing_problem_ids = {r["problem_id"] for r in results if r["problem_id"]}
         pending_problems = (
             db.query(Problem)
-            .join(ProblemStatus)
-            .filter(ProblemStatus.status_name == "PENDING_REVIEW")
+            .join(Status)
+            .filter(Status.status_name == "PENDING_REVIEW")
             .filter(~Problem.problem_id.in_(existing_problem_ids) if existing_problem_ids else True)
             .order_by(desc(Problem.created_at))
             .limit(10 - len(results))
@@ -114,8 +114,8 @@ def get_notifications(
     if is_super_admin:
         pending_total = (
             db.query(Problem)
-            .join(ProblemStatus)
-            .filter(ProblemStatus.status_name == "PENDING_REVIEW")
+            .join(Status)
+            .filter(Status.status_name == "PENDING_REVIEW")
             .count()
         )
 
@@ -153,8 +153,8 @@ def get_unread_count(
         real_count = query.count()
         pending_count = (
             db.query(Problem)
-            .join(ProblemStatus)
-            .filter(ProblemStatus.status_name == "PENDING_REVIEW")
+            .join(Status)
+            .filter(Status.status_name == "PENDING_REVIEW")
             .count()
         )
         total_unread = max(real_count, pending_count)
@@ -237,3 +237,4 @@ def delete_notification(
     db.commit()
 
     return {"success": True, "message": "Notification deleted"}
+
