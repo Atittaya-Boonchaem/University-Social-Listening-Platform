@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, ClipboardList, Mail,
   Bot, LogOut, ChevronRight, Shield, Bell,
   Menu, ChevronDown, Layers, Building2, ExternalLink,
-  MapPin, CheckCircle, AlertTriangle, Sparkles
+  MapPin, CheckCircle, AlertTriangle, Sparkles, FileText
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -82,6 +82,12 @@ const NAV = [
         icon: Bot,
         label: 'การตั้งค่า AI & กฎกระจายงาน',
         desc: 'LLM & Auto-Routing Rules',
+      },
+      {
+        to: '/super-admin/system-logs',
+        icon: FileText,
+        label: 'บันทึกและตรวจสอบระบบ',
+        desc: 'Audit & Security Logs',
       },
     ],
   },
@@ -228,6 +234,7 @@ const TopNavbar = ({ collapsed, pendingCount }) => {
     '/super-admin/buildings':       { title: 'จัดการอาคารสถานที่และพิกัด (Building Management)', sub: 'ฐานข้อมูลอาคาร คณะ หอพัก และพิกัด GPS สำหรับระบบเช็คอินปัญหา' },
     '/super-admin/llm-settings':        { title: 'การตั้งค่า AI & กฎกระจายงานอัตโนมัติ (AI Multi-Label Routing)', sub: 'ศูนย์ควบคุมโมเดลภาษาและการจัดส่งงานอัตโนมัติข้ามหน่วยงาน มหาวิทยาลัยพะเยา' },
     '/super-admin/llm-routing-history': { title: 'ประวัติการวิเคราะห์และกระจายงาน AI (AI Routing Audit History)', sub: 'บันทึกประวัติการคัดกรองภาษาธรรมชาติ เปอร์เซ็นต์ความมั่นใจของทุกหมวดหมู่ และการจัดส่งงานอัตโนมัติ' },
+    '/super-admin/system-logs':         { title: 'ศูนย์บันทึกและตรวจสอบระบบ (System Audit Logs)', sub: 'ตรวจสอบ Login, กิจกรรมผู้ดูแลระบบ และภัยคุกคามด้านความปลอดภัย' },
   };
 
   const page = PAGE_TITLES[location.pathname] || { title: 'ระบบผู้ดูแลสูงสุด (Super Admin)', sub: 'UP Connect Administrative Suite' };
