@@ -8,6 +8,8 @@ import {
   MapPin, CheckCircle, AlertTriangle, Sparkles, FileText
 } from 'lucide-react';
 import api from '../services/api';
+import NotificationDropdown from '../components/NotificationDropdown';
+import { fetchUnreadCount } from '../services/notificationService';
 
 // ── Decode the JWT to get user info ─────────────────────────────
 function decodeToken(token) {
@@ -30,6 +32,12 @@ const NAV = [
         icon: LayoutDashboard,
         label: 'แดชบอร์ดภาพรวม',
         desc: 'Global Command Center',
+      },
+      {
+        to: '/super-admin/notifications',
+        icon: Bell,
+        label: 'ศูนย์การแจ้งเตือน',
+        desc: 'Notifications Center',
       },
       {
         to: '/super-admin/global-heatmap',
@@ -94,7 +102,7 @@ const NAV = [
 ];
 
 // ── Sidebar ────────────────────────────────────────────────────
-const Sidebar = ({ collapsed, onToggle, pendingCount }) => {
+const Sidebar = ({ collapsed, onToggle, pendingCount, unreadCount }) => {
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -157,7 +165,7 @@ const Sidebar = ({ collapsed, onToggle, pendingCount }) => {
       )}
 
       {/* Nav Menu */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
+      <nav className="flex-1 min-h-0 overflow-y-auto py-3 px-3 space-y-1 pb-10">
         {NAV.map((section) => (
           <div key={section.group} className="mb-2">
             {!collapsed && (
@@ -176,7 +184,7 @@ const Sidebar = ({ collapsed, onToggle, pendingCount }) => {
                 }
                 title={collapsed ? `${item.label} (${item.desc})` : undefined}
               >
-                <item.icon size={19} className="flex-shrink-0 transition-transform group-hover:scale-110" />
+                <item.icon size={19} className="flex-shrink-0" />
                 {!collapsed && (
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="text-xs font-bold leading-tight truncate">{item.label}</span>
@@ -193,6 +201,18 @@ const Sidebar = ({ collapsed, onToggle, pendingCount }) => {
                     }`}
                   >
                     {!collapsed && `${pendingCount} รอตรวจ`}
+                  </span>
+                )}
+                {/* Unread Notifications Badge */}
+                {item.to === '/super-admin/notifications' && unreadCount > 0 && (
+                  <span
+                    className={`inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-black rounded-full ${
+                      collapsed
+                        ? 'absolute top-1 right-1 w-2.5 h-2.5 p-0 bg-purple-600'
+                        : 'bg-purple-100 text-[#4B267D] border border-purple-200'
+                    }`}
+                  >
+                    {!collapsed && `${unreadCount} ใหม่`}
                   </span>
                 )}
               </NavLink>
@@ -219,7 +239,7 @@ const Sidebar = ({ collapsed, onToggle, pendingCount }) => {
 };
 
 // ── Top Navbar ─────────────────────────────────────────────────
-const TopNavbar = ({ collapsed, pendingCount }) => {
+const TopNavbar = ({ collapsed, unreadCount, onCountChange }) => {
   const location = useLocation();
   const token = localStorage.getItem('token');
   const decoded = token ? decodeToken(token) : {};
@@ -234,6 +254,7 @@ const TopNavbar = ({ collapsed, pendingCount }) => {
     '/super-admin/buildings':       { title: 'จัดการอาคารสถานที่และพิกัด (Building Management)', sub: 'ฐานข้อมูลอาคาร คณะ หอพัก และพิกัด GPS สำหรับระบบเช็คอินปัญหา' },
     '/super-admin/llm-settings':        { title: 'การตั้งค่า AI & กฎกระจายงานอัตโนมัติ (AI Multi-Label Routing)', sub: 'ศูนย์ควบคุมโมเดลภาษาและการจัดส่งงานอัตโนมัติข้ามหน่วยงาน มหาวิทยาลัยพะเยา' },
     '/super-admin/llm-routing-history': { title: 'ประวัติการวิเคราะห์และกระจายงาน AI (AI Routing Audit History)', sub: 'บันทึกประวัติการคัดกรองภาษาธรรมชาติ เปอร์เซ็นต์ความมั่นใจของทุกหมวดหมู่ และการจัดส่งงานอัตโนมัติ' },
+    '/super-admin/notifications':       { title: 'ศูนย์การแจ้งเตือนระบบ (Notifications Center)', sub: 'รายงานคำร้องรอตรวจสอบ เหตุการณ์ความปลอดภัย และการอัปเดตระบบแบบเรียลไทม์' },
     '/super-admin/system-logs':         { title: 'ศูนย์บันทึกและตรวจสอบระบบ (System Audit Logs)', sub: 'ตรวจสอบ Login, กิจกรรมผู้ดูแลระบบ และภัยคุกคามด้านความปลอดภัย' },
   };
 
@@ -259,26 +280,8 @@ const TopNavbar = ({ collapsed, pendingCount }) => {
       </div>
 
       <div className="flex items-center gap-3">
-        {/* System Online Status Indicator */}
-        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>ระบบออนไลน์ปกติ</span>
-        </div>
-
-        {/* Notification bell with pending counter */}
-        <NavLink
-          to="/super-admin"
-          id="notification-bell-btn"
-          className="relative w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:bg-[#FAF8FC] hover:text-[#2B164D] border border-slate-200/60 transition-colors"
-          title={pendingCount > 0 ? `มี ${pendingCount} คำร้องรอการตรวจสอบ` : 'การแจ้งเตือน'}
-        >
-          <Bell size={18} />
-          {pendingCount > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-amber-500 text-white text-[10px] font-black rounded-full ring-2 ring-white flex items-center justify-center animate-bounce">
-              {pendingCount}
-            </span>
-          )}
-        </NavLink>
+        {/* Interactive Notification Bell Popover */}
+        <NotificationDropdown unreadCount={unreadCount} onCountChange={onCountChange} />
 
         {/* User chip */}
         <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">
@@ -299,22 +302,31 @@ const TopNavbar = ({ collapsed, pendingCount }) => {
 const SuperAdminLayout = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  // Poll or fetch pending review issues count for notification badge
+  // Poll or fetch pending review issues & unread notification count
   useEffect(() => {
     let isMounted = true;
-    const checkPending = async () => {
+    const checkCounts = async () => {
       try {
-        const res = await api.get('/problems/list', { params: { status_name: 'PENDING_REVIEW', page_size: 1 } });
+        const [probRes, unreadRes] = await Promise.allSettled([
+          api.get('/problems/list', { params: { status_name: 'PENDING_REVIEW', page_size: 1 } }),
+          fetchUnreadCount(),
+        ]);
         if (isMounted) {
-          setPendingCount(res.data?.data?.total || 0);
+          if (probRes.status === 'fulfilled') {
+            setPendingCount(probRes.value.data?.data?.total || 0);
+          }
+          if (unreadRes.status === 'fulfilled') {
+            setUnreadCount(unreadRes.value || 0);
+          }
         }
       } catch {
         // silent fail
       }
     };
-    checkPending();
-    const interval = setInterval(checkPending, 30000);
+    checkCounts();
+    const interval = setInterval(checkCounts, 30000);
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -323,8 +335,17 @@ const SuperAdminLayout = () => {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} pendingCount={pendingCount} />
-      <TopNavbar collapsed={collapsed} pendingCount={pendingCount} />
+      <Sidebar
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((c) => !c)}
+        pendingCount={pendingCount}
+        unreadCount={unreadCount}
+      />
+      <TopNavbar
+        collapsed={collapsed}
+        unreadCount={unreadCount}
+        onCountChange={setUnreadCount}
+      />
       <main
         className={`transition-all duration-300 pt-16 min-h-screen ${
           collapsed ? 'pl-[72px]' : 'pl-72'
