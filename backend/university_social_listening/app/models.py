@@ -551,3 +551,20 @@ class UserLoginLog(Base):
 
     # Relationships
     user = relationship("User", back_populates="login_logs")
+
+
+class SystemPolicy(Base):
+    __tablename__ = "system_policies"
+
+    policy_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    title = Column(String(255), nullable=False)
+    policy_type = Column(String(50), nullable=False, default="pdpa")  # "pdpa" | "terms_of_service" | "data_consent" | "location_privacy"
+    version = Column(String(20), nullable=False, default="1.0")
+    content = Column(Text, nullable=False)
+    summary = Column(String(500), nullable=True)
+    is_mandatory = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True)
+    target_role = Column(String(50), default="all")  # "all" | "student" | "staff" | "public"
+    created_by = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

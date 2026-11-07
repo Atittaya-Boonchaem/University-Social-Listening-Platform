@@ -4,7 +4,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, ClipboardList, Mail,
   Bot, LogOut, ChevronRight, Shield, Bell,
-  Menu, ChevronDown, Layers, Building2, ExternalLink,
+  Menu, ChevronDown, Layers, Building2, ExternalLink, ShieldCheck,
   MapPin, CheckCircle, AlertTriangle, Sparkles, FileText
 } from 'lucide-react';
 import api from '../services/api';
@@ -79,6 +79,12 @@ const NAV = [
         icon: Building2,
         label: 'อาคารสถานที่ & พิกัด',
         desc: 'Campus Buildings & GPS',
+      },
+      {
+        to: '/super-admin/policies',
+        icon: ShieldCheck,
+        label: 'ข้อตกลงและนโยบาย PDPA',
+        desc: 'Terms & Privacy Policies',
       },
     ],
   },

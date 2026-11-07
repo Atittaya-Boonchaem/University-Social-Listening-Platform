@@ -25,6 +25,7 @@ import CategoryManagement      from './pages/super-admin/CategoryManagement';
 import BuildingManagement      from './pages/super-admin/BuildingManagement';
 import SystemLogs              from './pages/super-admin/SystemLogs';
 import NotificationsCenter    from './pages/super-admin/NotificationsCenter';
+import PolicyManagement        from './pages/super-admin/PolicyManagement';
 
 // ── Category Admin layout & pages ──────────────────────────────
 import CategoryAdminLayout     from './layouts/CategoryAdminLayout';
@@ -208,6 +209,7 @@ function App() {
           <Route path="llm-routing-history" element={<LLMRoutingHistory />} />
           <Route path="categories"      element={<CategoryManagement />} />
           <Route path="buildings"       element={<BuildingManagement />} />
+          <Route path="policies"        element={<PolicyManagement />} />
           <Route path="global-heatmap"  element={<GlobalHeatmap />} />
           <Route path="notifications"   element={<NotificationsCenter />} />
           <Route path="system-logs"     element={<SystemLogs />} />

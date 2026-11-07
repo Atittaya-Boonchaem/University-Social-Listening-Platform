@@ -532,3 +532,46 @@ class ChatAssistMessage(BaseModel):
 
 class ChatAssistRequest(BaseModel):
     messages: List[ChatAssistMessage]
+
+
+# ──────────────────────────────────────────────
+# System Policies & Consent
+# ──────────────────────────────────────────────
+class PolicyCreate(BaseModel):
+    title: str = Field(..., min_length=2, max_length=255)
+    policy_type: str = Field(default="pdpa")
+    version: str = Field(default="1.0", max_length=20)
+    content: str = Field(..., min_length=5)
+    summary: Optional[str] = Field(None, max_length=500)
+    is_mandatory: bool = True
+    is_active: bool = True
+    target_role: str = Field(default="all")
+
+
+class PolicyUpdate(BaseModel):
+    title: Optional[str] = None
+    policy_type: Optional[str] = None
+    version: Optional[str] = None
+    content: Optional[str] = None
+    summary: Optional[str] = None
+    is_mandatory: Optional[bool] = None
+    is_active: Optional[bool] = None
+    target_role: Optional[str] = None
+
+
+class PolicyResponse(BaseModel):
+    policy_id: int
+    title: str
+    policy_type: str
+    version: str
+    content: str
+    summary: Optional[str] = None
+    is_mandatory: bool
+    is_active: bool
+    target_role: str
+    created_by: Optional[int] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

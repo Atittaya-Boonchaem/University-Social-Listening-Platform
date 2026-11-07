@@ -69,7 +69,7 @@ app.add_middleware(
 # ──────────────────────────────────────────────
 # Routers
 # ──────────────────────────────────────────────
-from app.routers import problems, auth, users, settings, audit, buildings, public_user_types, clusters, notifications  # noqa: E402
+from app.routers import problems, auth, users, settings, audit, buildings, public_user_types, clusters, notifications, policies  # noqa: E402
 
 app.include_router(auth.router,              prefix="/api/v1/auth")
 app.include_router(problems.router,          prefix="/api/v1/problems")
@@ -80,6 +80,7 @@ app.include_router(buildings.router,         prefix="/api/v1/buildings")
 app.include_router(public_user_types.router, prefix="/api/v1")
 app.include_router(clusters.router,          prefix="/api/v1/clusters")
 app.include_router(notifications.router,     prefix="/api/v1/notifications")
+app.include_router(policies.router,          prefix="/api/v1/policies")
 
 # ──────────────────────────────────────────────
 # Health check
@@ -256,6 +257,64 @@ def seed_initial_data():
             db.commit()
             logger.info("🔑 Verified/updated default SuperAdmin (superadmin@up.ac.th / 123456) successfully.")
 
+                # Seed System Policies
+        from app.models import SystemPolicy
+        if db.query(SystemPolicy).count() == 0:
+            default_policies = [
+                SystemPolicy(
+                    title="นโยบายความเป็นส่วนตัวและการคุ้มครองข้อมูลส่วนบุคคล (PDPA)",
+                    policy_type="pdpa",
+                    version="1.0",
+                    summary="ฉันยินยอมให้จัดเก็บและประมวลผลข้อมูลตามนโยบายความเป็นส่วนตัว (PDPA) เพื่อความปลอดภัยในการใช้งานระบบ",
+                    content="""### นโยบายความเป็นส่วนตัวและการคุ้มครองข้อมูลส่วนบุคคล (PDPA)
+ระบบรับฟังเสียงและรายงานปัญหามหาวิทยาลัยพะเยา (UP Voice) ให้ความสำคัญกับการคุ้มครองข้อมูลส่วนบุคคลของนิสิต บุคลากร และประชาชนทั่วไป ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA)
+
+1. **วัตถุประสงค์ในการเก็บรวบรวม**:
+   - เพื่อใช้ในการยืนยันตัวตนและสิทธิ์ในการเข้าใช้งานระบบ
+   - เพื่อใช้ในการประสานงาน ส่งต่องาน และติดตามผลการแก้ไขปัญหากับหน่วยงานที่เกี่ยวข้อง
+   - เพื่อประมวลผลสถิติและวิเคราะห์แนวโน้มปัญหาเชิงพื้นที่ของมหาวิทยาลัย
+
+2. **ข้อมูลที่จัดเก็บ**:
+   - ข้อมูลระบุตัวตน: ชื่อ-นามสกุล, อีเมลสถาบัน, รหัสนิสิต/บุคลากร หรือหมายเลขโทรศัพท์
+   - ข้อมูลการรายงานปัญหา: รายละเอียดข้อความ, ภาพถ่ายประกอบ, วันเวลา และพิกัดสถานที่เกิดเหตุ
+   - ข้อมูลทางเทคนิค: หมายเลข IP Address, ชนิดอุปกรณ์ และบันทึกประวัติการเข้าใช้งาน
+
+3. **ระยะเวลาในการจัดเก็บ**:
+   - ข้อมูลจะถูกจัดเก็บไว้ตลอดระยะเวลาที่บัญชีผู้ใช้ยังคงสถานะใช้งานอยู่ หรือจนกว่าจะมีการร้องขอลบข้อมูลตามสิทธิ์ของเจ้าของข้อมูลส่วนบุคคล""",
+                    is_mandatory=True,
+                    is_active=True,
+                    target_role="all"
+                ),
+                SystemPolicy(
+                    title="ข้อกำหนดและเงื่อนไขการใช้งานแพลตฟอร์ม (Terms of Service)",
+                    policy_type="terms_of_service",
+                    version="1.0",
+                    summary="ฉันยอมรับข้อตกลงและเงื่อนไขการใช้งานระบบรับฟังเสียงและรายงานปัญหา UP Voice",
+                    content="""### ข้อกำหนดและเงื่อนไขการใช้งานแพลตฟอร์ม UP Voice
+1. **การใช้ถ้อยคำที่สุภาพ**: ผู้ใช้งานต้องไม่ใช้ถ้อยคำหยาบคาย ข่มขู่ คุกคาม หมิ่นประมาท หรือละเมิดสิทธิของผู้อื่น
+2. **ความถูกต้องของข้อมูล**: ผู้ใช้งานรับรองว่าข้อมูลและภาพถ่ายที่รายงานเป็นความจริง ไม่สร้างข้อมูลเท็จเพื่อกลั่นแกล้งผู้อื่น
+3. **การระงับการใช้งาน**: ระบบขอสงวนสิทธิ์ในการระงับบัญชีผู้ใช้งานที่ฝ่าฝืนกฎระเบียบโดยทันที""",
+                    is_mandatory=True,
+                    is_active=True,
+                    target_role="all"
+                ),
+                SystemPolicy(
+                    title="ความยินยอมในการเปิดเผยพิกัดและภาพถ่ายสถานที่ (Location & Media Consent)",
+                    policy_type="location_privacy",
+                    version="1.0",
+                    summary="ยินยอมให้เปิดเผยข้อมูลพิกัดสถานที่และภาพถ่ายประกอบเพื่อการประสานงานแก้ไขปัญหา",
+                    content="""### ความยินยอมในการเปิดเผยข้อมูลพิกัดสถานที่และสื่อ
+ผู้ใช้งานยินยอมให้ระบบระบุพิกัดสถานที่บนแผนที่ของมหาวิทยาลัยพะเยา และนำภาพถ่ายความเสียหายไปใช้ประกอบการทำงานของเจ้าหน้าที่ฝ่ายซ่อมบำรุงและฝ่ายที่เกี่ยวข้อง""",
+                    is_mandatory=False,
+                    is_active=True,
+                    target_role="all"
+                )
+            ]
+            for pol in default_policies:
+                db.add(pol)
+            db.commit()
+            logger.info("📜 Seeded default System Policies successfully.")
+        
         logger.info("🌱 All initial seed data verified successfully.")
     except Exception as e:
         logger.error(f"Error seeding initial data: {e}")
