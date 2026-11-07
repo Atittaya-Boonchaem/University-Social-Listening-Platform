@@ -48,3 +48,4 @@ export async function deletePolicy(id) {
   const res = await api.delete(`/policies/${id}`);
   return res.data;
 }
+

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -43,6 +43,28 @@ export default function OnboardingPage() {
   const [showToast, setShowToast] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [privacyPolicy, setPrivacyPolicy] = useState<{
+    title: string;
+    summary: string;
+    content: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchPolicy = async () => {
+      try {
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || (isLocal ? 'http://localhost:8000' : 'https://university-social-listening-platform.onrender.com');
+        const res = await axios.get(`${apiBaseUrl}/api/v1/policies?policy_type=pdpa`);
+        const items = res.data?.data?.items || [];
+        if (items.length > 0) {
+          setPrivacyPolicy(items[0]);
+        }
+      } catch (err) {
+        // Fallback default
+      }
+    };
+    fetchPolicy();
+  }, []);
   
   const [formData, setFormData] = useState({
     faculty_id: '',
@@ -388,13 +410,19 @@ export default function OnboardingPage() {
                   <li><strong>ระยะเวลาในการเก็บรักษา:</strong> ข้อมูลของท่านจะถูกเก็บรักษาไว้ตลอดระยะเวลาที่ท่านยังเป็นนิสิตหรือใช้งานระบบ และจะถูกลบหรือทำลายเมื่อหมดความจำเป็น</li>
                 </ol> */}
 
-                <ol className="list-decimal list-outside ml-4 space-y-4">
-                  <li><strong>ข้อมูลที่เก็บรวบรวม:</strong> ระบบจะเก็บรวบรวมข้อมูลพื้นฐานจากบัญชีมหาวิทยาลัย (เช่น ชื่อ, อีเมล, รหัสนิสิต) และข้อมูลที่คุณให้เพิ่มเติม เช่น คณะ ระดับการศึกษา เพศ และวันเกิด</li>
-                  <li><strong>วัตถุประสงค์การใช้งาน:</strong> ข้อมูลของท่านจะถูกนำไปใช้วิเคราะห์เพื่อปรับปรุงการให้บริการ การรายงานปัญหา และนำเสนอเนื้อหาที่ตรงกับความสนใจภายในระบบ UP Connect เท่านั้น เราจะไม่มีการเปิดเผยข้อมูลให้กับบุคคลที่สามเพื่อจุดประสงค์ทางการค้า</li>
-                  <li><strong>การรักษาความปลอดภัย:</strong> เรามีมาตรการรักษาความปลอดภัยทางเทคนิคที่เหมาะสม เพื่อป้องกันการเข้าถึง การเปลี่ยนแปลง หรือการเปิดเผยข้อมูลส่วนบุคคลของท่านโดยไม่ได้รับอนุญาต</li>
-                  <li><strong>ระยะเวลาในการเก็บรักษา:</strong> ข้อมูลของท่านจะถูกเก็บรักษาไว้ตลอดระยะเวลาที่ท่านยังคงมีสถานะในระบบ และจะถูกลบหรือทำลายเมื่อหมดความจำเป็นหรือเมื่อท่านร้องขอ</li>
-  <li><strong>สิทธิของท่าน:</strong> ท่านมีสิทธิในการขอเข้าถึง แก้ไขให้ถูกต้อง ขอระงับการใช้ หรือขอลบข้อมูลส่วนบุคคลของท่านได้ตลอดเวลา โดยสามารถติดต่อผู้ดูแลระบบผ่านช่องทางที่มหาวิทยาลัยกำหนด</li>
-</ol>
+                {privacyPolicy?.content ? (
+                  <div className="space-y-4 whitespace-pre-line leading-relaxed text-sm">
+                    {privacyPolicy.content}
+                  </div>
+                ) : (
+                  <ol className="list-decimal list-outside ml-4 space-y-4 text-sm leading-relaxed">
+                    <li><strong>ข้อมูลที่เก็บรวบรวม:</strong> ระบบจะเก็บรวบรวมข้อมูลพื้นฐานจากบัญชีมหาวิทยาลัย (เช่น ชื่อ, อีเมล, รหัสนิสิต) และข้อมูลที่คุณให้เพิ่มเติม เช่น คณะ ระดับการศึกษา เพศ และวันเกิด</li>
+                    <li><strong>วัตถุประสงค์การใช้งาน:</strong> ข้อมูลของท่านจะถูกนำไปใช้วิเคราะห์เพื่อปรับปรุงการให้บริการ การรายงานปัญหา และนำเสนอเนื้อหาที่ตรงกับความสนใจภายในระบบ UP Connect เท่านั้น เราจะไม่มีการเปิดเผยข้อมูลให้กับบุคคลที่สามเพื่อจุดประสงค์ทางการค้า</li>
+                    <li><strong>การรักษาความปลอดภัย:</strong> เรามีมาตรการรักษาความปลอดภัยทางเทคนิคที่เหมาะสม เพื่อป้องกันการเข้าถึง การเปลี่ยนแปลง หรือการเปิดเผยข้อมูลส่วนบุคคลของท่านโดยไม่ได้รับอนุญาต</li>
+                    <li><strong>ระยะเวลาในการเก็บรักษา:</strong> ข้อมูลของท่านจะถูกเก็บรักษาไว้ตลอดระยะเวลาที่ท่านยังคงมีสถานะในระบบ และจะถูกลบหรือทำลายเมื่อหมดความจำเป็นหรือเมื่อท่านร้องขอ</li>
+                    <li><strong>สิทธิของท่าน:</strong> ท่านมีสิทธิในการขอเข้าถึง แก้ไขให้ถูกต้อง ขอระงับการใช้ หรือขอลบข้อมูลส่วนบุคคลของท่านได้ตลอดเวลา โดยสามารถติดต่อผู้ดูแลระบบผ่านช่องทางที่มหาวิทยาลัยกำหนด</li>
+                  </ol>
+                )}
 
               </div>
               <div className="p-6 border-t border-outline-variant flex justify-end">

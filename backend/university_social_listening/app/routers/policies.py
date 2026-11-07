@@ -280,3 +280,4 @@ def delete_policy(
         success=True,
         message=f"ลบนโยบาย '{title}' เรียบร้อยแล้ว"
     )
+

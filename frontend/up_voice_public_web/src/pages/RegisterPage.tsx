@@ -53,6 +53,29 @@ export default function RegisterPage() {
   });
 
   const [pdpaConsent, setPdpaConsent] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [privacyPolicy, setPrivacyPolicy] = useState<{
+    title: string;
+    summary: string;
+    content: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchPolicy = async () => {
+      try {
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || (isLocal ? 'http://localhost:8000' : 'https://university-social-listening-platform.onrender.com');
+        const res = await axios.get(`${apiBaseUrl}/api/v1/policies?policy_type=pdpa`);
+        const items = res.data?.data?.items || [];
+        if (items.length > 0) {
+          setPrivacyPolicy(items[0]);
+        }
+      } catch (err) {
+        // Fallback default
+      }
+    };
+    fetchPolicy();
+  }, []);
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [types, setTypes] = useState<{ id: number; name: string }[]>([]);
 
@@ -681,7 +704,7 @@ export default function RegisterPage() {
                 </svg>
               </div>
               <span className="text-xs text-slate-600 leading-relaxed select-none group-hover:text-slate-800 transition-colors">
-                ฉันยินยอมให้จัดเก็บและประมวลผลข้อมูลตาม <strong className="text-slate-800 font-semibold underline decoration-slate-300 underline-offset-2">นโยบายความเป็นส่วนตัว (PDPA)</strong> เพื่อความปลอดภัยในการใช้งานระบบ *
+                ฉันยินยอมให้จัดเก็บและประมวลผลข้อมูลตาม <button type="button" onClick={(e) => { e.preventDefault(); setShowPrivacyModal(true); }} className="text-slate-800 font-bold underline decoration-slate-400 underline-offset-2 hover:text-[#2B164D] focus:outline-none">นโยบายความเป็นส่วนตัว (PDPA)</button> เพื่อความปลอดภัยในการใช้งานระบบ *
               </span>
             </label>
           )}
@@ -731,6 +754,49 @@ export default function RegisterPage() {
           </p>
         </div>
       </div>
+
+      {/* Privacy Policy Modal */}
+      {showPrivacyModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity animate-[fadeIn_0.2s_ease]">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col transform transition-all border border-slate-100">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-[#2B164D]">{privacyPolicy?.title || 'นโยบายความเป็นส่วนตัว (PDPA)'}</h3>
+              <button 
+                type="button"
+                onClick={() => setShowPrivacyModal(false)}
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto text-slate-700 space-y-4">
+              {privacyPolicy?.content ? (
+                <div className="space-y-4 whitespace-pre-line leading-relaxed text-sm">
+                  {privacyPolicy.content}
+                </div>
+              ) : (
+                <ol className="list-decimal list-outside ml-4 space-y-4 text-sm leading-relaxed">
+                  <li><strong>ข้อมูลที่เก็บรวบรวม:</strong> ระบบจะเก็บรวบรวมข้อมูลพื้นฐานจากบัญชีมหาวิทยาลัย (เช่น ชื่อ, อีเมล, รหัสนิสิต) และข้อมูลที่คุณให้เพิ่มเติม เช่น คณะ ระดับการศึกษา เพศ และวันเกิด</li>
+                  <li><strong>วัตถุประสงค์การใช้งาน:</strong> ข้อมูลของท่านจะถูกนำไปใช้วิเคราะห์เพื่อปรับปรุงการให้บริการ การรายงานปัญหา และนำเสนอเนื้อหาที่ตรงกับความสนใจภายในระบบ UP Connect เท่านั้น เราจะไม่มีการเปิดเผยข้อมูลให้กับบุคคลที่สามเพื่อจุดประสงค์ทางการค้า</li>
+                  <li><strong>การรักษาความปลอดภัย:</strong> เรามีมาตรการรักษาความปลอดภัยทางเทคนิคที่เหมาะสม เพื่อป้องกันการเข้าถึง การเปลี่ยนแปลง หรือการเปิดเผยข้อมูลส่วนบุคคลของท่านโดยไม่ได้รับอนุญาต</li>
+                  <li><strong>ระยะเวลาในการเก็บรักษา:</strong> ข้อมูลของท่านจะถูกเก็บรักษาไว้ตลอดระยะเวลาที่ท่านยังคงมีสถานะในระบบ และจะถูกลบหรือทำลายเมื่อหมดความจำเป็นหรือเมื่อท่านร้องขอ</li>
+                  <li><strong>สิทธิของท่าน:</strong> ท่านมีสิทธิในการขอเข้าถึง แก้ไขให้ถูกต้อง ขอระงับการใช้ หรือขอลบข้อมูลส่วนบุคคลของท่านได้ตลอดเวลา โดยสามารถติดต่อผู้ดูแลระบบผ่านช่องทางที่มหาวิทยาลัยกำหนด</li>
+                </ol>
+              )}
+            </div>
+            <div className="p-5 border-t border-slate-100 flex justify-end bg-slate-50/50">
+              <button 
+                type="button"
+                onClick={() => setShowPrivacyModal(false)}
+                className="px-6 py-2.5 bg-[#2B164D] text-white rounded-xl text-xs font-bold hover:bg-[#3d2268] active:scale-[0.98] transition-all"
+              >
+                เข้าใจแล้ว
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
