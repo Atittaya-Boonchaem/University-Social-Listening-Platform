@@ -878,7 +878,12 @@ const CategoryAdminInvites = () => {
       showToast(`สร้างบัญชีให้ ${payload.email} สำเร็จเรียบร้อยแล้ว!`, 'success');
       loadData();
     } catch (err) {
-      showToast(err.response?.data?.detail || err.response?.data?.message || 'ไม่สามารถสร้างบัญชีได้', 'error');
+      const errMsg = err.response?.data?.detail 
+        || err.response?.data?.message 
+        || (err.code === 'ECONNABORTED' ? 'หมดเวลาเชื่อมต่อเซิร์ฟเวอร์ (Request Timeout)' : null)
+        || (!err.response ? 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ Backend ได้ กรุณาตรวจสอบว่า Render ออนไลน์อยู่' : null)
+        || 'ไม่สามารถสร้างบัญชีได้';
+      showToast(errMsg, 'error');
     } finally {
       setSubmitting(false);
     }

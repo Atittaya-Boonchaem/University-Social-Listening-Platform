@@ -5,6 +5,7 @@ const defaultBaseUrl = isLocal ? 'http://localhost:8000/api/v1' : 'https://unive
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || defaultBaseUrl,
+  timeout: 20000,
   headers: {
     'Content-Type': 'application/json',
   },
