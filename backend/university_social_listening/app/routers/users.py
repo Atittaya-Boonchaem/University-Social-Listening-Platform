@@ -682,14 +682,9 @@ def direct_create_admin(
 
     # 1. Check if user already exists
     existing_user = db.query(User).filter(User.email == email_clean).first()
-    if existing_user and (not existing_user.is_deleted) and existing_user.is_active:
-        raise HTTPException(
-            status_code=400,
-            detail=f"มีบัญชีอีเมล {email_clean} อยู่ในระบบแล้วและกำลังใช้งานอยู่"
-        )
 
     if existing_user:
-        # Reactivate soft-deleted or inactive user
+        # Reactivate or update existing user (Super Admin direct provision)
         target_user = existing_user
         target_user.password_hash = hash_password(payload.password)
         target_user.is_active = True
@@ -744,16 +739,28 @@ def direct_create_admin(
             raise HTTPException(status_code=404, detail="ไม่พบหมวดหมู่ที่ระบุ")
         category_name = cat.category_name
 
-        ca = db.query(CategoryAdmin).filter(CategoryAdmin.user_id == target_user.user_id).first()
+        # Deactivate other category assignments for this user if single assignment
+        db.query(CategoryAdmin).filter(
+            CategoryAdmin.user_id == target_user.user_id,
+            CategoryAdmin.category_id != payload.category_id
+        ).update({"is_active": False, "revoked_at": datetime.utcnow()})
+
+        ca = db.query(CategoryAdmin).filter(
+            CategoryAdmin.user_id == target_user.user_id,
+            CategoryAdmin.category_id == payload.category_id
+        ).first()
         if ca:
-            ca.category_id = payload.category_id
             ca.is_active = True
             ca.revoked_at = None
+            ca.assigned_by = current_user.user_id
+            ca.assigned_at = datetime.utcnow()
         else:
             ca = CategoryAdmin(
                 user_id=target_user.user_id,
                 category_id=payload.category_id,
                 admin_level="full",
+                assigned_by=current_user.user_id,
+                assigned_at=datetime.utcnow(),
                 is_active=True
             )
             db.add(ca)
@@ -1404,9 +1411,26 @@ def revoke_category_admin(
         
     existing.is_active = False
     existing.revoked_at = datetime.utcnow()
+    db.flush()
     
     target_user = db.query(User).filter(User.user_id == user_id).first()
     target_email = target_user.email if target_user else None
+
+    # Check if user has any other active Category Admin roles
+    remaining_active = db.query(CategoryAdmin).filter(
+        CategoryAdmin.user_id == user_id,
+        CategoryAdmin.is_active == True
+    ).first()
+
+    # If no other active category admin roles and user is not student or super admin, soft delete user
+    if not remaining_active and target_user:
+        from app.models import Student, SuperAdmin
+        is_student = db.query(Student).filter(Student.user_id == user_id).first() is not None
+        is_super_admin = db.query(SuperAdmin).filter(SuperAdmin.user_id == user_id, SuperAdmin.is_active == True).first() is not None
+        if not is_student and not is_super_admin:
+            target_user.is_deleted = True
+            target_user.is_active = False
+            target_user.updated_at = datetime.utcnow()
 
     audit = AuditLog(
         admin_id=current_user.user_id,
@@ -1445,6 +1469,15 @@ def delete_user(
 
     target.is_deleted = True
     target.is_active = False
+
+    # Also deactivate category admin and super admin records
+    db.query(CategoryAdmin).filter(CategoryAdmin.user_id == user_id).update({
+        "is_active": False,
+        "revoked_at": datetime.utcnow()
+    })
+    db.query(SuperAdmin).filter(SuperAdmin.user_id == user_id).update({
+        "is_active": False
+    })
 
     audit = AuditLog(
         admin_id=current_user.user_id,

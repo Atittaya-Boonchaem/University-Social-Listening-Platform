@@ -266,32 +266,45 @@ def register_student(data: StudentRegisterCreate, db: Session = Depends(get_db))
     เข้าได้เฉพาะ: ทุกคน (Public)
     การทำงาน: ตรวจสอบอีเมลและรหัสนิสิตซ้ำ จากนั้นสร้างบัญชีผู้ใช้และผูกข้อมูลลงในตาราง Student
     """
-    # Duplicate check
-    if db.query(User).filter(User.email == data.email).first():
+    # Duplicate check (allow reactivating deleted users)
+    existing_user = db.query(User).filter(User.email == data.email).first()
+    if existing_user and not existing_user.is_deleted:
         raise HTTPException(400, "อีเมลนี้ถูกใช้งานแล้ว (Email already registered)")
-    if db.query(Student).filter(Student.student_id == data.student_id).first():
-        raise HTTPException(400, "รหัสนิสิตนี้ถูกใช้งานแล้ว (Student ID already registered)")
 
-    # 1️⃣ Create base User
-    user = User(
-        email=data.email,
-        password_hash=hash_password(data.password),
-        is_active=True,
-    )
-    db.add(user)
-    db.flush()   # populate user.user_id without committing
+    existing_student = db.query(Student).filter(Student.student_id == data.student_id).first()
+    if existing_student:
+        student_user = db.query(User).filter(User.user_id == existing_student.user_id).first()
+        if student_user and not student_user.is_deleted:
+            raise HTTPException(400, "รหัสนิสิตนี้ถูกใช้งานแล้ว (Student ID already registered)")
 
-    # 2️⃣ Create Student sub-record
-    student = Student(
-        user_id=user.user_id,
-        student_id=data.student_id,
-        student_name=data.student_name,
-        faculty_id=get_faculty_id(data.faculty_name, db),
-        year=data.year,
-        birthdate=data.birthdate,
-        gender=data.gender,
-    )
-    db.add(student)
+    # 1️⃣ Create or Reactivate base User
+    if existing_user and existing_user.is_deleted:
+        user = existing_user
+        user.password_hash = hash_password(data.password)
+        user.is_active = True
+        user.is_deleted = False
+        user.updated_at = datetime.utcnow()
+    else:
+        user = User(
+            email=data.email,
+            password_hash=hash_password(data.password),
+            is_active=True,
+            is_deleted=False
+        )
+        db.add(user)
+        db.flush()
+
+    # 2️⃣ Create or Update Student sub-record
+    student = db.query(Student).filter(Student.user_id == user.user_id).first()
+    if not student:
+        student = Student(user_id=user.user_id)
+        db.add(student)
+    student.student_id = data.student_id
+    student.student_name = data.student_name
+    student.faculty_id = get_faculty_id(data.faculty_name, db)
+    student.year = data.year
+    student.birthdate = data.birthdate
+    student.gender = data.gender
     db.commit()
 
     return StandardResponse(
@@ -308,30 +321,43 @@ def register_staff(data: StaffRegisterCreate, db: Session = Depends(get_db)):
     เข้าได้เฉพาะ: ทุกคน (Public)
     การทำงาน: ตรวจสอบอีเมลและรหัสพนักงานซ้ำ จากนั้นสร้างบัญชีผู้ใช้และผูกข้อมูลลงในตาราง Staff
     """
-    if db.query(User).filter(User.email == data.email).first():
+    existing_user = db.query(User).filter(User.email == data.email).first()
+    if existing_user and not existing_user.is_deleted:
         raise HTTPException(400, "อีเมลนี้ถูกใช้งานแล้ว (Email already registered)")
-    if db.query(Staff).filter(Staff.employee_id == data.employee_id).first():
-        raise HTTPException(400, "รหัสพนักงานนี้ถูกใช้งานแล้ว (Employee ID already registered)")
 
-    user = User(
-        email=data.email,
-        password_hash=hash_password(data.password),
-        is_active=True,
-    )
-    db.add(user)
-    db.flush()
+    existing_staff = db.query(Staff).filter(Staff.employee_id == data.employee_id).first()
+    if existing_staff:
+        staff_user = db.query(User).filter(User.user_id == existing_staff.user_id).first()
+        if staff_user and not staff_user.is_deleted:
+            raise HTTPException(400, "รหัสพนักงานนี้ถูกใช้งานแล้ว (Employee ID already registered)")
 
-    staff = Staff(
-        user_id=user.user_id,
-        employee_id=data.employee_id,
-        staff_name=data.staff_name,
-        department=data.department,
-        position=data.position,
-        faculty_id=get_faculty_id(data.faculty_name, db),
-        phone=data.phone,
-        office_location=data.office_location,
-    )
-    db.add(staff)
+    if existing_user and existing_user.is_deleted:
+        user = existing_user
+        user.password_hash = hash_password(data.password)
+        user.is_active = True
+        user.is_deleted = False
+        user.updated_at = datetime.utcnow()
+    else:
+        user = User(
+            email=data.email,
+            password_hash=hash_password(data.password),
+            is_active=True,
+            is_deleted=False
+        )
+        db.add(user)
+        db.flush()
+
+    staff = db.query(Staff).filter(Staff.user_id == user.user_id).first()
+    if not staff:
+        staff = Staff(user_id=user.user_id)
+        db.add(staff)
+    staff.employee_id = data.employee_id
+    staff.staff_name = data.staff_name
+    staff.department = data.department
+    staff.position = data.position
+    staff.faculty_id = get_faculty_id(data.faculty_name, db)
+    staff.phone = data.phone
+    staff.office_location = data.office_location
     db.commit()
 
     return StandardResponse(
@@ -351,30 +377,39 @@ def register_public(data: PublicUserRegisterCreate, db: Session = Depends(get_db
     if not data.pdpa_consent:
         raise HTTPException(400, "คุณต้องยอมรับนโยบายความเป็นส่วนตัว (PDPA) เพื่อสมัครสมาชิก")
 
-    if data.email and db.query(User).filter(User.email == data.email).first():
+    existing_user = db.query(User).filter(User.email == data.email).first() if data.email else None
+    if existing_user and not existing_user.is_deleted:
         raise HTTPException(400, "อีเมลนี้ถูกใช้งานแล้ว (Email already registered)")
 
-    user = User(
-        email=data.email,
-        password_hash=hash_password(data.password),
-        is_active=True,
-    )
-    db.add(user)
-    db.flush()
+    if existing_user and existing_user.is_deleted:
+        user = existing_user
+        user.password_hash = hash_password(data.password)
+        user.is_active = True
+        user.is_deleted = False
+        user.updated_at = datetime.utcnow()
+    else:
+        user = User(
+            email=data.email,
+            password_hash=hash_password(data.password),
+            is_active=True,
+            is_deleted=False
+        )
+        db.add(user)
+        db.flush()
 
     from datetime import date
-    pub = PublicUser(
-        user_id=user.user_id,
-        first_name=data.first_name,
-        last_name=data.last_name,
-        birthdate=data.birthdate or date(2000, 1, 1),
-        phone=data.phone,
-        address=data.address,
-        public_user_type_id=data.public_user_type_id,
-        is_pdpa_accepted=True,
-        pdpa_accepted_at=datetime.utcnow(),
-    )
-    db.add(pub)
+    pub = db.query(PublicUser).filter(PublicUser.user_id == user.user_id).first()
+    if not pub:
+        pub = PublicUser(user_id=user.user_id)
+        db.add(pub)
+    pub.first_name = data.first_name
+    pub.last_name = data.last_name
+    pub.birthdate = data.birthdate or date(2000, 1, 1)
+    pub.phone = data.phone
+    pub.address = data.address
+    pub.public_user_type_id = data.public_user_type_id
+    pub.is_pdpa_accepted = True
+    pub.pdpa_accepted_at = datetime.utcnow()
     db.commit()
 
     return StandardResponse(
